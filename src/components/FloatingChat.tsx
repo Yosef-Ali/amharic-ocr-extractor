@@ -21,8 +21,11 @@ export interface EditContext {
 }
 
 interface Props {
-  editContext?: EditContext;
-  user?: { id: string; email?: string; name?: string } | null;
+  editContext?:   EditContext;
+  user?:          { id: string; email?: string; name?: string } | null;
+  /** When provided, panel open-state is controlled externally (dock mode — FAB hidden) */
+  open?:          boolean;
+  onOpenChange?:  (open: boolean) => void;
 }
 
 // ── Suggestion chips ──────────────────────────────────────────────────────────
@@ -90,8 +93,13 @@ function fileToDataUrl(file: File): Promise<string> {
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export default function FloatingChat({ editContext, user }: Props) {
-  const [open, setOpen]             = useState(false);
+export default function FloatingChat({ editContext, user, open: controlledOpen, onOpenChange }: Props) {
+  const isControlled                = onOpenChange !== undefined;
+  const [internalOpen, setInternal] = useState(false);
+  const open                        = isControlled ? (controlledOpen ?? false) : internalOpen;
+  const setOpen                     = (v: boolean) => {
+    if (isControlled) onOpenChange(v); else setInternal(v);
+  };
   const [messages, setMessages]     = useState<ChatTurn[]>([]);
   const [input, setInput]           = useState('');
   const [attachment, setAttachment] = useState<string | null>(null);
@@ -228,18 +236,20 @@ export default function FloatingChat({ editContext, user }: Props) {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
-      {/* ── FAB ── */}
-      <button
-        className={`fc-fab${open ? ' fc-fab--open' : ''}`}
-        onClick={() => setOpen(o => !o)}
-        title={open ? 'Close assistant' : 'Open AI assistant'}
-        aria-label="AI Chat Assistant"
-      >
-        {open ? <X size={20} /> : <MessageSquare size={20} />}
-        {!open && messages.length > 0 && (
-          <span className="fc-fab-badge">{messages.filter(m => m.role === 'ai').length}</span>
-        )}
-      </button>
+      {/* FAB — only shown in self-controlled mode (HomeScreen) */}
+      {!isControlled && (
+        <button
+          className={`fc-fab${open ? ' fc-fab--open' : ''}`}
+          onClick={() => setOpen(!open)}
+          title={open ? 'Close assistant' : 'Open AI assistant'}
+          aria-label="AI Chat Assistant"
+        >
+          {open ? <X size={20} /> : <MessageSquare size={20} />}
+          {!open && messages.length > 0 && (
+            <span className="fc-fab-badge">{messages.filter(m => m.role === 'ai').length}</span>
+          )}
+        </button>
+      )}
 
       {/* ── Chat panel ── */}
       {open && (

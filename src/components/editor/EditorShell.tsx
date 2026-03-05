@@ -3,8 +3,10 @@ import {
   ChevronLeft, ChevronRight, Layers, Save, BookOpen, Download,
   Loader2, RefreshCw, Trash2, PanelLeftClose, PanelLeftOpen,
   X, FileText, FileImage, Zap, Sparkles, SlidersHorizontal, MousePointer2,
-  ZoomIn, ZoomOut, Maximize, Hand, Scan,
+  ZoomIn, ZoomOut, Maximize, Hand, Scan, Bot,
 } from 'lucide-react';
+import { type Theme } from '../../hooks/useTheme';
+import ThemeToggleButton from '../ThemeToggleButton';
 
 import PageThumbnailSidebar from './PageThumbnailSidebar';
 import SplitPageView        from '../SplitPageView';
@@ -43,8 +45,12 @@ interface Props {
   onImageQualityChange:    (q: ImageQuality) => void;
   onActivePageChange?: (page: number) => void;
   onError:  (msg: string) => void;
-  user: { id: string; email?: string; name?: string } | null;
-  onSignOut: () => void;
+  user:          { id: string; email?: string; name?: string } | null;
+  onSignOut:     () => void;
+  theme:         Theme;
+  onToggleTheme: () => void;
+  chatOpen:      boolean;
+  onChatToggle:  () => void;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -60,6 +66,10 @@ export default function EditorShell({
   onError,
   user,
   onSignOut,
+  theme,
+  onToggleTheme,
+  chatOpen,
+  onChatToggle,
 }: Props) {
 
   const totalPages      = pageImages.length;
@@ -407,146 +417,19 @@ export default function EditorShell({
         {/* Spacer */}
         <div style={{ flex: 1 }} />
 
-        {/* ── Action buttons ── */}
-        <div className="editor-top-actions">
-
-          {/* ── Page actions group ── */}
-          {hasResult && (
-            <div className="etb-group">
-              <button
-                className="etb etb--teal"
-                onClick={() => onRegenerate(activePage)}
-                disabled={isRegen || isProcessing}
-                title="Re-extract this page with AI"
-              >
-                {isRegen
-                  ? <Loader2 size={12} className="animate-spin" />
-                  : <RefreshCw size={12} />}
-                <span>Re-extract</span>
-              </button>
-              <button
-                className="editor-icon-btn editor-icon-btn--danger"
-                onClick={() => onDeletePage(activePage)}
-                disabled={isRegen || isProcessing}
-                aria-label="Remove this page from results"
-                title="Remove this page from results"
-              >
-                <Trash2 size={13} />
-              </button>
-            </div>
-          )}
-
-          {/* ── Extract group ── */}
-          <div className="etb-group">
-            <button
-              className="etb-mode-toggle"
-              onClick={() => onImageQualityChange(imageQuality === 'fast' ? 'pro' : 'fast')}
-              disabled={isProcessing}
-              title={imageQuality === 'pro'
-                ? 'OCR Mode: Pro (Gemini Pro) — click to switch to Fast'
-                : 'OCR Mode: Fast (Gemini Flash) — click to switch to Pro'}
-              aria-label={`OCR mode: ${imageQuality}`}
-            >
-              <span className={`etb-mode-opt${imageQuality === 'fast' ? ' etb-mode-opt--active' : ''}`}>
-                <Zap size={10} /> Fast
-              </span>
-              <span className={`etb-mode-opt${imageQuality === 'pro' ? ' etb-mode-opt--active' : ''}`}>
-                <Sparkles size={10} /> Pro
-              </span>
-            </button>
-            <button
-              className="etb etb--primary"
-              onClick={onExtract}
-              disabled={isProcessing}
-              title="Extract all unprocessed pages"
-            >
-              {isProcessing
-                ? <Loader2 size={12} className="animate-spin" />
-                : <Layers size={12} />}
-              <span>{isProcessing ? 'Extracting…' : 'Extract'}</span>
-            </button>
-            {hasAnyResults && (
-              <button
-                className="etb etb--ghost"
-                onClick={onForceExtract}
-                disabled={isProcessing}
-                title="Force re-extract all pages"
-              >
-                <RefreshCw size={12} />
-                <span>Re-extract All</span>
-              </button>
-            )}
-          </div>
-
-          {/* ── Export group ── */}
-          <div className="etb-group">
-            {hasAnyResults && (
-              <button
-                className="etb etb--green"
-                onClick={onSave}
-                disabled={isProcessing}
-                title="Save document to library"
-              >
-                <Save size={12} />
-                <span>Save</span>
-              </button>
-            )}
-            <button
-              className="editor-icon-btn"
-              onClick={onShowLibrary}
-              aria-label="Open document library"
-              title="Open document library"
-            >
-              <BookOpen size={15} />
-            </button>
-            {hasAnyResults && (
-              <button
-                className="etb etb--blue"
-                onClick={onDownloadPDF}
-                disabled={isPdfExporting || isProcessing}
-                title="Download as PDF"
-              >
-                {isPdfExporting
-                  ? <Loader2 size={12} className="animate-spin" />
-                  : <Download size={12} />}
-                <span>{isPdfExporting ? 'Exporting…' : 'PDF'}</span>
-              </button>
-            )}
-          </div>
-
-          {/* ── Tools group ── */}
-          <div className="etb-group">
-            {hasAnyResults && (
-              <button
-                className={`editor-icon-btn${selectionMode ? ' editor-icon-btn--active' : ''}`}
-                onClick={() => setSelectionMode(m => !m)}
-                aria-label={selectionMode ? 'Exit select mode' : 'Select elements'}
-                title={selectionMode ? 'Exit select mode' : 'Select elements to inspect or delete'}
-              >
-                <MousePointer2 size={14} />
-              </button>
-            )}
-            <button
-              className={`editor-icon-btn${inspectorOpen ? ' editor-icon-btn--active' : ''}`}
-              onClick={() => { const next = !inspectorOpen; setInspectorOpen(next); inspResize.setCollapsed(!next); }}
-              aria-label={inspectorOpen ? 'Hide inspector' : 'Show inspector'}
-              title={inspectorOpen ? 'Hide layout inspector' : 'Show layout inspector'}
-            >
-              <SlidersHorizontal size={14} />
-            </button>
-            <SettingsPanel />
-            {user && (
-              <UserMenu user={user} onSignOut={onSignOut} />
-            )}
-            <button
-              className="editor-icon-btn editor-icon-btn--danger"
-              onClick={onClear}
-              aria-label="Close document"
-              title="Close document"
-            >
-              <X size={15} />
-            </button>
-          </div>
+        {/* ── Top-bar chrome: theme · settings · user · close ── */}
+        <div className="etb-group">
+          <ThemeToggleButton theme={theme} onClick={onToggleTheme} iconSize={14} />
+          <SettingsPanel />
+          {user && <UserMenu user={user} onSignOut={onSignOut} />}
+          <button
+            className="editor-icon-btn editor-icon-btn--danger"
+            onClick={onClear}
+            aria-label="Close document"
+            title="Close document"
+          >
+            <X size={15} />
+          </button>
         </div>
       </header>
 
@@ -735,6 +618,171 @@ export default function EditorShell({
             onElementStyleChange={handleElementStyleChange}
             onTagChange={handleTagChange}
           />
+        </div>
+
+      </div>
+
+      {/* ══ Figma-style floating action dock ════════════════════════════════
+           Groups (left → right, by similarity):
+           1. Tools      — Select · Inspector
+           2. OCR        — Fast/Pro · Extract · Re-extract All
+           3. Page       — Re-extract Page · Delete  (conditional)
+           4. Export     — Save · Library · PDF
+           5. AI         — AI Chat
+      ══ */}
+      <div className="ftb-dock">
+
+        {/* Processing status bubble — floats above dock */}
+        {isProcessing && processingStatus && (
+          <div className="ftb-status">
+            <Loader2 size={10} className="animate-spin" />
+            <span>{processingStatus}</span>
+          </div>
+        )}
+
+        {/* ── Group 1: Tools — canvas interaction modes ── */}
+        <div className="ftb-group">
+          <button
+            className={`ftb-icon-btn ftb-tool${selectionMode ? ' ftb-tool--active' : ''}`}
+            onClick={() => setSelectionMode(m => !m)}
+            aria-label={selectionMode ? 'Exit select mode (Esc)' : 'Select elements'}
+            title={selectionMode ? 'Select mode ON — click to exit (Esc)' : 'Select elements to inspect or delete (V)'}
+          >
+            <MousePointer2 size={14} />
+          </button>
+          <button
+            className={`ftb-icon-btn ftb-tool${inspectorOpen ? ' ftb-tool--active' : ''}`}
+            onClick={() => { const next = !inspectorOpen; setInspectorOpen(next); inspResize.setCollapsed(!next); }}
+            aria-label={inspectorOpen ? 'Hide inspector' : 'Show inspector'}
+            title={inspectorOpen ? 'Hide layout inspector' : 'Show layout inspector (I)'}
+          >
+            <SlidersHorizontal size={14} />
+          </button>
+        </div>
+
+        <div className="ftb-sep" />
+
+        {/* ── Group 2: OCR / Extract ── */}
+        <div className="ftb-group">
+          <button
+            className="ftb-mode-toggle"
+            onClick={() => onImageQualityChange(imageQuality === 'fast' ? 'pro' : 'fast')}
+            disabled={isProcessing}
+            title={imageQuality === 'pro'
+              ? 'OCR: Pro (high quality) — click to switch to Fast'
+              : 'OCR: Fast (Gemini Flash) — click to switch to Pro'}
+          >
+            <span className={`ftb-mode-opt${imageQuality === 'fast' ? ' ftb-mode-opt--active' : ''}`}>
+              <Zap size={10} /> Fast
+            </span>
+            <span className={`ftb-mode-opt${imageQuality === 'pro' ? ' ftb-mode-opt--active' : ''}`}>
+              <Sparkles size={10} /> Pro
+            </span>
+          </button>
+
+          <div className="ftb-inner-sep" />
+
+          <button
+            className="ftb-btn ftb-btn--primary"
+            onClick={onExtract}
+            disabled={isProcessing}
+            title="Extract all unprocessed pages"
+          >
+            {isProcessing
+              ? <Loader2 size={13} className="animate-spin" />
+              : <Layers size={13} />}
+            <span>{isProcessing ? 'Extracting…' : 'Extract'}</span>
+          </button>
+
+          {hasAnyResults && (
+            <button
+              className="ftb-icon-btn"
+              onClick={onForceExtract}
+              disabled={isProcessing}
+              title="Re-extract all pages (force)"
+            >
+              <RefreshCw size={13} />
+            </button>
+          )}
+        </div>
+
+        {/* ── Group 3: Page — current page operations (conditional) ── */}
+        {hasResult && (
+          <>
+            <div className="ftb-sep" />
+            <div className="ftb-group">
+              <button
+                className="ftb-btn ftb-btn--teal"
+                onClick={() => onRegenerate(activePage)}
+                disabled={isRegen || isProcessing}
+                title={`Re-extract page ${activePage} with AI`}
+              >
+                {isRegen
+                  ? <Loader2 size={13} className="animate-spin" />
+                  : <RefreshCw size={13} />}
+                <span>Re-extract</span>
+              </button>
+              <button
+                className="ftb-icon-btn ftb-icon-btn--danger"
+                onClick={() => onDeletePage(activePage)}
+                disabled={isRegen || isProcessing}
+                title={`Delete page ${activePage} from results`}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          </>
+        )}
+
+        <div className="ftb-sep" />
+
+        {/* ── Group 4: Export — document output ── */}
+        <div className="ftb-group">
+          {hasAnyResults && (
+            <button
+              className="ftb-btn ftb-btn--green"
+              onClick={onSave}
+              disabled={isProcessing}
+              title="Save document to library"
+            >
+              <Save size={13} />
+              <span>Save</span>
+            </button>
+          )}
+          <button
+            className="ftb-icon-btn"
+            onClick={onShowLibrary}
+            title="Open document library"
+          >
+            <BookOpen size={14} />
+          </button>
+          {hasAnyResults && (
+            <button
+              className="ftb-btn ftb-btn--blue"
+              onClick={onDownloadPDF}
+              disabled={isPdfExporting || isProcessing}
+              title="Download as PDF"
+            >
+              {isPdfExporting
+                ? <Loader2 size={13} className="animate-spin" />
+                : <Download size={13} />}
+              <span>{isPdfExporting ? 'Exporting…' : 'PDF'}</span>
+            </button>
+          )}
+        </div>
+
+        <div className="ftb-sep" />
+
+        {/* ── Group 5: AI — intelligence ── */}
+        <div className="ftb-group">
+          <button
+            className={`ftb-btn ftb-btn--ai${chatOpen ? ' ftb-btn--ai-active' : ''}`}
+            onClick={onChatToggle}
+            title={chatOpen ? 'Close AI assistant' : 'Open AI assistant'}
+          >
+            <Bot size={13} />
+            <span>AI Chat</span>
+          </button>
         </div>
 
       </div>

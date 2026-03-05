@@ -1,18 +1,27 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   FileText, Upload, FolderOpen, Trash2, Clock, BookOpen,
-  Sparkles, ChevronRight, Plus, Search, Loader2, ScanSearch,
+  Sparkles, ChevronRight, Plus, Search, Loader2, ScanSearch, ShieldCheck, Download,
 } from 'lucide-react';
+import { type Theme } from '../hooks/useTheme';
+import ThemeToggleButton from './ThemeToggleButton';
+import UserMenu from './UserMenu';
 import {
   loadAllDocuments, loadDocumentContent, deleteDocument, type SavedDocument,
 } from '../services/storageService';
-import SettingsPanel from './editor/SettingsPanel';
+import { downloadDocumentAsPDF } from '../utils/downloadPDF';
 
 interface Props {
-  onFile:       (file: File) => void;
-  onLoadDoc:    (doc: SavedDocument) => void;
-  isProcessing: boolean;
+  onFile:           (file: File) => void;
+  onLoadDoc:        (doc: SavedDocument) => void;
+  isProcessing:     boolean;
   processingStatus: string;
+  theme:            Theme;
+  onToggleTheme:    () => void;
+  user:             { id: string; email?: string; name?: string } | null;
+  onSignOut:        () => void;
+  isAdmin:          boolean;
+  onOpenAdmin:      () => void;
 }
 
 function formatDate(iso: string) {
@@ -26,12 +35,13 @@ function formatDate(iso: string) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processingStatus }: Props) {
+export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processingStatus, theme, onToggleTheme, user, onSignOut, isAdmin, onOpenAdmin }: Props) {
   const [docs, setDocs] = useState<SavedDocument[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [search, setSearch] = useState('');
   const [isDragging, setIsDragging] = useState(false);
-  const [loadingDocId, setLoadingDocId] = useState<string | null>(null);
+  const [loadingDocId,  setLoadingDocId]  = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -60,6 +70,23 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
       setLoadingDocId(null);
     }
     // don't reset loadingDocId — component unmounts when editor opens
+  };
+
+  const handleDownload = async (e: React.MouseEvent, doc: SavedDocument) => {
+    e.stopPropagation();
+    setDownloadingId(doc.id);
+    try {
+      const full = await loadDocumentContent(doc.id);
+      if (Object.keys(full.pageResults).length === 0) {
+        alert('This document has no extracted content to download.');
+        return;
+      }
+      await downloadDocumentAsPDF(full.name, full.pageResults);
+    } catch (err) {
+      console.error('Download failed:', err);
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   const onDrop = (e: React.DragEvent) => {
@@ -93,7 +120,21 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
               <p className="home-brand-sub">PDF · Layout · Amharic</p>
             </div>
           </div>
-          <SettingsPanel />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <ThemeToggleButton theme={theme} onClick={onToggleTheme} />
+            {isAdmin && (
+              <button
+                className="home-admin-btn"
+                onClick={onOpenAdmin}
+                title="Admin Panel"
+                aria-label="Open Admin Panel"
+              >
+                <ShieldCheck size={15} />
+                <span>Admin</span>
+              </button>
+            )}
+            {user && <UserMenu user={user} onSignOut={onSignOut} />}
+          </div>
         </div>
       </header>
 
@@ -189,7 +230,9 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
                   doc={doc}
                   onOpen={() => handleOpenDoc(doc)}
                   onDelete={e => handleDelete(e, doc.id)}
+                  onDownload={e => handleDownload(e, doc)}
                   isLoading={loadingDocId === doc.id}
+                  isDownloading={downloadingId === doc.id}
                 />
               ))}
             </div>
@@ -210,6 +253,8 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
                   doc={doc}
                   onOpen={() => handleOpenDoc(doc)}
                   onDelete={e => handleDelete(e, doc.id)}
+                  onDownload={e => handleDownload(e, doc)}
+                  isDownloading={downloadingId === doc.id}
                 />
               ))}
             </div>
@@ -229,15 +274,17 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
 }
 
 // ── Project Card (recent, large) ───────────────────────────────────────────
-function ProjectCard({ doc, onOpen, onDelete, isLoading }: {
+function ProjectCard({ doc, onOpen, onDelete, onDownload, isLoading, isDownloading }: {
   doc: SavedDocument;
   onOpen: () => void;
   onDelete: (e: React.MouseEvent) => void;
+  onDownload: (e: React.MouseEvent) => void;
   isLoading?: boolean;
+  isDownloading?: boolean;
 }) {
   const thumb = doc.pageImages?.[0];
   return (
-    <button className="proj-card" onClick={onOpen} disabled={isLoading}>
+    <button className="proj-card" onClick={onOpen} disabled={isLoading || isDownloading}>
       <div className="proj-card-thumb">
         {thumb
           ? <img src={`data:image/jpeg;base64,${thumb}`} alt="" className="proj-card-thumb-img" />
@@ -251,12 +298,16 @@ function ProjectCard({ doc, onOpen, onDelete, isLoading }: {
         </p>
       </div>
       <div className="proj-card-footer">
-        <button
-          className="proj-card-del"
-          onClick={onDelete}
-          title="Delete project"
-        >
+        <button className="proj-card-del" onClick={onDelete} title="Delete project">
           <Trash2 size={13} />
+        </button>
+        <button
+          className="proj-card-dl"
+          onClick={onDownload}
+          title="Download PDF"
+          disabled={isDownloading}
+        >
+          {isDownloading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
         </button>
         <span className="proj-card-open">
           Open <ChevronRight size={13} />
@@ -267,14 +318,16 @@ function ProjectCard({ doc, onOpen, onDelete, isLoading }: {
 }
 
 // ── Project Row (older, compact list) ─────────────────────────────────────
-function ProjectRow({ doc, onOpen, onDelete, isLoading }: {
+function ProjectRow({ doc, onOpen, onDelete, onDownload, isLoading, isDownloading }: {
   doc: SavedDocument;
   onOpen: () => void;
   onDelete: (e: React.MouseEvent) => void;
+  onDownload: (e: React.MouseEvent) => void;
   isLoading?: boolean;
+  isDownloading?: boolean;
 }) {
   return (
-    <button className="proj-row" onClick={onOpen} disabled={isLoading}>
+    <button className="proj-row" onClick={onOpen} disabled={isLoading || isDownloading}>
       <div className="proj-row-icon">
         <Upload size={14} />
       </div>
@@ -285,10 +338,14 @@ function ProjectRow({ doc, onOpen, onDelete, isLoading }: {
         </span>
       </div>
       <button
-        className="proj-row-del"
-        onClick={onDelete}
-        title="Delete"
+        className="proj-row-dl"
+        onClick={onDownload}
+        title="Download PDF"
+        disabled={isDownloading}
       >
+        {isDownloading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+      </button>
+      <button className="proj-row-del" onClick={onDelete} title="Delete">
         <Trash2 size={13} />
       </button>
       <ChevronRight size={14} className="proj-row-arrow" />

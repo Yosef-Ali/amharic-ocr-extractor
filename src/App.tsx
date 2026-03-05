@@ -4,13 +4,16 @@ import HomeScreen    from './components/HomeScreen';
 import EditorShell   from './components/editor/EditorShell';
 import LibraryModal  from './components/LibraryModal';
 import FloatingChat  from './components/FloatingChat';
+import AdminPanel    from './components/AdminPanel';
 import Toast, { type ToastMessage } from './components/Toast';
 import AuthScreen    from './components/AuthScreen';
 
 import { pdfToImages, imageFileToBase64 } from './services/pdfService';
 import { extractPageHTML, type ImageQuality } from './services/geminiService';
 import { saveDocument, initStorage, type SavedDocument } from './services/storageService';
+import { ensureUsersTable, upsertUser, checkUserBlocked } from './services/adminService';
 import { authClient } from './lib/neonAuth';
+import { useTheme } from './hooks/useTheme';
 
 type NeonUser = { id: string; email?: string; name?: string };
 
@@ -43,15 +46,29 @@ const RATE_LIMIT_ERROR_HTML = `
 // App
 // ---------------------------------------------------------------------------
 export default function App() {
+  // ── Theme ───────────────────────────────────────────────────────────────
+  const { theme, toggleTheme } = useTheme();
+
   // ── Auth state ─────────────────────────────────────────────────────────
   const [neonUser,     setNeonUser]     = useState<NeonUser | null>(null);
   const [authLoading,  setAuthLoading]  = useState(true);
+  const [isBlocked,    setIsBlocked]    = useState(false);
 
   const syncAuthState = useCallback(async () => {
     const result = await (authClient as any).getSession();
     const u = result?.data?.user ?? null;
     setNeonUser(u);
     initStorage(u?.id ?? null);
+    if (u?.id && u?.email) {
+      try {
+        await ensureUsersTable();
+        await upsertUser(u.id, u.email, u.name);
+        const blocked = await checkUserBlocked(u.id);
+        setIsBlocked(blocked);
+      } catch (e) {
+        console.error(e);
+      }
+    }
     return u;
   }, []);
 
@@ -83,6 +100,12 @@ export default function App() {
   const [imageQuality,     setImageQuality]     = useState<ImageQuality>('fast');
   const [regeneratingPages, setRegeneratingPages] = useState<Set<number>>(new Set());
   const [activePage,       setActivePage]       = useState(1);
+  const [chatOpen,         setChatOpen]         = useState(false);
+  const [showAdmin,        setShowAdmin]        = useState(false);
+
+  // Admin gate — only show to the exact email set in VITE_ADMIN_EMAIL
+  const adminEmail = (import.meta.env.VITE_ADMIN_EMAIL as string | undefined)?.trim();
+  const isAdmin    = !!adminEmail && neonUser?.email?.toLowerCase() === adminEmail.toLowerCase();
 
   const hasFile = !!fileName;
 
@@ -282,14 +305,20 @@ export default function App() {
   // -------------------------------------------------------------------------
   // Clear everything — back to upload screen
   // -------------------------------------------------------------------------
-  const handleClear = () => {
+  const handleClear = useCallback(() => {
     setFileName('');
     setPageImages([]);
     setPageResults({});
     setFromPage(1);
     setToPage(1);
     setProcessingStatus('');
-  };
+  }, []);
+
+  const handleShowAdmin   = useCallback(() => setShowAdmin(true), []);
+  const handleChatToggle  = useCallback(() => setChatOpen(o => !o), []);
+  const handleShowLibrary = useCallback(() => setShowLibrary(true), []);
+  const handleError       = useCallback((msg: string) => setToast({ id: Date.now().toString(), message: msg, variant: 'error' }), []);
+  const handleDismissToast = useCallback(() => setToast(null), []);
 
   // -------------------------------------------------------------------------
   // Clamp page range inputs
@@ -306,6 +335,23 @@ export default function App() {
   if (!neonUser) {
     return <AuthScreen onSuccess={handleAuthSuccess} />;
   }
+  if (isBlocked) {
+    return (
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'100vh', gap:'1rem', background:'var(--t-bg)', color:'var(--t-text)' }}>
+        <div style={{ fontSize:'2.5rem' }}>🚫</div>
+        <h2 style={{ fontSize:'1.25rem', fontWeight:700, margin:0 }}>Account Suspended</h2>
+        <p style={{ color:'var(--t-text3)', fontSize:'0.875rem', margin:0, textAlign:'center', maxWidth:'320px' }}>
+          Your account has been suspended by an administrator.<br />Please contact support if you believe this is a mistake.
+        </p>
+        <button
+          style={{ marginTop:'0.5rem', padding:'0.5rem 1.25rem', borderRadius:'0.5rem', background:'#f1f5f9', color:'#64748b', fontSize:'0.8rem', cursor:'pointer' }}
+          onClick={handleSignOut}
+        >
+          Sign out
+        </button>
+      </div>
+    );
+  }
 
   // ── Upload / landing screen ──────────────────────────────────────────────
   if (!hasFile) {
@@ -316,11 +362,17 @@ export default function App() {
           onLoadDoc={handleLoad}
           isProcessing={isProcessing}
           processingStatus={processingStatus}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          user={neonUser}
+          onSignOut={handleSignOut}
+          isAdmin={isAdmin}
+          onOpenAdmin={handleShowAdmin}
         />
+        {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
         <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 w-[350px] pointer-events-none">
-          {toast && <Toast key={toast.id} toast={toast} onDismiss={() => setToast(null)} />}
+          {toast && <Toast key={toast.id} toast={toast} onDismiss={handleDismissToast} />}
         </div>
-        <FloatingChat />
       </>
     );
   }
@@ -347,12 +399,16 @@ export default function App() {
         onForceExtract={() => processPages(true)}
         onSave={handleSave}
         onClear={handleClear}
-        onShowLibrary={() => setShowLibrary(true)}
+        onShowLibrary={handleShowLibrary}
         onDownloadPDF={handleDownloadPDF}
         onImageQualityChange={setImageQuality}
         onActivePageChange={setActivePage}
         onSignOut={handleSignOut}
-        onError={(msg) => setToast({ id: Date.now().toString(), message: msg, variant: 'error' })}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        chatOpen={chatOpen}
+        onChatToggle={handleChatToggle}
+        onError={handleError}
       />
 
       {/* ── Hidden PDF export container ─────────────────────────────────
@@ -403,12 +459,14 @@ export default function App() {
 
       {/* Toast notifications */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 w-[350px] pointer-events-none">
-        {toast && <Toast key={toast.id} toast={toast} onDismiss={() => setToast(null)} />}
+        {toast && <Toast key={toast.id} toast={toast} onDismiss={handleDismissToast} />}
       </div>
 
-      {/* Floating AI chat — with page edit context */}
+      {/* Floating AI chat — controlled by dock button */}
       <FloatingChat
         user={neonUser}
+        open={chatOpen}
+        onOpenChange={setChatOpen}
         editContext={pageResults[activePage] ? {
           pageNumber: activePage,
           html:       pageResults[activePage],
