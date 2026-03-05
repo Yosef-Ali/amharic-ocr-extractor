@@ -16,14 +16,14 @@ async function uploadToBlob(base64: string, filename: string): Promise<string | 
     });
     if (!res.ok) return null;
     const { url } = await res.json() as { url: string };
-    return url ?? null;
+    return url;
   } catch {
     return null;
   }
 }
 
-/** Returns true if the string looks like a URL (already uploaded). */
-const isUrl = (s: string) => s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/');
+/** Returns true if the string is already a remote URL (i.e. already uploaded to Blob). */
+const isUrl = (s: string) => s.startsWith('https://') || s.startsWith('http://');
 
 // ---------------------------------------------------------------------------
 // Auth context — set by App.tsx when a user signs in/out
