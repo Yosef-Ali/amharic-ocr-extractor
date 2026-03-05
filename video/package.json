@@ -1,0 +1,26 @@
+{
+  "name": "video",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "preview": "remotion studio src/index.tsx",
+    "render": "remotion render src/index.tsx Walkthrough --output ../docs/amharic-ocr-walkthrough.mp4",
+    "screenshots": "node scripts/take-screenshots.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@remotion/cli": "^4.0.434",
+    "@remotion/transitions": "^4.0.434",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "puppeteer": "^24.38.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "remotion": "^4.0.434",
+    "typescript": "^5.9.3"
+  }
+}
