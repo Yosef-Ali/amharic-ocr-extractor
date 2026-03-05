@@ -262,8 +262,9 @@ export function cropPageRegion(
       resolve(canvas.toDataURL('image/jpeg', 0.92));
     };
 
+    img.crossOrigin = 'anonymous';
     img.onerror = () => reject(new Error('Failed to load page image for cropping'));
-    img.src = `data:image/jpeg;base64,${pageBase64}`;
+    img.src = pageBase64.startsWith('http') ? pageBase64 : `data:image/jpeg;base64,${pageBase64}`;
   });
 }
 

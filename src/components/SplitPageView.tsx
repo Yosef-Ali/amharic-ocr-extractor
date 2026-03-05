@@ -332,7 +332,8 @@ export default function SplitPageView({
             <div className="relative select-none">
               <img
                 ref={imgRef}
-                src={`data:image/jpeg;base64,${pageImage}`}
+                src={pageImage.startsWith('http') ? pageImage : `data:image/jpeg;base64,${pageImage}`}
+                crossOrigin="anonymous"
                 alt={`Page ${pageNumber} original`}
                 className="w-full h-auto block"
                 draggable={false}
