@@ -1,23 +1,20 @@
 import { put } from '@vercel/blob';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-export const config = { runtime: 'edge' };
-
-export default async function handler(req: Request): Promise<Response> {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { filename, data } = await req.json() as { filename: string; data: string };
+  const { filename, data } = req.body as { filename: string; data: string };
 
-  // Decode base64 to bytes (Edge-compatible — no Buffer)
+  // Decode base64 → Blob (no Buffer needed; Blob is available in Node 18+)
   const binary = atob(data);
   const bytes  = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const file = new Blob([bytes], { type: 'image/jpeg' });
 
-  const file   = new Blob([bytes], { type: 'image/jpeg' });
-  const result = await put(filename, file, {
-    access: 'public',
-  });
+  const result = await put(filename, file, { access: 'public' });
 
-  return Response.json({ url: result.url });
+  return res.json({ url: result.url });
 }
