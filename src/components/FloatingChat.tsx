@@ -1,14 +1,18 @@
 import {
-  useState, useRef, useEffect, useCallback, type KeyboardEvent,
-  type ClipboardEvent, type DragEvent,
+  useState, useRef, useEffect, useCallback,
+  type KeyboardEvent, type ClipboardEvent, type DragEvent,
 } from 'react';
 import {
-  MessageSquare, X, Send, Paperclip, Trash2, Bot, User, ImageIcon,
-  Pencil, MessageCircle, CheckCircle2,
+  MessageSquare, X, Send, Paperclip, Trash2, Bot, User,
+  ImageIcon, Pencil, MessageCircle, Copy, Check, Lock,
+  FileText, Sparkles, Zap,
 } from 'lucide-react';
-import { chatWithAI, editPageWithChat, type ChatTurn } from '../services/geminiService';
+import {
+  chatWithAI, editPageWithChat,
+  type ChatTurn, type CanvasContext,
+} from '../services/geminiService';
 
-// ── Edit context ─────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 export interface EditContext {
   pageNumber: number;
   html:       string;
@@ -16,8 +20,66 @@ export interface EditContext {
   onEdit:     (html: string) => void;
 }
 
-// ─── helpers ────────────────────────────────────────────────────────────────
+interface Props {
+  editContext?: EditContext;
+  user?: { id: string; email?: string; name?: string } | null;
+}
 
+// ── Suggestion chips ──────────────────────────────────────────────────────────
+const CANVAS_CHIPS = [
+  { icon: '🔍', text: 'What does this page say?' },
+  { icon: '🌐', text: 'Translate this page to English' },
+  { icon: '📋', text: 'Summarize the key points' },
+  { icon: '🔤', text: "What is the document's title?" },
+];
+
+const GENERAL_CHIPS = [
+  { icon: '📄', text: 'How does OCR extraction work?' },
+  { icon: '✂️', text: 'How do I crop an image region?' },
+  { icon: '📤', text: 'How do I export to PDF?' },
+  { icon: '🌍', text: 'What languages are supported?' },
+];
+
+// ── Markdown renderer ─────────────────────────────────────────────────────────
+function inlineMd(text: string): React.ReactNode[] {
+  const tokens = text.split(/(\*\*[^*\n]+\*\*|\*[^*\n]+\*|`[^`\n]+`)/);
+  return tokens.map((t, i) => {
+    if (t.startsWith('**') && t.endsWith('**')) return <strong key={i}>{t.slice(2, -2)}</strong>;
+    if (t.startsWith('*')  && t.endsWith('*'))  return <em key={i}>{t.slice(1, -1)}</em>;
+    if (t.startsWith('`')  && t.endsWith('`'))  return <code key={i} className="fc-md-code">{t.slice(1, -1)}</code>;
+    return t;
+  });
+}
+
+function MarkdownText({ text }: { text: string }) {
+  const paragraphs = text.trim().split(/\n{2,}/);
+  return (
+    <div className="fc-md">
+      {paragraphs.map((para, i) => {
+        const lines = para.split('\n');
+        const listLines = lines.filter(l => /^[-*•]\s/.test(l.trim()));
+        if (listLines.length > 0 && listLines.length === lines.filter(l => l.trim()).length) {
+          return (
+            <ul key={i} className="fc-md-ul">
+              {listLines.map((l, j) => (
+                <li key={j}>{inlineMd(l.replace(/^[-*•]\s*/, ''))}</li>
+              ))}
+            </ul>
+          );
+        }
+        return (
+          <p key={i} className="fc-md-p">
+            {lines.map((line, j) => (
+              <span key={j}>{inlineMd(line)}{j < lines.length - 1 && <br />}</span>
+            ))}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((res, rej) => {
     const reader = new FileReader();
@@ -27,33 +89,24 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-function isImageFile(file: File) {
-  return file.type.startsWith('image/');
-}
+// ── Component ─────────────────────────────────────────────────────────────────
+export default function FloatingChat({ editContext, user }: Props) {
+  const [open, setOpen]             = useState(false);
+  const [messages, setMessages]     = useState<ChatTurn[]>([]);
+  const [input, setInput]           = useState('');
+  const [attachment, setAttachment] = useState<string | null>(null);
+  const [attachName, setAttachName] = useState('');
+  const [loading, setLoading]       = useState(false);
+  const [dragging, setDragging]     = useState(false);
+  const [mode, setMode]             = useState<'chat' | 'edit'>('chat');
+  const [copiedIdx, setCopiedIdx]   = useState<number | null>(null);
 
-// ─── component ──────────────────────────────────────────────────────────────
-
-interface Props {
-  editContext?: EditContext;
-}
-
-export default function FloatingChat({ editContext }: Props) {
-  const [open, setOpen]               = useState(false);
-  const [messages, setMessages]       = useState<ChatTurn[]>([]);
-  const [input, setInput]             = useState('');
-  const [attachment, setAttachment]   = useState<string | null>(null); // data URL
-  const [attachName, setAttachName]   = useState('');
-  const [loading, setLoading]         = useState(false);
-  const [dragging, setDragging]       = useState(false);
-  // 'edit' mode uses editPageWithChat; 'chat' mode is general Q&A
-  const [mode, setMode]               = useState<'chat' | 'edit'>('chat');
-
-  // Switch to edit mode automatically when editContext becomes available
+  // Switch to edit mode when editContext arrives
   useEffect(() => {
     if (editContext) setMode('edit');
   }, [!!editContext]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Clear edit-mode conversation when the active page changes
+  // Clear edit conversation when active page changes
   const prevPageRef = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (editContext && editContext.pageNumber !== prevPageRef.current) {
@@ -66,28 +119,24 @@ export default function FloatingChat({ editContext }: Props) {
   const textareaRef    = useRef<HTMLTextAreaElement>(null);
   const fileInputRef   = useRef<HTMLInputElement>(null);
 
-  // Auto-scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  // Auto-focus textarea when panel opens
   useEffect(() => {
-    if (open) setTimeout(() => textareaRef.current?.focus(), 60);
-  }, [open]);
+    if (open && user) setTimeout(() => textareaRef.current?.focus(), 60);
+  }, [open, user]);
 
-  // Auto-grow textarea
   const growTextarea = () => {
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = 'auto';
-    ta.style.height = Math.min(ta.scrollHeight, 96) + 'px'; // max ~4 lines
+    ta.style.height = Math.min(ta.scrollHeight, 96) + 'px';
   };
 
-  // ── image attachment ──────────────────────────────────────────────────────
-
+  // ── Attachment ───────────────────────────────────────────────────────────
   const attachImage = useCallback(async (file: File) => {
-    if (!isImageFile(file)) return;
+    if (!file.type.startsWith('image/')) return;
     const dataUrl = await fileToDataUrl(file);
     setAttachment(dataUrl);
     setAttachName(file.name);
@@ -100,8 +149,7 @@ export default function FloatingChat({ editContext }: Props) {
   };
 
   const handlePaste = async (e: ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = Array.from(e.clipboardData.items);
-    const imgItem = items.find(it => it.type.startsWith('image/'));
+    const imgItem = Array.from(e.clipboardData.items).find(it => it.type.startsWith('image/'));
     if (imgItem) {
       e.preventDefault();
       const file = imgItem.getAsFile();
@@ -109,31 +157,24 @@ export default function FloatingChat({ editContext }: Props) {
     }
   };
 
-  // ── drag & drop onto panel ────────────────────────────────────────────────
-
-  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setDragging(true);
-  };
+  const handleDragOver  = (e: DragEvent<HTMLDivElement>) => { e.preventDefault(); setDragging(true); };
   const handleDragLeave = () => setDragging(false);
-  const handleDrop = async (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setDragging(false);
+  const handleDrop      = async (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault(); setDragging(false);
     const file = e.dataTransfer.files[0];
     if (file) await attachImage(file);
   };
 
-  // ── send ─────────────────────────────────────────────────────────────────
+  // ── Send ─────────────────────────────────────────────────────────────────
+  const canSend = (input.trim() || attachment) && !loading && !!user;
 
-  const canSend = (input.trim() || attachment) && !loading;
+  const send = async (overrideText?: string) => {
+    const text = overrideText ?? input.trim();
+    if ((!text && !attachment) || loading || !user) return;
 
-  const send = async () => {
-    if (!canSend) return;
-
-    const instruction = input.trim();
     const userTurn: ChatTurn = {
       role:         'user',
-      text:         instruction,
+      text,
       imageDataUrl: attachment ?? undefined,
     };
 
@@ -142,35 +183,28 @@ export default function FloatingChat({ editContext }: Props) {
     setAttachment(null);
     setAttachName('');
     setLoading(true);
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
 
     try {
       if (mode === 'edit' && editContext) {
-        // Edit page mode — apply instruction to active page HTML
-        const newHtml = await editPageWithChat(
-          editContext.image,
-          editContext.html,
-          instruction,
-        );
+        const newHtml = await editPageWithChat(editContext.image, editContext.html, text);
         editContext.onEdit(newHtml);
         setMessages(prev => [
           ...prev,
-          { role: 'ai', text: `✅ Page ${editContext.pageNumber} updated! The changes have been applied to your document.` },
+          { role: 'ai', text: `✅ Page ${editContext.pageNumber} updated. Continue editing or switch to Chat to ask questions.` },
         ]);
       } else {
-        // General chat mode
-        const reply = await chatWithAI([...messages, userTurn]);
+        // Chat mode — pass canvas context so AI can see the current page
+        const canvasCtx: CanvasContext | undefined = editContext
+          ? { pageNumber: editContext.pageNumber, html: editContext.html, image: editContext.image }
+          : undefined;
+        const reply = await chatWithAI([...messages, userTurn], canvasCtx);
         setMessages(prev => [...prev, { role: 'ai', text: reply }]);
       }
     } catch (err) {
       setMessages(prev => [
         ...prev,
-        {
-          role: 'ai',
-          text: `⚠️ ${(err as Error).message ?? 'Something went wrong. Please try again.'}`,
-        },
+        { role: 'ai', text: `⚠️ ${(err as Error).message ?? 'Something went wrong. Please try again.'}` },
       ]);
     } finally {
       setLoading(false);
@@ -178,14 +212,20 @@ export default function FloatingChat({ editContext }: Props) {
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
-  // ─── render ───────────────────────────────────────────────────────────────
+  // ── Copy AI message ───────────────────────────────────────────────────────
+  const copyMessage = (text: string, idx: number) => {
+    navigator.clipboard.writeText(text);
+    setCopiedIdx(idx);
+    setTimeout(() => setCopiedIdx(null), 2000);
+  };
 
+  // ── Chips ─────────────────────────────────────────────────────────────────
+  const chips = (mode === 'chat' && editContext) ? CANVAS_CHIPS : GENERAL_CHIPS;
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
       {/* ── FAB ── */}
@@ -217,27 +257,29 @@ export default function FloatingChat({ editContext }: Props) {
             <span className="fc-header-title">AI Assistant</span>
             <span className="fc-header-sub">Gemini</span>
 
-            {/* Mode toggle pills (only when editContext is available) */}
             {editContext && (
               <div className="fc-mode-pills">
                 <button
                   className={`fc-mode-pill${mode === 'chat' ? ' active' : ''}`}
                   onClick={() => { setMode('chat'); setMessages([]); }}
-                  title="General chat"
                 >
                   <MessageCircle size={10} /> Chat
                 </button>
                 <button
                   className={`fc-mode-pill${mode === 'edit' ? ' active' : ''}`}
                   onClick={() => { setMode('edit'); setMessages([]); }}
-                  title={`Edit page ${editContext.pageNumber}`}
                 >
                   <Pencil size={10} /> Edit p.{editContext.pageNumber}
                 </button>
               </div>
             )}
 
-            <button className="fc-header-clear" onClick={() => setMessages([])} title="Clear conversation" disabled={messages.length === 0}>
+            <button
+              className="fc-header-clear"
+              onClick={() => setMessages([])}
+              title="Clear conversation"
+              disabled={messages.length === 0}
+            >
               <Trash2 size={12} />
             </button>
             <button className="fc-header-close" onClick={() => setOpen(false)} title="Close">
@@ -245,127 +287,181 @@ export default function FloatingChat({ editContext }: Props) {
             </button>
           </div>
 
-          {/* Messages */}
-          <div className="fc-messages">
-            {messages.length === 0 && (
-              <div className="fc-empty">
-                {mode === 'edit' && editContext
-                  ? <><CheckCircle2 size={28} className="fc-empty-icon" style={{ color: '#34d399' }} />
-                      <p>Tell me how to redesign page {editContext.pageNumber}.<br />
-                        <span style={{ fontSize: '0.72rem', color: '#475569' }}>
-                          e.g. "make it two columns" · "remove all borders" · "increase font size"
-                        </span>
-                      </p></>
-                  : <><Bot size={28} className="fc-empty-icon" />
-                      <p>Ask anything about your document.<br />You can also paste or drop an image.</p></>
-                }
-              </div>
-            )}
+          {/* Canvas context bar */}
+          {editContext && mode === 'chat' && (
+            <div className="fc-context-bar">
+              <FileText size={10} />
+              <span>Page {editContext.pageNumber} loaded as context</span>
+              <span className="fc-context-dot" />
+              <span style={{ color: '#34d399' }}>Canvas-aware</span>
+            </div>
+          )}
 
-            {messages.map((msg, i) => (
-              <div key={i} className={`fc-msg fc-msg--${msg.role}`}>
-                <div className="fc-msg-avatar">
-                  {msg.role === 'user' ? <User size={11} /> : <Bot size={11} />}
-                </div>
-                <div className="fc-msg-body">
-                  {msg.imageDataUrl && (
-                    <img
-                      src={msg.imageDataUrl}
-                      alt="attachment"
-                      className="fc-msg-img"
-                    />
-                  )}
-                  {msg.text && (
-                    <p className="fc-msg-text">{msg.text}</p>
-                  )}
-                </div>
+          {/* ── Auth gate ── */}
+          {!user ? (
+            <div className="fc-auth-gate">
+              <div className="fc-auth-gate-icon">
+                <Lock size={22} />
               </div>
-            ))}
-
-            {loading && (
-              <div className="fc-msg fc-msg--ai">
-                <div className="fc-msg-avatar">
-                  <Bot size={11} />
-                </div>
-                <div className="fc-msg-body">
-                  <div className="fc-typing">
-                    <span /><span /><span />
+              <p className="fc-auth-gate-title">Sign in to use AI Assistant</p>
+              <p className="fc-auth-gate-sub">
+                The AI assistant is available to signed-in users only.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Messages */}
+              <div className="fc-messages">
+                {messages.length === 0 && (
+                  <div className="fc-empty">
+                    {mode === 'edit' && editContext ? (
+                      <>
+                        <Zap size={26} className="fc-empty-icon" style={{ color: '#fbbf24' }} />
+                        <p>Describe changes for page {editContext.pageNumber}.<br />
+                          <span style={{ fontSize: '0.68rem', color: '#475569' }}>
+                            "make it two columns" · "fix the spacing" · "increase font size"
+                          </span>
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles size={26} className="fc-empty-icon" style={{ color: '#818cf8' }} />
+                        <p>
+                          {editContext
+                            ? `Ask anything about page ${editContext.pageNumber} or your document.`
+                            : 'Ask anything about your document or OCR extraction.'}
+                        </p>
+                        <div className="fc-chips">
+                          {chips.map(chip => (
+                            <button
+                              key={chip.text}
+                              className="fc-chip"
+                              onClick={() => send(chip.text)}
+                              disabled={loading}
+                            >
+                              <span className="fc-chip-icon">{chip.icon}</span>
+                              {chip.text}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
-                </div>
+                )}
+
+                {messages.map((msg, i) => (
+                  <div key={i} className={`fc-msg fc-msg--${msg.role}`}>
+                    <div className="fc-msg-avatar">
+                      {msg.role === 'user' ? <User size={11} /> : <Bot size={11} />}
+                    </div>
+                    <div className="fc-msg-body">
+                      {msg.imageDataUrl && (
+                        <img src={msg.imageDataUrl} alt="attachment" className="fc-msg-img" />
+                      )}
+                      {msg.text && (
+                        <div className="fc-msg-bubble-wrap">
+                          {msg.role === 'ai' ? (
+                            <div className="fc-msg-text">
+                              <MarkdownText text={msg.text} />
+                            </div>
+                          ) : (
+                            <p className="fc-msg-text">{msg.text}</p>
+                          )}
+                          {msg.role === 'ai' && (
+                            <button
+                              className="fc-copy-btn"
+                              onClick={() => copyMessage(msg.text, i)}
+                              title="Copy response"
+                            >
+                              {copiedIdx === i ? <Check size={10} /> : <Copy size={10} />}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {loading && (
+                  <div className="fc-msg fc-msg--ai">
+                    <div className="fc-msg-avatar"><Bot size={11} /></div>
+                    <div className="fc-msg-body">
+                      <div className="fc-typing"><span /><span /><span /></div>
+                    </div>
+                  </div>
+                )}
+
+                <div ref={messagesEndRef} />
               </div>
-            )}
 
-            <div ref={messagesEndRef} />
-          </div>
+              {/* Drag overlay */}
+              {dragging && (
+                <div className="fc-drag-overlay">
+                  <ImageIcon size={28} />
+                  <span>Drop image to attach</span>
+                </div>
+              )}
 
-          {/* Drag overlay */}
-          {dragging && (
-            <div className="fc-drag-overlay">
-              <ImageIcon size={28} />
-              <span>Drop image to attach</span>
-            </div>
+              {/* Attachment preview */}
+              {attachment && (
+                <div className="fc-attachment">
+                  <img src={attachment} alt={attachName} className="fc-attachment-thumb" />
+                  <span className="fc-attachment-name">{attachName || 'Image'}</span>
+                  <button
+                    className="fc-attachment-remove"
+                    onClick={() => { setAttachment(null); setAttachName(''); }}
+                    title="Remove"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              )}
+
+              {/* Input row */}
+              <div className="fc-input-row">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={handleFileInput}
+                />
+                <button
+                  className={`fc-attach-btn${attachment ? ' fc-attach-btn--active' : ''}`}
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Attach image"
+                  disabled={loading}
+                >
+                  <Paperclip size={15} />
+                </button>
+                <textarea
+                  ref={textareaRef}
+                  className="fc-textarea"
+                  placeholder={
+                    mode === 'edit' && editContext
+                      ? `Describe changes for page ${editContext.pageNumber}…`
+                      : editContext
+                        ? `Ask about page ${editContext.pageNumber}… (Shift+Enter for new line)`
+                        : 'Ask anything… (Shift+Enter for new line)'
+                  }
+                  value={input}
+                  rows={1}
+                  disabled={loading}
+                  onChange={e => { setInput(e.target.value); growTextarea(); }}
+                  onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
+                />
+                <button
+                  className="fc-send-btn"
+                  onClick={() => send()}
+                  disabled={!canSend}
+                  title="Send (Enter)"
+                >
+                  <Send size={14} />
+                </button>
+              </div>
+            </>
           )}
-
-          {/* Image attachment preview */}
-          {attachment && (
-            <div className="fc-attachment">
-              <img src={attachment} alt={attachName} className="fc-attachment-thumb" />
-              <span className="fc-attachment-name">{attachName || 'Image'}</span>
-              <button
-                className="fc-attachment-remove"
-                onClick={() => { setAttachment(null); setAttachName(''); }}
-                title="Remove attachment"
-              >
-                <X size={12} />
-              </button>
-            </div>
-          )}
-
-          {/* Input row */}
-          <div className="fc-input-row">
-            {/* Hidden file input */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              style={{ display: 'none' }}
-              onChange={handleFileInput}
-            />
-            {/* Attach image button */}
-            <button
-              className={`fc-attach-btn${attachment ? ' fc-attach-btn--active' : ''}`}
-              onClick={() => fileInputRef.current?.click()}
-              title="Attach image (or paste / drop)"
-              disabled={loading}
-            >
-              <Paperclip size={15} />
-            </button>
-
-            {/* Textarea */}
-            <textarea
-              ref={textareaRef}
-              className="fc-textarea"
-              placeholder={mode === 'edit' && editContext
-                ? `Describe changes for page ${editContext.pageNumber}…`
-                : 'Ask anything… (Shift+Enter for new line)'}
-              value={input}
-              rows={1}
-              disabled={loading}
-              onChange={e => { setInput(e.target.value); growTextarea(); }}
-              onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
-            />
-
-            {/* Send */}
-            <button
-              className="fc-send-btn"
-              onClick={send}
-              disabled={!canSend}
-              title="Send (Enter)"
-            >
-              <Send size={14} />
-            </button>
-          </div>
         </div>
       )}
     </>

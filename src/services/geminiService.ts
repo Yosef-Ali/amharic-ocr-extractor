@@ -360,20 +360,45 @@ export interface ChatTurn {
   imageDataUrl?: string; // full "data:image/...;base64,..." data URL
 }
 
-export async function chatWithAI(history: ChatTurn[]): Promise<string> {
-  // Build Gemini content parts — map 'ai' → 'model' role
-  const contents = history
+/** Optional context about the document page currently open in the editor */
+export interface CanvasContext {
+  pageNumber: number;
+  html:       string;
+  image:      string;   // raw base64 JPEG (no data: prefix)
+}
+
+export async function chatWithAI(
+  history: ChatTurn[],
+  canvasContext?: CanvasContext,
+): Promise<string> {
+  type Part = { text?: string; inlineData?: { mimeType: string; data: string } };
+  type Content = { role: 'user' | 'model'; parts: Part[] };
+
+  // If a canvas page is open, inject it as a silent context exchange before history
+  const contextContents: Content[] = canvasContext ? [
+    {
+      role: 'user',
+      parts: [
+        { inlineData: { mimeType: 'image/jpeg', data: canvasContext.image } },
+        { text: `[CANVAS CONTEXT — page ${canvasContext.pageNumber}]\n${canvasContext.html.slice(0, 2500)}` },
+      ],
+    },
+    {
+      role: 'model',
+      parts: [{ text: `I can see page ${canvasContext.pageNumber}. Ready to help.` }],
+    },
+  ] : [];
+
+  const historyContents: Content[] = history
     .filter(t => t.text.trim() || t.imageDataUrl)
     .map(turn => {
-      const parts: { text?: string; inlineData?: { mimeType: string; data: string } }[] = [];
-
+      const parts: Part[] = [];
       if (turn.imageDataUrl) {
         const [header, data] = turn.imageDataUrl.split(',');
         const mimeType = header.match(/:(.*?);/)?.[1] ?? 'image/jpeg';
         parts.push({ inlineData: { mimeType, data } });
       }
       if (turn.text.trim()) parts.push({ text: turn.text });
-
       return {
         role: turn.role === 'ai' ? 'model' : 'user',
         parts: parts.length > 0 ? parts : [{ text: ' ' }],
@@ -382,13 +407,15 @@ export async function chatWithAI(history: ChatTurn[]): Promise<string> {
 
   const response = await client.models.generateContent({
     model: OCR_MODEL,
-    contents,
+    contents: [...contextContents, ...historyContents],
     config: {
       systemInstruction:
-        'You are a helpful AI assistant specializing in document processing, ' +
-        'OCR, layout analysis, and Amharic/Ethiopian language texts. ' +
-        'When shown images, analyze them carefully and describe what you see. ' +
-        'Answer questions clearly, concisely, and helpfully.',
+        'You are an intelligent AI assistant built into an Amharic document OCR extractor. ' +
+        'You help users understand, translate, summarize, and work with their scanned documents. ' +
+        'When canvas context is provided you can see the current page image and its extracted HTML — ' +
+        'use this to answer questions accurately about what the page contains. ' +
+        'Format responses with markdown: **bold**, *italic*, `code`, bullet lists with "- ". ' +
+        'Be concise, helpful, and direct. Use paragraph breaks for readability.',
     },
   });
 

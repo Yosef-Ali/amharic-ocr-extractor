@@ -408,6 +408,7 @@ export default function App() {
 
       {/* Floating AI chat — with page edit context */}
       <FloatingChat
+        user={neonUser}
         editContext={pageResults[activePage] ? {
           pageNumber: activePage,
           html:       pageResults[activePage],
