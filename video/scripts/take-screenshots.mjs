@@ -1,79 +1,95 @@
 /**
- * Takes screenshots of the running app at http://localhost:5173
- * Saves to video/public/screens/ for use by Remotion.
+ * Takes all 9 walkthrough screenshots.
+ * The app must be running at http://localhost:5175
+ * A Puppeteer browser window will open — sign in when prompted, then
+ * press Enter in the terminal to continue.
  *
  * Usage: node scripts/take-screenshots.mjs
- * Requires: npm install puppeteer (in video/ directory)
  */
 import puppeteer from 'puppeteer';
 import { mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { createInterface } from 'readline';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const OUT_DIR   = resolve(__dirname, '../public/screens');
-mkdirSync(OUT_DIR, { recursive: true });
+const OUT   = resolve(__dirname, '../public/screens');
+const PDF   = '/Users/mekdesyared/Downloads/aba temsgen/Amharic_Prayer_Book_Editable_First10.pdf';
+const BASE  = 'http://localhost:5175';
+const W     = 1920;
+const H     = 1080;
 
-const BASE   = 'http://localhost:5173';
-const WIDTH  = 1920;
-const HEIGHT = 1080;
+mkdirSync(OUT, { recursive: true });
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function waitForEnter(prompt) {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise(resolve => rl.question(prompt, () => { rl.close(); resolve(); }));
+}
 
 async function shot(page, name) {
-  await page.screenshot({ path: `${OUT_DIR}/${name}`, fullPage: false });
+  await sleep(600);
+  await page.screenshot({ path: `${OUT}/${name}`, fullPage: false });
   console.log(`  ✓ ${name}`);
 }
 
-async function wait(ms) {
-  return new Promise(r => setTimeout(r, ms));
-}
-
 (async () => {
+  // Launch Puppeteer's own Chromium — no profile conflict with your running Chrome
   const browser = await puppeteer.launch({
-    headless: false,           // set true for CI
-    defaultViewport: { width: WIDTH, height: HEIGHT },
-    args: [`--window-size=${WIDTH},${HEIGHT}`],
+    headless: false,
+    defaultViewport: { width: W, height: H },
+    args: [
+      `--window-size=${W},${H}`,
+      '--window-position=0,0',
+      '--start-maximized',
+    ],
   });
 
   const page = await browser.newPage();
-  await page.setViewport({ width: WIDTH, height: HEIGHT });
+  await page.setViewport({ width: W, height: H });
 
-  console.log('Opening app…');
-  await page.goto(BASE, { waitUntil: 'networkidle2' });
-  await wait(1500);
+  // ── Open app ──────────────────────────────────────────────────────────────
+  await page.goto(BASE, { waitUntil: 'networkidle2', timeout: 20000 });
 
-  // 1. Home screen
+  // ── 1. Home screen ────────────────────────────────────────────────────────
+  await waitForEnter('\n[1/9] SIGN IN to the app in the browser window, then come back to the HOME screen.\n      Press Enter when ready: ');
   await shot(page, 'home.png');
 
-  console.log('\nNote: remaining screenshots require manual interaction.');
-  console.log('Steps to complete:');
-  console.log('  1. Sign in, upload the Amharic Prayer Book PDF');
-  console.log('  2. Extract pages 1–4, then take screenshots manually');
-  console.log('     OR uncomment the interactive steps below after adding your credentials.\n');
+  // ── 2. Extracting ─────────────────────────────────────────────────────────
+  await waitForEnter('\n[2/9] Click "New Project" / drag a PDF onto the upload area to START uploading.\n      Wait until extraction is running (spinner / progress visible).\n      Press Enter to capture: ');
+  await shot(page, 'extracting.png');
 
-  // ── Uncomment and fill in to automate the rest ──────────────────────────
-  //
-  // await page.type('[placeholder="Email"]', 'your@email.com');
-  // await page.type('[placeholder="Password"]', 'yourpassword');
-  // await page.click('[type="submit"]');
-  // await page.waitForNavigation({ waitUntil: 'networkidle2' });
-  // await shot(page, 'home-logged-in.png');
-  //
-  // // Upload PDF via file input
-  // const [fileChooser] = await Promise.all([
-  //   page.waitForFileChooser(),
-  //   page.click('label.home-upload-drop'),
-  // ]);
-  // await fileChooser.accept(['/Users/mekdesyared/Downloads/aba temsgen/Amharic_Prayer_Book_Editable_First10.pdf']);
-  // await wait(2000);
-  // await shot(page, 'extracting.png');
-  //
-  // // Wait for extraction then navigate to page 4
-  // await page.waitForSelector('.ftb-dock', { timeout: 120000 });
-  // await shot(page, 'page4.png');
-  //
-  // ── End automated steps ─────────────────────────────────────────────────
+  // ── 3. Editor page 4 ──────────────────────────────────────────────────────
+  await waitForEnter('\n[3/9] Wait for extraction to finish so the EDITOR opens.\n      Navigate to PAGE 4 using the page arrows.\n      Press Enter to capture: ');
+  await shot(page, 'page4.png');
+
+  // ── 4. Crop drawing ───────────────────────────────────────────────────────
+  await waitForEnter('\n[4/9] On the LEFT PANEL (original scan), START DRAWING a crop selection\n      (click and drag but keep the mouse button held down).\n      Press Enter while the selection box is still being drawn: ');
+  await shot(page, 'crop-draw.png');
+
+  // ── 5. Crop selected ──────────────────────────────────────────────────────
+  await waitForEnter('\n[5/9] RELEASE the mouse — the cyan border crop selection should be visible.\n      Press Enter to capture: ');
+  await shot(page, 'crop-selected.png');
+
+  // ── 6. Enhance & Insert ───────────────────────────────────────────────────
+  await waitForEnter('\n[6/9] Click the "Enhance & Insert" button in the toolbar.\n      Wait for the AI restore to complete (image appears in the document).\n      Press Enter to capture: ');
+  await shot(page, 'crop-enhance.png');
+  await shot(page, 'crop-inserted.png');
+
+  // ── 7. AI Chat ────────────────────────────────────────────────────────────
+  await waitForEnter('\n[7/9] Click the AI CHAT button in the floating dock to open the chat panel.\n      Press Enter to capture: ');
+  await shot(page, 'ai-chat.png');
+
+  // ── 8. Export / Save ──────────────────────────────────────────────────────
+  await waitForEnter('\n[8/9] Close the chat (Escape), then click SAVE / DOWNLOAD PDF in the dock.\n      Press Enter to capture: ');
+  await shot(page, 'export.png');
+
+  console.log('\n✅ All 9 screenshots saved to:', OUT);
+  console.log('Now run:  npm run render\n');
 
   await browser.close();
-  console.log(`\nScreenshots saved to: ${OUT_DIR}`);
-  console.log('Run "npm run preview" to preview the video in Remotion Studio.');
-})();
+})().catch(err => {
+  console.error('Screenshot script failed:', err.message);
+  process.exit(1);
+});
