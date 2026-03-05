@@ -2,6 +2,30 @@ import { v4 as uuidv4 } from 'uuid';
 import { sql } from '../lib/neon';
 
 // ---------------------------------------------------------------------------
+// Vercel Blob helpers
+// ---------------------------------------------------------------------------
+
+/** Upload a raw base64 JPEG to Vercel Blob via the /api/blob-upload endpoint.
+ *  Returns the public URL, or null if the endpoint is unavailable (local dev). */
+async function uploadToBlob(base64: string, filename: string): Promise<string | null> {
+  try {
+    const res = await fetch('/api/blob-upload', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ filename, data: base64 }),
+    });
+    if (!res.ok) return null;
+    const { url } = await res.json() as { url: string };
+    return url ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Returns true if the string looks like a URL (already uploaded). */
+const isUrl = (s: string) => s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/');
+
+// ---------------------------------------------------------------------------
 // Auth context — set by App.tsx when a user signs in/out
 // ---------------------------------------------------------------------------
 let _userId: string | null = null;
@@ -38,6 +62,15 @@ export async function saveDocument(
   const userId = requireUserId();
   const id     = uuidv4();
 
+  // Upload each page image to Vercel Blob; fall back to raw base64 if unavailable.
+  const storedImages = await Promise.all(
+    pageImages.map(async (img, i) => {
+      if (isUrl(img)) return img; // already a URL — don't re-upload
+      const url = await uploadToBlob(img, `${id}/page-${i + 1}.jpg`);
+      return url ?? img;          // keep base64 if upload fails (local dev)
+    }),
+  );
+
   await sql`
     INSERT INTO documents (id, user_id, name, page_count, saved_at, updated_at)
     VALUES (${id}, ${userId}, ${name}, ${pageImages.length}, NOW(), NOW())
@@ -46,7 +79,7 @@ export async function saveDocument(
     INSERT INTO document_content (document_id, page_images, page_results)
     VALUES (
       ${id},
-      ${JSON.stringify(pageImages)}::jsonb,
+      ${JSON.stringify(storedImages)}::jsonb,
       ${JSON.stringify(pageResults)}::jsonb
     )
   `;
