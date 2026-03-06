@@ -13,11 +13,8 @@ import { fileURLToPath } from 'url';
 import { createInterface } from 'readline';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const OUT   = resolve(__dirname, '../public/screens');
-const PDF   = '/Users/mekdesyared/Downloads/aba temsgen/Amharic_Prayer_Book_Editable_First10.pdf';
-const BASE  = 'http://localhost:5175';
-const W     = 1920;
-const H     = 1080;
+const OUT  = resolve(__dirname, '../public/screens');
+const BASE = 'http://localhost:5175';
 
 mkdirSync(OUT, { recursive: true });
 
@@ -29,25 +26,28 @@ async function waitForEnter(prompt) {
 }
 
 async function shot(page, name) {
-  await sleep(600);
+  await sleep(800);
   await page.screenshot({ path: `${OUT}/${name}`, fullPage: false });
   console.log(`  ✓ ${name}`);
 }
 
 (async () => {
-  // Launch Puppeteer's own Chromium — no profile conflict with your running Chrome
+  // defaultViewport: null — lets the browser use its actual maximized window size
+  // so nothing gets clipped (no forced 1920×1080 that may exceed your display)
   const browser = await puppeteer.launch({
     headless: false,
-    defaultViewport: { width: W, height: H },
+    defaultViewport: null,
     args: [
-      `--window-size=${W},${H}`,
-      '--window-position=0,0',
       '--start-maximized',
+      '--window-position=0,0',
     ],
   });
 
   const page = await browser.newPage();
-  await page.setViewport({ width: W, height: H });
+  // Maximize on macOS via CDP
+  const session = await page.createCDPSession();
+  const { windowId } = await session.send('Browser.getWindowForTarget');
+  await session.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'maximized' } });
 
   // ── Open app ──────────────────────────────────────────────────────────────
   await page.goto(BASE, { waitUntil: 'networkidle2', timeout: 20000 });
