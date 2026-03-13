@@ -4,10 +4,41 @@ import { Trash2, X, Copy } from 'lucide-react';
 import ImageEditModal, { type ImageEditTarget } from './ImageEditModal';
 import { editImage, type ImageGenOptions } from '../services/geminiService';
 
+// ── Undo / Redo history stack ────────────────────────────────────────────────
+const MAX_HISTORY = 80;
+interface UndoStack {
+  past: string[];
+  future: string[];
+}
+function pushUndo(stack: UndoStack, html: string): UndoStack {
+  const past = [...stack.past, html].slice(-MAX_HISTORY);
+  return { past, future: [] };
+}
+function undo(stack: UndoStack, current: string): { stack: UndoStack; html: string | null } {
+  if (stack.past.length === 0) return { stack, html: null };
+  const past = [...stack.past];
+  const prev = past.pop()!;
+  return { stack: { past, future: [current, ...stack.future].slice(0, MAX_HISTORY) }, html: prev };
+}
+function redo(stack: UndoStack, current: string): { stack: UndoStack; html: string | null } {
+  if (stack.future.length === 0) return { stack, html: null };
+  const future = [...stack.future];
+  const next = future.shift()!;
+  return { stack: { past: [...stack.past, current], future }, html: next };
+}
+
 // ── Public handle — passed via docHandle prop (avoids forwardRef complexity) ──
 export interface DocumentPageHandle {
   /** Insert a data-URL image. Returns true if auto-placed, false if ghost mode needed. */
   insertImage: (dataUrl: string, desc: string) => boolean;
+  /** Undo last edit — returns true if undo was applied */
+  undo: () => boolean;
+  /** Redo last undone edit — returns true if redo was applied */
+  redo: () => boolean;
+  /** Whether undo is available */
+  canUndo: () => boolean;
+  /** Whether redo is available */
+  canRedo: () => boolean;
 }
 
 // ── Element style snapshot ────────────────────────────────────────────────────
@@ -116,6 +147,27 @@ export default function DocumentPage({
 
   const [editTarget,  setEditTarget]  = useState<ImageEditTarget | null>(null);
 
+  // ── Undo / Redo ────────────────────────────────────────────────────────────
+  const undoStackRef = useRef<UndoStack>({ past: [], future: [] });
+  const isUndoRedoRef = useRef(false);     // flag to skip re-pushing during undo/redo
+  const inputTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSnapshotRef = useRef<string>('');
+
+  // Snapshot current HTML into undo history (debounced on input)
+  const snapshotForUndo = useCallback(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    const cur = el.innerHTML;
+    if (cur === lastSnapshotRef.current) return;
+    undoStackRef.current = pushUndo(undoStackRef.current, lastSnapshotRef.current);
+    lastSnapshotRef.current = cur;
+  }, []);
+
+  // Initialize last snapshot when html prop arrives
+  useEffect(() => {
+    if (html && !lastSnapshotRef.current) lastSnapshotRef.current = html;
+  }, [html]);
+
   // Action-bar position + tag
   const [actionBar, setActionBar] = useState<{
     x: number; y: number; below: boolean; tag: string;
@@ -138,8 +190,16 @@ export default function DocumentPage({
 
   // ── Sync HTML into contentEditable ────────────────────────────────────────
   useEffect(() => {
+    if (isUndoRedoRef.current) return;   // skip during undo/redo
     const el = editorRef.current;
-    if (el && el.innerHTML !== html) el.innerHTML = html;
+    if (el && el.innerHTML !== html) {
+      // Push previous state to undo stack so external edits (AI agent) are undoable
+      if (lastSnapshotRef.current && lastSnapshotRef.current !== html) {
+        undoStackRef.current = pushUndo(undoStackRef.current, lastSnapshotRef.current);
+      }
+      el.innerHTML = html;
+      lastSnapshotRef.current = html;
+    }
   }, [html]);
 
   // ── Expose handle via docHandle prop ─────────────────────────────────────
@@ -190,6 +250,34 @@ export default function DocumentPage({
         // No suitable position found — caller should use ghost mode
         return false;
       },
+      undo() {
+        const el = editorRef.current;
+        if (!el) return false;
+        const result = undo(undoStackRef.current, el.innerHTML);
+        if (result.html === null) return false;
+        undoStackRef.current = result.stack;
+        isUndoRedoRef.current = true;
+        el.innerHTML = result.html;
+        lastSnapshotRef.current = result.html;
+        onEdit(pageNumber, result.html);
+        requestAnimationFrame(() => { isUndoRedoRef.current = false; });
+        return true;
+      },
+      redo() {
+        const el = editorRef.current;
+        if (!el) return false;
+        const result = redo(undoStackRef.current, el.innerHTML);
+        if (result.html === null) return false;
+        undoStackRef.current = result.stack;
+        isUndoRedoRef.current = true;
+        el.innerHTML = result.html;
+        lastSnapshotRef.current = result.html;
+        onEdit(pageNumber, result.html);
+        requestAnimationFrame(() => { isUndoRedoRef.current = false; });
+        return true;
+      },
+      canUndo: () => undoStackRef.current.past.length > 0,
+      canRedo: () => undoStackRef.current.future.length > 0,
     };
     return () => { if (docHandle) docHandle.current = null; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -440,7 +528,81 @@ export default function DocumentPage({
   }, [selectionMode]);
 
   const handleBlur = () => {
-    if (editorRef.current) onEdit(pageNumber, editorRef.current.innerHTML);
+    if (editorRef.current) {
+      snapshotForUndo();
+      onEdit(pageNumber, editorRef.current.innerHTML);
+    }
+  };
+
+  // ── Track input for undo history (debounced) ──────────────────────────────
+  const handleInput = () => {
+    if (isUndoRedoRef.current) return;
+    if (inputTimerRef.current) clearTimeout(inputTimerRef.current);
+    inputTimerRef.current = setTimeout(() => {
+      snapshotForUndo();
+    }, 400);
+  };
+
+  // ── Undo / Redo / Cut / Paste keyboard handler ────────────────────────────
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (selectionMode) return;
+    const mod = e.ctrlKey || e.metaKey;
+
+    // Undo: Ctrl+Z
+    if (mod && e.key === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      const el = editorRef.current;
+      if (!el) return;
+      const result = undo(undoStackRef.current, el.innerHTML);
+      if (result.html !== null) {
+        undoStackRef.current = result.stack;
+        isUndoRedoRef.current = true;
+        el.innerHTML = result.html;
+        lastSnapshotRef.current = result.html;
+        onEdit(pageNumber, result.html);
+        // Clear flag after React re-render so useEffect won't overwrite
+        requestAnimationFrame(() => { isUndoRedoRef.current = false; });
+      }
+      return;
+    }
+
+    // Redo: Ctrl+Shift+Z or Ctrl+Y
+    if (mod && ((e.key === 'z' && e.shiftKey) || e.key === 'y')) {
+      e.preventDefault();
+      const el = editorRef.current;
+      if (!el) return;
+      const result = redo(undoStackRef.current, el.innerHTML);
+      if (result.html !== null) {
+        undoStackRef.current = result.stack;
+        isUndoRedoRef.current = true;
+        el.innerHTML = result.html;
+        lastSnapshotRef.current = result.html;
+        onEdit(pageNumber, result.html);
+        // Clear flag after React re-render so useEffect won't overwrite
+        requestAnimationFrame(() => { isUndoRedoRef.current = false; });
+      }
+      return;
+    }
+
+    // Cut: Ctrl+X — let browser handle, then snapshot
+    if (mod && e.key === 'x') {
+      // Don't preventDefault — let browser do the cut
+      setTimeout(() => {
+        snapshotForUndo();
+        if (editorRef.current) onEdit(pageNumber, editorRef.current.innerHTML);
+      }, 50);
+      return;
+    }
+
+    // Paste: Ctrl+V — let browser handle, then snapshot
+    if (mod && e.key === 'v') {
+      // Don't preventDefault — let browser do the paste
+      setTimeout(() => {
+        snapshotForUndo();
+        if (editorRef.current) onEdit(pageNumber, editorRef.current.innerHTML);
+      }, 50);
+      return;
+    }
   };
 
   // ── AI image edit ─────────────────────────────────────────────────────────
@@ -513,6 +675,8 @@ export default function DocumentPage({
           contentEditable={!selectionMode}
           suppressContentEditableWarning
           onBlur={handleBlur}
+          onInput={handleInput}
+          onKeyDown={handleKeyDown}
           spellCheck={false}
           className={`document-page relative bg-white focus:outline-none flex-1 ${compact ? 'overflow-y-auto rounded-b-xl' : 'overflow-hidden mx-auto rounded-[2px]'}${selectionMode ? ' sel-mode' : ''}`}
           style={{

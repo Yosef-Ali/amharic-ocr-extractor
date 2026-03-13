@@ -1,22 +1,30 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  ChevronUp, ChevronDown, ChevronRight, LayoutGrid, Type, Columns3,
+  ChevronDown, ChevronRight, ChevronUp,
+  LayoutGrid, Type, Columns3,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  Italic, Underline, Strikethrough, FileText, Pilcrow, Image, Scissors, Sparkles, X, Loader2,
+  Italic, Underline, Strikethrough, FileText, Pilcrow, Image,
+  Scissors, Sparkles, X, Loader2,
+  Plus, Minus, Eye, EyeOff, Diamond, Download,
+  AlignStartVertical, AlignCenterVertical, AlignEndVertical,
+  AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
+  Square, Maximize2, Layers,
+  Settings2, FlipHorizontal,
 } from 'lucide-react';
 import { type ElementStyles } from '../DocumentPage';
 import { useScrub } from '../../hooks/useScrub';
+import { type Theme } from '../../hooks/useTheme';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 export interface PageLayout {
-  marginT:    number;  // mm
-  marginR:    number;  // mm
-  marginB:    number;  // mm
-  marginL:    number;  // mm
+  marginT:    number;
+  marginR:    number;
+  marginB:    number;
+  marginL:    number;
   columns:    1 | 2 | 3 | 4;
-  colGap:     number;  // rem
-  fontSize:   number;  // rem
-  lineHeight: number;  // unitless
+  colGap:     number;
+  fontSize:   number;
+  lineHeight: number;
 }
 
 export const DEFAULT_LAYOUT: PageLayout = {
@@ -35,77 +43,119 @@ export function layoutToStyle(layout: PageLayout): React.CSSProperties {
   };
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-function parsePx(val: string): number {
-  return parseFloat(val) || 0;
-}
-function parseUnitless(val: string): number {
-  return parseFloat(val) || 1.6;
-}
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function parsePx(val: string): number  { return parseFloat(val) || 0; }
+function parseUnitless(val: string): number { return parseFloat(val) || 1.6; }
 function parseLetterSpacing(val: string): number {
   if (!val || val === 'normal') return 0;
   return parseFloat(val) || 0;
 }
 
-// ── Collapsible section header ───────────────────────────────────────────
-function SectionHead({ icon, label, open, onToggle }: {
-  icon: React.ReactNode; label: string;
-  open: boolean; onToggle: () => void;
+// ── Props ─────────────────────────────────────────────────────────────────
+interface Props {
+  layout:                PageLayout;
+  elementStyles?:        ElementStyles | null;
+  onChange:              (layout: PageLayout) => void;
+  onElementStyleChange?: (patch: Record<string, string>) => void;
+  onTagChange?:          (newTag: string) => void;
+  theme?:                Theme;
+  onToggleTheme?:        () => void;
+  onDownloadPDF?:        () => void;
+}
+
+type InspTab = 'page' | 'paragraph' | 'image';
+type ExportFormat = 'PDF' | 'PNG' | 'SVG';
+type ExportScale = '1x' | '2x' | '3x';
+
+interface CropState {
+  active:      boolean;
+  cropUrl?:    string;
+  pageNumber?: number;
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────
+
+/** Figma-style section header: label left, + button right */
+function SectionHd({ label, onAdd, onRemove, bold }: {
+  label: string; onAdd?: () => void; onRemove?: () => void; bold?: boolean;
 }) {
   return (
-    <button className="insp-section-toggle" onClick={onToggle}>
-      {icon} {label}
-      <ChevronRight
-        size={10}
-        className={`insp-chevron${open ? ' insp-chevron--open' : ''}`}
-      />
-    </button>
+    <div className="fi-section-hd">
+      <span className={`fi-section-title${bold ? ' fi-section-title--bold' : ''}`}>{label}</span>
+      {onAdd    && <button className="fi-hd-btn" onClick={onAdd}    title={`Add ${label}`}><Plus  size={13} /></button>}
+      {onRemove && <button className="fi-hd-btn" onClick={onRemove} title={`Remove ${label}`}><Minus size={13} /></button>}
+    </div>
   );
 }
 
-// ── Stepper input ─────────────────────────────────────────────────────────
-interface StepperProps {
-  label:    string;
-  value:    number;
-  min:      number;
-  max:      number;
-  step:     number;
-  unit?:    string;
-  onChange: (v: number) => void;
+/** Compact XY input pair */
+function XYField({ labelX, valueX, labelY, valueY, onChangeX, onChangeY, unit }: {
+  labelX: string; valueX: number;
+  labelY: string; valueY: number;
+  onChangeX: (v: number) => void;
+  onChangeY: (v: number) => void;
+  unit?: string;
+}) {
+  return (
+    <div className="fi-xy-row">
+      <label className="fi-xy-field">
+        <span className="fi-xy-label">{labelX}</span>
+        <input
+          type="number" className="fi-xy-input" value={valueX}
+          onChange={e => onChangeX(+e.target.value)}
+        />
+        {unit && <span className="fi-xy-unit">{unit}</span>}
+      </label>
+      <label className="fi-xy-field">
+        <span className="fi-xy-label">{labelY}</span>
+        <input
+          type="number" className="fi-xy-input" value={valueY}
+          onChange={e => onChangeY(+e.target.value)}
+        />
+        {unit && <span className="fi-xy-unit">{unit}</span>}
+      </label>
+    </div>
+  );
 }
 
-function Stepper({ label, value, min, max, step, unit, onChange }: StepperProps) {
+/** Single compact input field */
+function SingleField({ label, value, onChange, unit, readOnly }: {
+  label: string; value: number | string; onChange?: (v: number) => void;
+  unit?: string; readOnly?: boolean;
+}) {
+  return (
+    <label className="fi-single-field">
+      <span className="fi-xy-label">{label}</span>
+      <input
+        type="number" className="fi-xy-input" value={value}
+        readOnly={readOnly}
+        onChange={e => onChange?.(+e.target.value)}
+      />
+      {unit && <span className="fi-xy-unit">{unit}</span>}
+    </label>
+  );
+}
+
+/** Stepper for scrub-enabled inputs */
+function Stepper({ label, value, min, max, step, unit, onChange }: {
+  label: string; value: number; min: number; max: number;
+  step: number; unit?: string; onChange: (v: number) => void;
+}) {
   const clamp = (v: number) => Math.max(min, Math.min(max, parseFloat(v.toFixed(2))));
   const scrub = useScrub({ value, min, max, step, onChange: v => onChange(clamp(v)) });
   return (
     <div className="insp-field">
       <span className={`insp-field-label ${scrub.labelProps.className}`}
-        onPointerDown={scrub.labelProps.onPointerDown}
-        style={scrub.labelProps.style}
+        onPointerDown={scrub.labelProps.onPointerDown} style={scrub.labelProps.style}
       >{label}</span>
       <div className="insp-stepper">
-        <button
-          className="insp-step-btn"
-          onClick={() => onChange(clamp(value - step))}
-          tabIndex={-1}
-        >
+        <button className="insp-step-btn" onClick={() => onChange(clamp(value - step))} tabIndex={-1}>
           <ChevronDown size={9} />
         </button>
-        <input
-          type="number"
-          className="insp-step-input"
-          value={value}
-          min={min}
-          max={max}
-          step={step}
-          onChange={e => onChange(clamp(+e.target.value))}
-        />
+        <input type="number" className="insp-step-input" value={value}
+          min={min} max={max} step={step} onChange={e => onChange(clamp(+e.target.value))} />
         {unit && <span className="insp-step-unit">{unit}</span>}
-        <button
-          className="insp-step-btn"
-          onClick={() => onChange(clamp(value + step))}
-          tabIndex={-1}
-        >
+        <button className="insp-step-btn" onClick={() => onChange(clamp(value + step))} tabIndex={-1}>
           <ChevronUp size={9} />
         </button>
       </div>
@@ -113,131 +163,116 @@ function Stepper({ label, value, min, max, step, unit, onChange }: StepperProps)
   );
 }
 
-// ── Compact Paired Stepper (side-by-side) ─────────────────────────────────
-function PairedStepper({ label, value, min, max, step, unit, onChange }: StepperProps) {
+function PairedStepper({ label, value, min, max, step, unit, onChange }: {
+  label: string; value: number; min: number; max: number;
+  step: number; unit?: string; onChange: (v: number) => void;
+}) {
   const clamp = (v: number) => Math.max(min, Math.min(max, parseFloat(v.toFixed(2))));
   const scrub = useScrub({ value, min, max, step, onChange: v => onChange(clamp(v)) });
   return (
     <div className="insp-paired-field">
       <span className={`insp-paired-label ${scrub.labelProps.className}`}
-        onPointerDown={scrub.labelProps.onPointerDown}
-        style={scrub.labelProps.style}
+        onPointerDown={scrub.labelProps.onPointerDown} style={scrub.labelProps.style}
       >{label}</span>
       <div className="insp-stepper insp-stepper--paired">
-        <button
-          className="insp-step-btn"
-          onClick={() => onChange(clamp(value - step))}
-          tabIndex={-1}
-        >
-          <ChevronDown size={8} />
-        </button>
-        <input
-          type="number"
-          className="insp-step-input"
-          value={value}
-          min={min}
-          max={max}
-          step={step}
-          onChange={e => onChange(clamp(+e.target.value))}
-        />
+        <button className="insp-step-btn" onClick={() => onChange(clamp(value - step))} tabIndex={-1}>
+          <ChevronDown size={8} /></button>
+        <input type="number" className="insp-step-input" value={value}
+          min={min} max={max} step={step} onChange={e => onChange(clamp(+e.target.value))} />
         {unit && <span className="insp-step-unit">{unit}</span>}
-        <button
-          className="insp-step-btn"
-          onClick={() => onChange(clamp(value + step))}
-          tabIndex={-1}
-        >
-          <ChevronUp size={8} />
-        </button>
+        <button className="insp-step-btn" onClick={() => onChange(clamp(value + step))} tabIndex={-1}>
+          <ChevronUp size={8} /></button>
       </div>
     </div>
   );
 }
 
-// ── Box Model Widget (compact margin editor) ──────────────────────────────
-function BoxModelWidget({ layout, onChange }: {
-  layout: PageLayout;
-  onChange: <K extends keyof PageLayout>(key: K, val: PageLayout[K]) => void;
-}) {
+// ── Fill Row ──────────────────────────────────────────────────────────────
+function FillRow({ color, onChange }: { color: string; onChange: (c: string) => void }) {
+  const [visible, setVisible] = useState(true);
+  const token = color.startsWith('#') ? color.toUpperCase() : color;
   return (
-    <div className="box-model">
-      <input
-        className="box-model-input box-model-top"
-        type="number" value={layout.marginT} min={0} max={60}
-        onChange={e => onChange('marginT', +e.target.value)}
-        aria-label="Top margin"
-      />
-      <input
-        className="box-model-input box-model-right"
-        type="number" value={layout.marginR} min={0} max={60}
-        onChange={e => onChange('marginR', +e.target.value)}
-        aria-label="Right margin"
-      />
-      <input
-        className="box-model-input box-model-bottom"
-        type="number" value={layout.marginB} min={0} max={60}
-        onChange={e => onChange('marginB', +e.target.value)}
-        aria-label="Bottom margin"
-      />
-      <input
-        className="box-model-input box-model-left"
-        type="number" value={layout.marginL} min={0} max={60}
-        onChange={e => onChange('marginL', +e.target.value)}
-        aria-label="Left margin"
-      />
-      <div className="box-model-inner" />
-      <span className="box-model-label">mm</span>
+    <div className="fi-fill-row">
+      <input type="color" className="fi-color-swatch" value={color} onChange={e => onChange(e.target.value)} />
+      <span className="fi-fill-token">
+        <Diamond size={9} className="fi-fill-diamond" />
+        <span className="fi-fill-name">{token}</span>
+      </span>
+      <button className="fi-fill-icon" onClick={() => setVisible(v => !v)} title="Toggle visibility">
+        {visible ? <Eye size={12} /> : <EyeOff size={12} />}
+      </button>
+      <button className="fi-fill-icon fi-fill-icon--remove" title="Remove fill">
+        <Minus size={12} />
+      </button>
     </div>
   );
 }
 
-// ── Tag options for the tag switcher ───────────────────────────────────────
+// ── Alignment 9-dot grid ──────────────────────────────────────────────────
+type AlignPos = 'tl'|'tc'|'tr'|'ml'|'mc'|'mr'|'bl'|'bc'|'br';
+const ALIGN_GRID: AlignPos[] = ['tl','tc','tr','ml','mc','mr','bl','bc','br'];
+
+function AlignGrid({ value, onChange }: { value: AlignPos; onChange: (v: AlignPos) => void }) {
+  return (
+    <div className="fi-align-grid">
+      {ALIGN_GRID.map(pos => (
+        <button
+          key={pos}
+          className={`fi-align-dot${value === pos ? ' fi-align-dot--active' : ''}`}
+          onClick={() => onChange(pos)}
+          title={pos}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ── Collapsible section ───────────────────────────────────────────────────
+function Section({ icon, label, open, onToggle, children }: {
+  icon?: React.ReactNode; label: string;
+  open: boolean; onToggle: () => void; children: React.ReactNode;
+}) {
+  return (
+    <div className="insp-section">
+      <button className="insp-section-toggle" onClick={onToggle}>
+        {icon} {label}
+        <ChevronRight size={10} className={`insp-chevron${open ? ' insp-chevron--open' : ''}`} />
+      </button>
+      <div className={`insp-section-body${open ? '' : ' insp-section-body--collapsed'}`}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ── Tag / Transform options ───────────────────────────────────────────────
 const TAG_OPTIONS = [
-  { tag: 'p',          label: 'P',   title: 'Paragraph' },
-  { tag: 'h1',         label: 'H1',  title: 'Heading 1' },
-  { tag: 'h2',         label: 'H2',  title: 'Heading 2' },
-  { tag: 'h3',         label: 'H3',  title: 'Heading 3' },
-  { tag: 'h4',         label: 'H4',  title: 'Heading 4' },
-  { tag: 'blockquote', label: 'BQ',  title: 'Blockquote' },
+  { tag: 'p', label: 'P', title: 'Paragraph' },
+  { tag: 'h1', label: 'H1', title: 'Heading 1' },
+  { tag: 'h2', label: 'H2', title: 'Heading 2' },
+  { tag: 'h3', label: 'H3', title: 'Heading 3' },
+  { tag: 'h4', label: 'H4', title: 'Heading 4' },
+  { tag: 'blockquote', label: 'BQ', title: 'Blockquote' },
 ] as const;
 
-// ── Text transform options ────────────────────────────────────────────────
 const TRANSFORM_OPTIONS = [
-  { value: 'none',       label: 'Aa',  title: 'No transform' },
-  { value: 'uppercase',  label: 'AA',  title: 'UPPERCASE' },
-  { value: 'lowercase',  label: 'aa',  title: 'lowercase' },
-  { value: 'capitalize', label: 'Ab',  title: 'Capitalize' },
+  { value: 'none',       label: 'Aa', title: 'None' },
+  { value: 'uppercase',  label: 'AA', title: 'UPPERCASE' },
+  { value: 'lowercase',  label: 'aa', title: 'lowercase' },
+  { value: 'capitalize', label: 'Ab', title: 'Capitalize' },
 ] as const;
 
-// ── Tab type ──────────────────────────────────────────────────────────────
-type InspTab = 'page' | 'paragraph' | 'image';
-
-// ── Crop state from SplitPageView ─────────────────────────────────────────
-interface CropState {
-  active:      boolean;
-  cropUrl?:    string;
-  pageNumber?: number;
-}
-
-// ── Component ─────────────────────────────────────────────────────────────
-interface Props {
-  layout:               PageLayout;
-  elementStyles?:       ElementStyles | null;
-  onChange:             (layout: PageLayout) => void;
-  onElementStyleChange?: (patch: Record<string, string>) => void;
-  onTagChange?:         (newTag: string) => void;
-}
-
+// ── Main component ────────────────────────────────────────────────────────
 export default function InspectorPanel({
   layout, elementStyles, onChange, onElementStyleChange, onTagChange,
+  theme = 'dark', onToggleTheme, onDownloadPDF,
 }: Props) {
   const set = <K extends keyof PageLayout>(key: K, val: PageLayout[K]) =>
     onChange({ ...layout, [key]: val });
-
   const patch = (p: Record<string, string>) => onElementStyleChange?.(p);
-
   const hasElement = !!elementStyles;
 
-  // ── Crop state from SplitPageView events ───────────────────────────────
+  // ── Crop state ────────────────────────────────────────────────────────
   const [crop, setCrop] = useState<CropState>({ active: false });
   const [cropDesc, setCropDesc] = useState('');
   const [cropRestoring, setCropRestoring] = useState(false);
@@ -246,185 +281,265 @@ export default function InspectorPanel({
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as CropState;
       setCrop(detail);
-      if (!detail.active) {
-        setCropDesc('');
-        setCropRestoring(false);
-      }
+      if (!detail.active) { setCropDesc(''); setCropRestoring(false); }
     };
     window.addEventListener('insp-crop-state', handler);
     return () => window.removeEventListener('insp-crop-state', handler);
   }, []);
 
-  // Dispatch crop actions back to SplitPageView
   const cropAction = useCallback((action: string, desc?: string) => {
     if (action === 'insert-restore') setCropRestoring(true);
-    window.dispatchEvent(new CustomEvent('insp-crop-action', {
-      detail: { action, desc },
-    }));
+    window.dispatchEvent(new CustomEvent('insp-crop-action', { detail: { action, desc } }));
   }, []);
 
-  // ── Tab auto-switching ─────────────────────────────────────────────────
+  // ── Tabs ──────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<InspTab>('page');
-
   useEffect(() => {
     if (crop.active) setActiveTab('image');
     else if (hasElement) setActiveTab('paragraph');
     else setActiveTab('page');
   }, [hasElement, crop.active]);
 
-  // Accordion state — all sections open by default
+  // ── Accordion ─────────────────────────────────────────────────────────
   const [sections, setSections] = useState<Record<string, boolean>>({});
-  const isOpen = (id: string) => sections[id] !== false;   // default open
-  const toggle = (id: string) =>
-    setSections(s => ({ ...s, [id]: s[id] === false }));
+  const isOpen = (id: string) => sections[id] !== false;
+  const toggle = (id: string) => setSections(s => ({ ...s, [id]: s[id] === false }));
+
+  // ── Layout state ──────────────────────────────────────────────────────
+  const [alignPos, setAlignPos] = useState<AlignPos>('tl');
+  const [opacity, setOpacity] = useState(100);
+  const [radius, setRadius] = useState(0);
+  const [fillColor, setFillColor] = useState('#1c1917');
+  const [showStroke, setShowStroke] = useState(false);
+  const [strokeColor, setStrokeColor] = useState('#e2e8f0');
+  const [exportScale, setExportScale] = useState<ExportScale>('1x');
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('PDF');
+
+  // ── Gap options ───────────────────────────────────────────────────────
+  const [gapMode, setGapMode] = useState<'fixed'|'between'|'around'>('fixed');
+
+  // ── Fill color sync with selected element ─────────────────────────────
+  useEffect(() => {
+    if (elementStyles?.color) setFillColor(elementStyles.color);
+  }, [elementStyles?.color]);
 
   return (
     <aside className="inspector-panel">
 
-      {/* ── InDesign-style Tab Bar ─────────────────────────────────── */}
+      {/* ── Tab bar ─────────────────────────────────────────────────── */}
       <div className="insp-tab-bar">
-        <button
-          className={`insp-tab${activeTab === 'page' ? ' insp-tab--active' : ''}`}
-          onClick={() => setActiveTab('page')}
-          title="Page Layout — margins, columns, global type"
-        >
-          <FileText size={12} />
-          <span>Page</span>
+        <button className={`insp-tab${activeTab === 'page' ? ' insp-tab--active' : ''}`}
+          onClick={() => setActiveTab('page')} title="Page Layout">
+          <FileText size={12} /><span>Page</span>
         </button>
         <button
           className={`insp-tab${activeTab === 'paragraph' ? ' insp-tab--active' : ''}${!hasElement ? ' insp-tab--disabled' : ''}`}
           onClick={() => hasElement && setActiveTab('paragraph')}
-          title={hasElement
-            ? `Paragraph — editing <${elementStyles.tag}>`
-            : 'Click or select a text element first'}
+          title={hasElement ? `Text — <${elementStyles.tag}>` : 'Select a text element first'}
         >
-          <Pilcrow size={12} />
-          <span>Text</span>
-          {hasElement && (
-            <code className="insp-tab-tag">{elementStyles.tag}</code>
-          )}
+          <Pilcrow size={12} /><span>Text</span>
+          {hasElement && <code className="insp-tab-tag">{elementStyles.tag}</code>}
         </button>
         <button
           className={`insp-tab${activeTab === 'image' ? ' insp-tab--active' : ''}${!crop.active ? ' insp-tab--disabled' : ''}`}
           onClick={() => crop.active && setActiveTab('image')}
-          title={crop.active
-            ? 'Image — crop preview and actions'
-            : 'Draw a selection on the scan to crop an image'}
+          title={crop.active ? 'Image crop' : 'Draw a selection on the scan'}
         >
-          <Image size={12} />
-          <span>Image</span>
+          <Image size={12} /><span>Image</span>
           {crop.active && <span className="insp-tab-dot" />}
         </button>
       </div>
 
-      {/* ════════════════════════════════════════════════════════════════ */}
-      {/* ══ PAGE TAB ═══════════════════════════════════════════════════ */}
-      {/* ════════════════════════════════════════════════════════════════ */}
+      {/* ════════════════════════════ PAGE TAB ═══════════════════════════ */}
       {activeTab === 'page' && (
         <>
-          {/* Margins */}
-          <div className="insp-section">
-            <SectionHead
-              icon={<LayoutGrid size={11} />} label="Margins"
-              open={isOpen('pg-margins')} onToggle={() => toggle('pg-margins')}
-            />
-            <div className={`insp-section-body${isOpen('pg-margins') ? '' : ' insp-section-body--collapsed'}`}>
-              <BoxModelWidget layout={layout} onChange={set} />
+          {/* Context row */}
+          <div className="fi-context-row">
+            <Square size={13} className="fi-context-icon" />
+            <span className="fi-context-name">Document Page</span>
+            <button className="fi-context-toggle">
+              <ChevronDown size={12} />
+            </button>
+          </div>
+
+          <div className="insp-divider" />
+
+          {/* Alignment buttons (6 icons) */}
+          <div className="fi-prop-block">
+            <span className="fi-block-label">Alignment</span>
+            <div className="fi-6align-row">
+              {([
+                [AlignStartHorizontal,  'Left'],
+                [AlignCenterHorizontal, 'H Center'],
+                [AlignEndHorizontal,    'Right'],
+                [AlignStartVertical,    'Top'],
+                [AlignCenterVertical,   'V Center'],
+                [AlignEndVertical,      'Bottom'],
+              ] as const).map(([Icon, title], i) => (
+                <button key={i} className="fi-align6-btn" title={title} disabled>
+                  <Icon size={14} />
+                </button>
+              ))}
             </div>
           </div>
 
           <div className="insp-divider" />
 
-          {/* Columns */}
-          <div className="insp-section">
-            <SectionHead
-              icon={<Columns3 size={11} />} label="Columns"
-              open={isOpen('pg-columns')} onToggle={() => toggle('pg-columns')}
+          {/* Position */}
+          <div className="fi-prop-block">
+            <span className="fi-block-label">Position</span>
+            <XYField
+              labelX="X" valueX={layout.marginL}
+              labelY="Y" valueY={layout.marginT}
+              onChangeX={v => set('marginL', v)}
+              onChangeY={v => set('marginT', v)}
+              unit="mm"
             />
-            <div className={`insp-section-body${isOpen('pg-columns') ? '' : ' insp-section-body--collapsed'}`}>
-              <div className="insp-col-row">
-                {([1, 2, 3, 4] as const).map(n => (
+            <SingleField label="R" value={0} unit="°" readOnly />
+          </div>
+
+          <div className="insp-divider" />
+
+          {/* Flex Layout */}
+          <div className="fi-prop-block">
+            <div className="fi-flex-header">
+              <span className="fi-block-label">Flex Layout</span>
+              <div className="fi-flex-mode-btns">
+                {([
+                  [LayoutGrid, 'Single column'],
+                  [Columns3,   'Two columns'],
+                  [FlipHorizontal, 'Multi-column'],
+                ] as const).map(([Icon, title], i) => (
                   <button
-                    key={n}
-                    className={`insp-col-btn${layout.columns === n ? ' active' : ''}`}
-                    onClick={() => set('columns', n)}
-                    title={`${n} column${n > 1 ? 's' : ''}`}
+                    key={i}
+                    className={`fi-flex-mode-btn${layout.columns === [1,2,3][i] ? ' active' : ''}`}
+                    onClick={() => set('columns', ([1,2,3,4] as const)[i])}
+                    title={title}
                   >
-                    <span className="insp-col-icon">
-                      {Array.from({ length: n }).map((_, i) => (
-                        <span key={i} className="insp-col-bar" />
-                      ))}
-                    </span>
-                    <span className="insp-col-num">{n}</span>
+                    <Icon size={13} />
                   </button>
                 ))}
               </div>
-              {layout.columns > 1 && (
-                <Stepper
-                  label="Gap" value={layout.colGap} min={0.5} max={6} step={0.5} unit="rem"
-                  onChange={v => set('colGap', v)}
-                />
-              )}
+            </div>
+
+            {/* Alignment 9-dot grid + gap */}
+            <div className="fi-flex-body">
+              <AlignGrid value={alignPos} onChange={setAlignPos} />
+              <div className="fi-gap-options">
+                <label className={`fi-gap-opt${gapMode === 'fixed' ? ' active' : ''}`} onClick={() => setGapMode('fixed')}>
+                  <input type="radio" name="gap" readOnly checked={gapMode === 'fixed'} className="fi-radio" />
+                  <span className="fi-gap-num-wrap">
+                    <FlipHorizontal size={10} />
+                    <input
+                      type="number"
+                      className="fi-gap-input"
+                      value={layout.colGap}
+                      min={0} max={6} step={0.5}
+                      onChange={e => set('colGap', +e.target.value)}
+                    />
+                  </span>
+                </label>
+                <label className={`fi-gap-opt${gapMode === 'between' ? ' active' : ''}`} onClick={() => setGapMode('between')}>
+                  <input type="radio" name="gap" readOnly checked={gapMode === 'between'} className="fi-radio" />
+                  Space Between
+                </label>
+                <label className={`fi-gap-opt${gapMode === 'around' ? ' active' : ''}`} onClick={() => setGapMode('around')}>
+                  <input type="radio" name="gap" readOnly checked={gapMode === 'around'} className="fi-radio" />
+                  Space Around
+                </label>
+              </div>
+            </div>
+
+            {/* Padding row */}
+            <div className="fi-padding-hd">
+              <span className="fi-block-label">Padding</span>
+              <button className="fi-hd-btn" title="Padding settings"><Settings2 size={12} /></button>
+            </div>
+            <XYField
+              labelX="⇔" valueX={layout.marginL}
+              labelY="⇕" valueY={layout.marginT}
+              onChangeX={v => set('marginL', v)}
+              onChangeY={v => set('marginT', v)}
+              unit="mm"
+            />
+
+            {/* Dimensions */}
+            <div className="fi-block-label" style={{ marginTop: 8 }}>Dimensions</div>
+            <XYField
+              labelX="W" valueX={210} labelY="H" valueY={297}
+              onChangeX={() => {}} onChangeY={() => {}} unit="mm"
+            />
+            <div className="fi-checkbox-grid">
+              <label className="fi-checkbox"><input type="checkbox" readOnly /> Fill Width</label>
+              <label className="fi-checkbox"><input type="checkbox" readOnly /> Fill Height</label>
+              <label className="fi-checkbox"><input type="checkbox" readOnly /> Hug Width</label>
+              <label className="fi-checkbox"><input type="checkbox" defaultChecked readOnly /> Hug Height</label>
+              <label className="fi-checkbox"><input type="checkbox" readOnly /> Clip Content</label>
             </div>
           </div>
 
           <div className="insp-divider" />
 
-          {/* Global Typography */}
-          <div className="insp-section">
-            <SectionHead
-              icon={<Type size={11} />} label="Base Typography"
-              open={isOpen('pg-type')} onToggle={() => toggle('pg-type')}
-            />
-            <div className={`insp-section-body${isOpen('pg-type') ? '' : ' insp-section-body--collapsed'}`}>
-              <Stepper
-                label="Size" value={layout.fontSize} min={0.7} max={2.0} step={0.05} unit="rem"
-                onChange={v => set('fontSize', v)}
-              />
-              <Stepper
-                label="Leading" value={layout.lineHeight} min={1.0} max={3.0} step={0.1}
-                onChange={v => set('lineHeight', v)}
-              />
+          {/* Appearance */}
+          <div className="fi-prop-block">
+            <span className="fi-block-label">Appearance</span>
+            <div className="fi-appear-row">
+              <label className="fi-appear-field">
+                <span className="fi-appear-prefix">%</span>
+                <input type="number" className="fi-appear-input" value={opacity}
+                  min={0} max={100} onChange={e => setOpacity(+e.target.value)} />
+              </label>
+              <label className="fi-appear-field">
+                <Maximize2 size={10} className="fi-appear-prefix-icon" />
+                <input type="number" className="fi-appear-input" value={radius}
+                  min={0} max={100} onChange={e => setRadius(+e.target.value)} />
+              </label>
+              <label className="fi-appear-field fi-appear-field--icon">
+                <Layers size={12} className="fi-appear-prefix-icon" />
+              </label>
             </div>
           </div>
-
-          {/* Hint */}
-          {!hasElement && (
-            <>
-              <div className="insp-divider" />
-              <div className="insp-hint">
-                <Pilcrow size={14} />
-                <p>Click on any text element to edit paragraph styles</p>
-              </div>
-            </>
-          )}
         </>
       )}
 
-      {/* ════════════════════════════════════════════════════════════════ */}
-      {/* ══ PARAGRAPH TAB ═════════════════════════════════════════════ */}
-      {/* ════════════════════════════════════════════════════════════════ */}
+      {/* ══════════════════════════ TEXT TAB ══════════════════════════════ */}
       {activeTab === 'paragraph' && hasElement && (
         <>
-          {/* Tag Switcher */}
+          {/* Element type */}
           <div className="insp-section">
-            <SectionHead
-              icon={<Pilcrow size={11} />} label="Element Type"
-              open={isOpen('el-tag')} onToggle={() => toggle('el-tag')}
-            />
+            <button className="insp-section-toggle" onClick={() => toggle('el-tag')}>
+              <Pilcrow size={11} /> Element Type
+              <ChevronRight size={10} className={`insp-chevron${isOpen('el-tag') ? ' insp-chevron--open' : ''}`} />
+            </button>
             <div className={`insp-section-body${isOpen('el-tag') ? '' : ' insp-section-body--collapsed'}`}>
               <div className="insp-tag-row">
                 {TAG_OPTIONS.map(({ tag, label, title }) => (
-                  <button
-                    key={tag}
+                  <button key={tag}
                     className={`insp-tag-btn${elementStyles.tag === tag ? ' active' : ''}`}
-                    onClick={() => onTagChange?.(tag)}
-                    title={title}
-                  >
-                    {label}
-                  </button>
+                    onClick={() => onTagChange?.(tag)} title={title}>{label}</button>
                 ))}
               </div>
+            </div>
+          </div>
+
+          <div className="insp-divider" />
+
+          {/* Alignment */}
+          <div className="fi-prop-block">
+            <span className="fi-block-label">Alignment</span>
+            <div className="fi-6align-row">
+              {([
+                ['left',    AlignLeft,    'Left'],
+                ['center',  AlignCenter,  'Center'],
+                ['right',   AlignRight,   'Right'],
+                ['justify', AlignJustify, 'Justify'],
+              ] as const).map(([val, Icon, title]) => (
+                <button key={val}
+                  className={`fi-align6-btn${elementStyles.textAlign === val ? ' fi-align6-btn--active' : ''}`}
+                  onClick={() => patch({ textAlign: val })} title={title}>
+                  <Icon size={14} />
+                </button>
+              ))}
             </div>
           </div>
 
@@ -432,45 +547,29 @@ export default function InspectorPanel({
 
           {/* Character */}
           <div className="insp-section">
-            <SectionHead
-              icon={<Type size={11} />} label="Character"
-              open={isOpen('el-char')} onToggle={() => toggle('el-char')}
-            />
+            <button className="insp-section-toggle" onClick={() => toggle('el-char')}>
+              <Type size={11} /> Character
+              <ChevronRight size={10} className={`insp-chevron${isOpen('el-char') ? ' insp-chevron--open' : ''}`} />
+            </button>
             <div className={`insp-section-body${isOpen('el-char') ? '' : ' insp-section-body--collapsed'}`}>
               <div className="insp-paired-row">
-                <PairedStepper
-                  label="Size"
-                  value={parsePx(elementStyles.fontSize)}
+                <PairedStepper label="Size" value={parsePx(elementStyles.fontSize)}
                   min={8} max={96} step={1} unit="px"
-                  onChange={v => patch({ fontSize: `${v}px` })}
-                />
-                <PairedStepper
-                  label="Leading"
-                  value={parseUnitless(elementStyles.lineHeight)}
+                  onChange={v => patch({ fontSize: `${v}px` })} />
+                <PairedStepper label="Leading" value={parseUnitless(elementStyles.lineHeight)}
                   min={0.8} max={4.0} step={0.05}
-                  onChange={v => patch({ lineHeight: `${v.toFixed(2)}` })}
-                />
+                  onChange={v => patch({ lineHeight: `${v.toFixed(2)}` })} />
               </div>
-
-              <Stepper
-                label="Tracking"
-                value={parseLetterSpacing(elementStyles.letterSpacing)}
+              <Stepper label="Tracking" value={parseLetterSpacing(elementStyles.letterSpacing)}
                 min={-5} max={20} step={0.5} unit="px"
-                onChange={v => patch({ letterSpacing: `${v}px` })}
-              />
-
+                onChange={v => patch({ letterSpacing: `${v}px` })} />
               <div className="insp-field">
                 <span className="insp-field-label">Case</span>
                 <div className="insp-transform-row">
                   {TRANSFORM_OPTIONS.map(({ value, label, title }) => (
-                    <button
-                      key={value}
+                    <button key={value}
                       className={`insp-transform-btn${elementStyles.textTransform === value ? ' active' : ''}`}
-                      onClick={() => patch({ textTransform: value })}
-                      title={title}
-                    >
-                      {label}
-                    </button>
+                      onClick={() => patch({ textTransform: value })} title={title}>{label}</button>
                   ))}
                 </div>
               </div>
@@ -481,27 +580,20 @@ export default function InspectorPanel({
 
           {/* Style */}
           <div className="insp-section">
-            <SectionHead
-              icon={<Type size={11} />} label="Style"
-              open={isOpen('el-style')} onToggle={() => toggle('el-style')}
-            />
+            <button className="insp-section-toggle" onClick={() => toggle('el-style')}>
+              <Type size={11} /> Style
+              <ChevronRight size={10} className={`insp-chevron${isOpen('el-style') ? ' insp-chevron--open' : ''}`} />
+            </button>
             <div className={`insp-section-body${isOpen('el-style') ? '' : ' insp-section-body--collapsed'}`}>
               <div className="insp-field">
                 <span className="insp-field-label">Weight</span>
                 <div className="insp-weight-row">
-                  {([
-                    ['400', 'Regular'],
-                    ['700', 'Bold'],
-                    ['900', 'Black'],
-                  ] as const).map(([w, label]) => (
-                    <button
-                      key={w}
+                  {(['400','700','900'] as const).map((w, i) => (
+                    <button key={w}
                       className={`insp-weight-btn${elementStyles.fontWeight === w ? ' active' : ''}`}
                       onClick={() => patch({ fontWeight: w })}
-                      title={label}
-                      style={{ fontWeight: w }}
-                    >
-                      {label}
+                      style={{ fontWeight: w }}>
+                      {['Regular','Bold','Black'][i]}
                     </button>
                   ))}
                 </div>
@@ -509,84 +601,16 @@ export default function InspectorPanel({
               <div className="insp-field">
                 <span className="insp-field-label">Format</span>
                 <div className="insp-style-row">
-                  <button
-                    className={`insp-style-btn${elementStyles.fontStyle === 'italic' ? ' active' : ''}`}
+                  <button className={`insp-style-btn${elementStyles.fontStyle === 'italic' ? ' active' : ''}`}
                     onClick={() => patch({ fontStyle: elementStyles.fontStyle === 'italic' ? 'normal' : 'italic' })}
-                    title="Italic"
-                  >
-                    <Italic size={12} />
-                  </button>
-                  <button
-                    className={`insp-style-btn${elementStyles.textDecoration.includes('underline') ? ' active' : ''}`}
-                    onClick={() => patch({
-                      textDecoration: elementStyles.textDecoration.includes('underline') ? 'none' : 'underline'
-                    })}
-                    title="Underline"
-                  >
-                    <Underline size={12} />
-                  </button>
-                  <button
-                    className={`insp-style-btn${elementStyles.textDecoration.includes('line-through') ? ' active' : ''}`}
-                    onClick={() => patch({
-                      textDecoration: elementStyles.textDecoration.includes('line-through') ? 'none' : 'line-through'
-                    })}
-                    title="Strikethrough"
-                  >
-                    <Strikethrough size={12} />
-                  </button>
+                    title="Italic"><Italic size={12} /></button>
+                  <button className={`insp-style-btn${elementStyles.textDecoration.includes('underline') ? ' active' : ''}`}
+                    onClick={() => patch({ textDecoration: elementStyles.textDecoration.includes('underline') ? 'none' : 'underline' })}
+                    title="Underline"><Underline size={12} /></button>
+                  <button className={`insp-style-btn${elementStyles.textDecoration.includes('line-through') ? ' active' : ''}`}
+                    onClick={() => patch({ textDecoration: elementStyles.textDecoration.includes('line-through') ? 'none' : 'line-through' })}
+                    title="Strikethrough"><Strikethrough size={12} /></button>
                 </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="insp-divider" />
-
-          {/* Alignment */}
-          <div className="insp-section">
-            <SectionHead
-              icon={<AlignLeft size={11} />} label="Alignment"
-              open={isOpen('el-align')} onToggle={() => toggle('el-align')}
-            />
-            <div className={`insp-section-body${isOpen('el-align') ? '' : ' insp-section-body--collapsed'}`}>
-              <div className="insp-align-row">
-                {([
-                  ['left',    <AlignLeft    size={13} key="l" />],
-                  ['center',  <AlignCenter  size={13} key="c" />],
-                  ['right',   <AlignRight   size={13} key="r" />],
-                  ['justify', <AlignJustify size={13} key="j" />],
-                ] as const).map(([val, icon]) => (
-                  <button
-                    key={val}
-                    className={`insp-align-btn${elementStyles.textAlign === val ? ' active' : ''}`}
-                    onClick={() => patch({ textAlign: val })}
-                    title={val.charAt(0).toUpperCase() + val.slice(1)}
-                  >
-                    {icon}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="insp-divider" />
-
-          {/* Color */}
-          <div className="insp-section">
-            <SectionHead
-              icon={<span style={{ width: 11, height: 11, borderRadius: 3, background: elementStyles.color, display: 'inline-block', border: '1px solid #334155' }} />}
-              label="Color"
-              open={isOpen('el-color')} onToggle={() => toggle('el-color')}
-            />
-            <div className={`insp-section-body${isOpen('el-color') ? '' : ' insp-section-body--collapsed'}`}>
-              <div className="insp-color-row">
-                <input
-                  type="color"
-                  className="insp-color-swatch"
-                  value={elementStyles.color}
-                  onChange={e => patch({ color: e.target.value })}
-                  title="Text color"
-                />
-                <span className="insp-color-hex">{elementStyles.color}</span>
               </div>
             </div>
           </div>
@@ -595,133 +619,150 @@ export default function InspectorPanel({
 
           {/* Spacing */}
           <div className="insp-section">
-            <SectionHead
-              icon={<LayoutGrid size={11} />} label="Spacing"
-              open={isOpen('el-spacing')} onToggle={() => toggle('el-spacing')}
-            />
+            <button className="insp-section-toggle" onClick={() => toggle('el-spacing')}>
+              <LayoutGrid size={11} /> Spacing
+              <ChevronRight size={10} className={`insp-chevron${isOpen('el-spacing') ? ' insp-chevron--open' : ''}`} />
+            </button>
             <div className={`insp-section-body${isOpen('el-spacing') ? '' : ' insp-section-body--collapsed'}`}>
               <div className="insp-paired-row">
-                <PairedStepper
-                  label="Margin T"
-                  value={parsePx(elementStyles.marginTop)}
-                  min={0} max={80} step={4} unit="px"
-                  onChange={v => patch({ marginTop: `${v}px` })}
-                />
-                <PairedStepper
-                  label="Margin B"
-                  value={parsePx(elementStyles.marginBottom)}
-                  min={0} max={80} step={4} unit="px"
-                  onChange={v => patch({ marginBottom: `${v}px` })}
-                />
+                <PairedStepper label="Margin T" value={parsePx(elementStyles.marginTop)}
+                  min={0} max={80} step={4} unit="px" onChange={v => patch({ marginTop: `${v}px` })} />
+                <PairedStepper label="Margin B" value={parsePx(elementStyles.marginBottom)}
+                  min={0} max={80} step={4} unit="px" onChange={v => patch({ marginBottom: `${v}px` })} />
               </div>
             </div>
           </div>
         </>
       )}
 
-      {/* Empty state for Paragraph tab */}
       {activeTab === 'paragraph' && !hasElement && (
         <div className="insp-empty-state">
           <Pilcrow size={28} />
           <p className="insp-empty-title">No Element Selected</p>
-          <p className="insp-empty-desc">
-            Click on any text element in the document, or use <strong>Select Mode</strong> to pick an element.
-          </p>
+          <p className="insp-empty-desc">Click on any text element to edit paragraph styles.</p>
         </div>
       )}
 
-      {/* ════════════════════════════════════════════════════════════════ */}
-      {/* ══ IMAGE TAB ═════════════════════════════════════════════════ */}
-      {/* ════════════════════════════════════════════════════════════════ */}
+      {/* ═══════════════════════════ IMAGE TAB ════════════════════════════ */}
       {activeTab === 'image' && crop.active && crop.cropUrl && (
         <>
-          {/* Preview */}
-          <div className="insp-section">
-            <SectionHead
-              icon={<Image size={11} />} label="Crop Preview"
-              open={isOpen('img-prev')} onToggle={() => toggle('img-prev')}
-            />
-            <div className={`insp-section-body${isOpen('img-prev') ? '' : ' insp-section-body--collapsed'}`}>
-              <div className="insp-crop-preview">
-                <img src={crop.cropUrl} alt="Crop preview" className="insp-crop-img" />
-              </div>
+          <Section icon={<Image size={11}/>} label="Crop Preview"
+            open={isOpen('img-prev')} onToggle={() => toggle('img-prev')}>
+            <div className="insp-crop-preview">
+              <img src={crop.cropUrl} alt="Crop preview" className="insp-crop-img" />
             </div>
-          </div>
-
+          </Section>
           <div className="insp-divider" />
-
-          {/* Description */}
-          <div className="insp-section">
-            <SectionHead
-              icon={<Type size={11} />} label="Description"
-              open={isOpen('img-desc')} onToggle={() => toggle('img-desc')}
-            />
-            <div className={`insp-section-body${isOpen('img-desc') ? '' : ' insp-section-body--collapsed'}`}>
-              <input
-                type="text"
-                className="insp-crop-desc"
-                placeholder="Describe this image (optional)…"
-                value={cropDesc}
-                onChange={e => {
-                  setCropDesc(e.target.value);
-                  cropAction('set-desc', e.target.value);
-                }}
-              />
-            </div>
-          </div>
-
+          <Section icon={<Type size={11}/>} label="Description"
+            open={isOpen('img-desc')} onToggle={() => toggle('img-desc')}>
+            <input type="text" className="insp-crop-desc"
+              placeholder="Describe this image (optional)…"
+              value={cropDesc}
+              onChange={e => { setCropDesc(e.target.value); cropAction('set-desc', e.target.value); }} />
+          </Section>
           <div className="insp-divider" />
-
-          {/* Actions */}
-          <div className="insp-section">
-            <SectionHead
-              icon={<Scissors size={11} />} label="Actions"
-              open={isOpen('img-actions')} onToggle={() => toggle('img-actions')}
-            />
-            <div className={`insp-section-body${isOpen('img-actions') ? '' : ' insp-section-body--collapsed'}`}>
-              <button
-                className="insp-crop-action insp-crop-action--insert"
-                onClick={() => cropAction('insert-raw')}
-                disabled={cropRestoring}
-                title="Insert the raw crop — no AI processing"
-              >
-                <Scissors size={14} />
-                Insert Crop
-              </button>
-              <button
-                className="insp-crop-action insp-crop-action--restore"
-                onClick={() => cropAction('insert-restore')}
-                disabled={cropRestoring}
-                title="Restore with AI, then insert"
-              >
-                {cropRestoring
-                  ? <Loader2 size={14} className="animate-spin" />
-                  : <Sparkles size={14} />}
-                {cropRestoring ? 'Restoring…' : 'AI Restore & Insert'}
-              </button>
-              <button
-                className="insp-crop-action insp-crop-action--cancel"
-                onClick={() => cropAction('cancel')}
-                disabled={cropRestoring}
-                title="Cancel selection"
-              >
-                <X size={14} />
-                Cancel
-              </button>
-            </div>
-          </div>
+          <Section icon={<Scissors size={11}/>} label="Actions"
+            open={isOpen('img-actions')} onToggle={() => toggle('img-actions')}>
+            <button className="insp-crop-action insp-crop-action--insert"
+              onClick={() => cropAction('insert-raw')} disabled={cropRestoring}>
+              <Scissors size={14} /> Insert Crop
+            </button>
+            <button className="insp-crop-action insp-crop-action--restore"
+              onClick={() => cropAction('insert-restore')} disabled={cropRestoring}>
+              {cropRestoring ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+              {cropRestoring ? 'Restoring…' : 'AI Restore & Insert'}
+            </button>
+            <button className="insp-crop-action insp-crop-action--cancel"
+              onClick={() => cropAction('cancel')} disabled={cropRestoring}>
+              <X size={14} /> Cancel
+            </button>
+          </Section>
         </>
       )}
-
-      {/* Empty state for Image tab */}
       {activeTab === 'image' && !crop.active && (
         <div className="insp-empty-state">
           <Image size={28} />
           <p className="insp-empty-title">No Image Cropped</p>
-          <p className="insp-empty-desc">
-            Draw a selection on the <strong>Original Scan</strong> (left panel) to crop and insert an image region.
-          </p>
+          <p className="insp-empty-desc">Draw a selection on the <strong>Original Scan</strong> to crop and insert an image.</p>
         </div>
+      )}
+
+      {/* ══════════════ BOTTOM SECTIONS (all tabs) ═══════════════════════ */}
+      {activeTab !== 'image' && (
+        <>
+          <div className="insp-divider" />
+
+          {/* Fill */}
+          <div className="fi-prop-block">
+            <SectionHd label="Fill" onAdd={() => {}} />
+            <FillRow
+              color={hasElement ? (elementStyles?.color ?? fillColor) : fillColor}
+              onChange={c => { setFillColor(c); if (hasElement) patch({ color: c }); }}
+            />
+          </div>
+
+          <div className="insp-divider" />
+
+          {/* Stroke */}
+          <div className="fi-prop-block">
+            <SectionHd label="Stroke" onAdd={() => setShowStroke(true)} />
+            {showStroke && (
+              <FillRow color={strokeColor} onChange={setStrokeColor} />
+            )}
+          </div>
+
+          <div className="insp-divider" />
+
+          {/* Effects */}
+          <div className="fi-prop-block">
+            <SectionHd label="Effects" onAdd={() => {}} />
+          </div>
+
+          <div className="insp-divider" />
+
+          {/* Theme */}
+          <div className="fi-prop-block">
+            <SectionHd label="Theme" onAdd={() => {}} onRemove={() => {}} />
+            <div className="fi-select-row">
+              <select
+                className="fi-select"
+                value={theme}
+                onChange={() => onToggleTheme?.()}
+              >
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+              </select>
+              <button className="fi-hd-btn" onClick={onToggleTheme} title="Remove theme">
+                <Minus size={13} />
+              </button>
+            </div>
+          </div>
+
+          <div className="insp-divider" />
+
+          {/* Export */}
+          <div className="fi-prop-block fi-prop-block--export">
+            <SectionHd label="Export" />
+            <div className="fi-export-row">
+              <select className="fi-select fi-select--sm"
+                value={exportScale} onChange={e => setExportScale(e.target.value as ExportScale)}>
+                <option>1x</option>
+                <option>2x</option>
+                <option>3x</option>
+              </select>
+              <select className="fi-select fi-select--sm"
+                value={exportFormat} onChange={e => setExportFormat(e.target.value as ExportFormat)}>
+                <option>PDF</option>
+                <option>PNG</option>
+                <option>SVG</option>
+              </select>
+            </div>
+            <button className="fi-export-btn" onClick={onDownloadPDF}>
+              <Download size={13} />
+              Export layer
+            </button>
+          </div>
+        </>
       )}
 
     </aside>

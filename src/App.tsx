@@ -1,16 +1,17 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 
 import HomeScreen    from './components/HomeScreen';
 import EditorShell   from './components/editor/EditorShell';
 import LibraryModal  from './components/LibraryModal';
-import FloatingChat  from './components/FloatingChat';
 import AdminPanel    from './components/AdminPanel';
 import Toast, { type ToastMessage } from './components/Toast';
 import AuthScreen    from './components/AuthScreen';
 
 import { pdfToImages, imageFileToBase64 } from './services/pdfService';
-import { extractPageHTML, type ImageQuality } from './services/geminiService';
+import { extractPageHTML, autoFillImagePlaceholders, type ImageQuality } from './services/geminiService';
 import { saveDocument, initStorage, type SavedDocument } from './services/storageService';
+import { CanvasExecutor } from './services/canvasExecutor';
+import { WsBridge }      from './services/wsBridge';
 import { ensureUsersTable, upsertUser, checkUserBlocked } from './services/adminService';
 import { authClient } from './lib/neonAuth';
 import { useTheme } from './hooks/useTheme';
@@ -100,8 +101,74 @@ export default function App() {
   const [imageQuality,     setImageQuality]     = useState<ImageQuality>('fast');
   const [regeneratingPages, setRegeneratingPages] = useState<Set<number>>(new Set());
   const [activePage,       setActivePage]       = useState(1);
-  const [chatOpen,         setChatOpen]         = useState(false);
   const [showAdmin,        setShowAdmin]        = useState(false);
+
+  // ── Canvas executor — stable ref so FloatingChat doesn't re-mount ──────
+  const pageResultsRef = useRef(pageResults);
+  const pageImagesRef  = useRef(pageImages);
+  const activePageRef  = useRef(activePage);
+  useEffect(() => { pageResultsRef.current = pageResults; }, [pageResults]);
+  useEffect(() => { pageImagesRef.current  = pageImages;  }, [pageImages]);
+  useEffect(() => { activePageRef.current  = activePage;  }, [activePage]);
+
+  const executorRef  = useRef<CanvasExecutor | null>(null);
+  const wsBridgeRef  = useRef<WsBridge | null>(null);
+  const [mcpConnected, setMcpConnected] = useState(false);
+
+  if (!executorRef.current) {
+    executorRef.current = new CanvasExecutor({
+      getPageHTML:     (n) => pageResultsRef.current[n] ?? '',
+      getPageImage:    (n) => pageImagesRef.current[n - 1] ?? '',
+      getActivePage:   ()  => activePageRef.current,
+      getTotalPages:   ()  => pageImagesRef.current.length,
+      onEdit:          (n, html) => setPageResults(prev => ({ ...prev, [n]: html })),
+      onSetActivePage: (n) => setActivePage(n),
+      captureScreenshot: async (n) => {
+        const el = document.getElementById(`page-${n}`);
+        if (!el) throw new Error(`Page ${n} element not found`);
+        const html2canvasModule = await import('html2canvas');
+        const html2canvas = (html2canvasModule.default ?? html2canvasModule) as (el: HTMLElement, opts?: object) => Promise<HTMLCanvasElement>;
+        const canvas = await html2canvas(el, { scale: 1, useCORS: true, logging: false });
+        return canvas.toDataURL('image/jpeg', 0.85);
+      },
+      extractPage: async (n, force = false) => {
+        const existing = pageResultsRef.current[n];
+        if (existing && !force) {
+          return JSON.stringify({ success: true, pageNumber: n, cached: true });
+        }
+        const img = pageImagesRef.current[n - 1];
+        if (!img) return JSON.stringify({ error: `No image for page ${n}. Upload a document first.` });
+        const prevHTML = pageResultsRef.current[n - 1];
+
+        // Pass 1: OCR → structured HTML (may contain .ai-image-placeholder elements)
+        const rawHtml = await extractPageHTML(img, prevHTML);
+
+        // Pass 2: auto-detect image regions in original scan → crop → replace placeholders
+        const { html: finalHtml, filled } = await autoFillImagePlaceholders(rawHtml, img);
+        const remaining = (finalHtml.match(/ai-image-placeholder/g) ?? []).length;
+
+        setPageResults(prev => ({ ...prev, [n]: finalHtml }));
+        return JSON.stringify({ success: true, pageNumber: n, extracted: true, imagesFound: filled, placeholdersRemaining: remaining });
+      },
+      onExtractStart: (n) => {
+        setActivePage(n);
+        setRegeneratingPages(prev => { const s = new Set(prev); s.add(n); return s; });
+      },
+      onExtractEnd: (n) => {
+        setRegeneratingPages(prev => { const s = new Set(prev); s.delete(n); return s; });
+      },
+    });
+  }
+
+  // Start WsBridge once — connects to MCP relay at ws://localhost:3001
+  useEffect(() => {
+    if (wsBridgeRef.current || !executorRef.current) return;
+    const bridge = new WsBridge(executorRef.current);
+    wsBridgeRef.current = bridge;
+    const unsub = bridge.onStatus(setMcpConnected);
+    return () => { unsub(); bridge.stop(); wsBridgeRef.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Admin gate — only show to the exact email set in VITE_ADMIN_EMAIL
   const adminEmail = (import.meta.env.VITE_ADMIN_EMAIL as string | undefined)?.trim();
@@ -154,8 +221,17 @@ export default function App() {
 
         try {
           const html = await extractPageHTML(pageImages[p - 1], prevHTML);
-          prevHTML = html;
-          setPageResults((prev) => ({ ...prev, [p]: html }));
+
+          // Auto-fill image placeholders: detect, crop, and replace from original scan
+          setProcessingStatus(`Page ${p}: placing images…`);
+          const { html: finalHtml } = await autoFillImagePlaceholders(
+            html,
+            pageImages[p - 1],
+            (msg) => setProcessingStatus(`Page ${p}: ${msg}`),
+          );
+
+          prevHTML = finalHtml;
+          setPageResults((prev) => ({ ...prev, [p]: finalHtml }));
         } catch (err: unknown) {
           const error = err as Error & { status?: number };
           const errHtml = is429Error(err)
@@ -315,7 +391,6 @@ export default function App() {
   }, []);
 
   const handleShowAdmin   = useCallback(() => setShowAdmin(true), []);
-  const handleChatToggle  = useCallback(() => setChatOpen(o => !o), []);
   const handleShowLibrary = useCallback(() => setShowLibrary(true), []);
   const handleError       = useCallback((msg: string) => setToast({ id: Date.now().toString(), message: msg, variant: 'error' }), []);
   const handleDismissToast = useCallback(() => setToast(null), []);
@@ -403,11 +478,11 @@ export default function App() {
         onDownloadPDF={handleDownloadPDF}
         onImageQualityChange={setImageQuality}
         onActivePageChange={setActivePage}
+        canvasExecutor={executorRef.current ?? undefined}
+        mcpConnected={mcpConnected}
         onSignOut={handleSignOut}
         theme={theme}
         onToggleTheme={toggleTheme}
-        chatOpen={chatOpen}
-        onChatToggle={handleChatToggle}
         onError={handleError}
       />
 
@@ -462,18 +537,6 @@ export default function App() {
         {toast && <Toast key={toast.id} toast={toast} onDismiss={handleDismissToast} />}
       </div>
 
-      {/* Floating AI chat — controlled by dock button */}
-      <FloatingChat
-        user={neonUser}
-        open={chatOpen}
-        onOpenChange={setChatOpen}
-        editContext={pageResults[activePage] ? {
-          pageNumber: activePage,
-          html:       pageResults[activePage],
-          image:      pageImages[activePage - 1] ?? '',
-          onEdit:     (html) => handleEdit(activePage, html),
-        } : undefined}
-      />
     </div>
   );
 }

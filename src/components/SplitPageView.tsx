@@ -23,6 +23,7 @@ interface Props {
   styleApply?:      { patch: Record<string, string>; nonce: number } | null;
   onEdit:          (pageNumber: number, html: string) => void;
   onError?:        (msg: string) => void;
+  docHandle?:      { current: DocumentPageHandle | null };
 }
 
 // ── Colours ────────────────────────────────────────────────────────────────
@@ -34,11 +35,16 @@ export default function SplitPageView({
   pageNumber, pageImage, html, imageQuality,
   isRegenerating = false, styleOverride, selectionMode = false,
   onElementSelect, onExitSelectionMode, styleApply,
-  onEdit, onError,
+  onEdit, onError, docHandle,
 }: Props) {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const imgRef     = useRef<HTMLImageElement>(null);
   const docRef     = useRef<DocumentPageHandle | null>(null);
+
+  // Forward docHandle from parent so undo/redo buttons work
+  useEffect(() => {
+    if (docHandle) docHandle.current = docRef.current;
+  });
   const rafRef     = useRef<number>(0);
   const drawingRef = useRef(false);   // mutable, avoids stale closure issues
   const startRef   = useRef<{ x: number; y: number } | null>(null);
@@ -232,7 +238,7 @@ export default function SplitPageView({
     let dataUrl = cropUrl;
     if (withRestore) {
       try {
-        dataUrl = await restoreImage(cropUrl, imageQuality);
+        dataUrl = await restoreImage(cropUrl);
       } catch (err) {
         onError?.('Image restore failed — the region was inserted as a raw crop instead.');
         dataUrl = cropUrl; // fall back to raw crop rather than doing nothing
