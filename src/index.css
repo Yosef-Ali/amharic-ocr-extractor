@@ -1512,7 +1512,10 @@
    ────────────────────────────────────────────── */
 .rd-scrim {
   position: fixed;
-  inset: 0;
+  top: 44px;
+  left: 0;
+  right: 0;
+  bottom: 48px;
   z-index: 40;
   background: rgba(0,0,0,0.35);
   opacity: 0;
@@ -1530,9 +1533,9 @@
 
 .rd-panel {
   position: fixed;
-  top: 0;
+  top: 44px;
   right: 0;
-  bottom: 0;
+  bottom: 48px;
   width: 480px;
   z-index: 45;
   display: flex;
