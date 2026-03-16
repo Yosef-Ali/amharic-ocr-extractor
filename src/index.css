@@ -5649,10 +5649,66 @@
 
 /* Active Selection state: Solid blue bounding box with handles */
 .sel-mode .sel-active {
-  outline: 1.5px solid #0ea5e9 !important;
-  background-color: rgba(14, 165, 233, 0.08) !important;
-  box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.15);
+  outline: 2px solid #0ea5e9 !important;
+  background-color: rgba(14, 165, 233, 0.06) !important;
+  box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.12);
   z-index: 10;
+  cursor: move !important;
+}
+
+/* Dragging state */
+.sel-mode .sel-active.sel-dragging {
+  opacity: 0.85;
+  outline-style: dashed !important;
+  box-shadow: 0 8px 32px rgba(14, 165, 233, 0.25);
+  transition: none !important;
+}
+
+/* ── Resize handles overlay ── */
+.sel-handles-overlay {
+  position: fixed;
+  pointer-events: none;
+  z-index: 999;
+}
+
+.sel-handle {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  background: #fff;
+  border: 2px solid #0ea5e9;
+  border-radius: 2px;
+  pointer-events: all;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  transition: background 0.1s, transform 0.1s;
+}
+.sel-handle:hover {
+  background: #0ea5e9;
+  transform: scale(1.3);
+}
+
+.sel-handle--nw { cursor: nw-resize; }
+.sel-handle--n  { cursor: n-resize; }
+.sel-handle--ne { cursor: ne-resize; }
+.sel-handle--e  { cursor: e-resize; }
+.sel-handle--se { cursor: se-resize; }
+.sel-handle--s  { cursor: s-resize; }
+.sel-handle--sw { cursor: sw-resize; }
+.sel-handle--w  { cursor: w-resize; }
+
+/* Dimension tooltip during resize */
+.sel-dimension-tip {
+  position: fixed;
+  padding: 2px 7px;
+  background: #0f172a;
+  color: #e0f2fe;
+  font-size: 0.6rem;
+  font-family: ui-monospace, monospace;
+  font-weight: 600;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 1001;
 }
 
 /* ──────────────────────────────────────────────

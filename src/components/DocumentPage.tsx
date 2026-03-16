@@ -139,6 +139,20 @@ export default function DocumentPage({
   // InDesign-style: store click position so we can place the caret after exiting selection mode
   const pendingCursorRef = useRef<{ x: number; y: number } | null>(null);
 
+  // ── Drag-to-move & resize state ──
+  const dragStateRef = useRef<{
+    mode: 'move' | 'resize';
+    handle?: string; // nw, n, ne, e, se, s, sw, w
+    startX: number;
+    startY: number;
+    origLeft: number;
+    origTop: number;
+    origWidth: number;
+    origHeight: number;
+  } | null>(null);
+  const [handleRects, setHandleRects] = useState<DOMRect | null>(null);
+  const [dimTip, setDimTip] = useState<{ x: number; y: number; text: string } | null>(null);
+
   // Track active paragraph at cursor position (text editing mode)
   const activeParaRef = useRef<HTMLElement | null>(null);
 
@@ -186,6 +200,13 @@ export default function DocumentPage({
       below,
       tag:   sel.tagName.toLowerCase(),
     });
+  }, []);
+
+  /** Refresh the 8 resize handles around the selected element */
+  const refreshHandles = useCallback(() => {
+    const sel = selectedElRef.current;
+    if (!sel) { setHandleRects(null); return; }
+    setHandleRects(sel.getBoundingClientRect());
   }, []);
 
   // ── Sync HTML into contentEditable ────────────────────────────────────────
@@ -294,6 +315,7 @@ export default function DocumentPage({
       selectedElRef.current?.classList.remove('sel-active');
       selectedElRef.current = null;
       setActionBar(null);
+      setHandleRects(null);
       return;
     }
 
@@ -301,10 +323,13 @@ export default function DocumentPage({
       selectedElRef.current?.classList.remove('sel-active');
       selectedElRef.current = null;
       setActionBar(null);
+      setHandleRects(null);
       onElementSelectRef.current?.(null);
     };
 
     const onMove = (e: MouseEvent) => {
+      // Skip hover highlight while dragging/resizing
+      if (dragStateRef.current) return;
       const found = findSelectableEl(e.target as HTMLElement, el);
       if (hoveredElRef.current !== found) {
         hoveredElRef.current?.classList.remove('sel-hover');
@@ -331,6 +356,7 @@ export default function DocumentPage({
       hoveredElRef.current = null;
 
       refreshActionBar();
+      refreshHandles();
       onElementSelectRef.current?.(readElementStyles(found));
     };
 
@@ -412,10 +438,107 @@ export default function DocumentPage({
   // Keep action bar in sync when user scrolls
   useEffect(() => {
     if (!selectionMode) return;
-    const onScroll = () => refreshActionBar();
+    const onScroll = () => { refreshActionBar(); refreshHandles(); };
     window.addEventListener('scroll', onScroll, true);
     return () => window.removeEventListener('scroll', onScroll, true);
   }, [selectionMode, refreshActionBar]);
+
+  // ── Drag-to-move logic ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!selectionMode) return;
+    const el = editorRef.current;
+    if (!el) return;
+
+    const onMouseDown = (e: MouseEvent) => {
+      const sel = selectedElRef.current;
+      if (!sel || !sel.contains(e.target as Node)) return;
+      // Don't start drag on action bar buttons
+      if ((e.target as HTMLElement).closest('.sel-action-bar')) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Ensure element has position: relative for offset movement
+      if (!sel.style.position || sel.style.position === 'static') {
+        sel.style.position = 'relative';
+      }
+      const left = parseFloat(sel.style.left || '0');
+      const top  = parseFloat(sel.style.top  || '0');
+
+      dragStateRef.current = {
+        mode: 'move',
+        startX: e.clientX,
+        startY: e.clientY,
+        origLeft: left,
+        origTop: top,
+        origWidth: sel.offsetWidth,
+        origHeight: sel.offsetHeight,
+      };
+      sel.classList.add('sel-dragging');
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      const drag = dragStateRef.current;
+      const sel = selectedElRef.current;
+      if (!drag || !sel) return;
+
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
+
+      if (drag.mode === 'move') {
+        sel.style.left = `${drag.origLeft + dx}px`;
+        sel.style.top  = `${drag.origTop  + dy}px`;
+        refreshActionBar();
+        refreshHandles();
+      } else if (drag.mode === 'resize') {
+        const h = drag.handle || 'se';
+        let newW = drag.origWidth;
+        let newH = drag.origHeight;
+        let newL = drag.origLeft;
+        let newT = drag.origTop;
+
+        if (h.includes('e')) newW = Math.max(30, drag.origWidth + dx);
+        if (h.includes('w')) { newW = Math.max(30, drag.origWidth - dx); newL = drag.origLeft + dx; }
+        if (h.includes('s')) newH = Math.max(20, drag.origHeight + dy);
+        if (h.includes('n')) { newH = Math.max(20, drag.origHeight - dy); newT = drag.origTop + dy; }
+
+        sel.style.width  = `${newW}px`;
+        sel.style.height = `${newH}px`;
+        sel.style.left   = `${newL}px`;
+        sel.style.top    = `${newT}px`;
+        refreshActionBar();
+        refreshHandles();
+
+        // Show dimension tooltip
+        const r = sel.getBoundingClientRect();
+        setDimTip({ x: r.right + 8, y: r.bottom + 8, text: `${Math.round(newW)} × ${Math.round(newH)}` });
+      }
+    };
+
+    const onMouseUp = () => {
+      const sel = selectedElRef.current;
+      if (dragStateRef.current && sel) {
+        sel.classList.remove('sel-dragging');
+        dragStateRef.current = null;
+        setDimTip(null);
+        // Commit the position/size change
+        if (editorRef.current) onEdit(pageNumber, editorRef.current.innerHTML);
+        refreshActionBar();
+        refreshHandles();
+        onElementSelectRef.current?.(readElementStyles(sel));
+      }
+    };
+
+    el.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      el.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectionMode, pageNumber, onEdit, refreshActionBar, refreshHandles]);
 
   // ── Keyboard shortcuts in selection mode ─────────────────────────────────
   useEffect(() => {
@@ -442,6 +565,26 @@ export default function DocumentPage({
       if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
         e.preventDefault();
         duplicateSelected();
+      }
+      // ── Arrow key nudge: 1px default, 10px with Shift ──
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        e.preventDefault();
+        if (!sel.style.position || sel.style.position === 'static') {
+          sel.style.position = 'relative';
+        }
+        const step = e.shiftKey ? 10 : 1;
+        const left = parseFloat(sel.style.left || '0');
+        const top  = parseFloat(sel.style.top  || '0');
+        switch (e.key) {
+          case 'ArrowUp':    sel.style.top  = `${top  - step}px`; break;
+          case 'ArrowDown':  sel.style.top  = `${top  + step}px`; break;
+          case 'ArrowLeft':  sel.style.left = `${left - step}px`; break;
+          case 'ArrowRight': sel.style.left = `${left + step}px`; break;
+        }
+        if (editorRef.current) onEdit(pageNumber, editorRef.current.innerHTML);
+        refreshActionBar();
+        refreshHandles();
+        onElementSelectRef.current?.(readElementStyles(sel));
       }
     };
     window.addEventListener('keydown', onKey);
@@ -629,6 +772,7 @@ export default function DocumentPage({
       sel.remove();
       selectedElRef.current = null;
       setActionBar(null);
+      setHandleRects(null);
       onElementSelectRef.current?.(null);
       if (editorRef.current) onEdit(pageNumber, editorRef.current.innerHTML);
     }
@@ -645,6 +789,7 @@ export default function DocumentPage({
     if (editorRef.current) onEdit(pageNumber, editorRef.current.innerHTML);
     requestAnimationFrame(() => {
       refreshActionBar();
+      refreshHandles();
       onElementSelectRef.current?.(readElementStyles(clone));
       clone.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
@@ -654,6 +799,7 @@ export default function DocumentPage({
     selectedElRef.current?.classList.remove('sel-active');
     selectedElRef.current = null;
     setActionBar(null);
+    setHandleRects(null);
     onElementSelectRef.current?.(null);
   };
 
@@ -759,6 +905,60 @@ export default function DocumentPage({
           >
             <X size={11} />
           </button>
+        </div>,
+        document.body
+      )}
+
+      {/* ── 8 Resize handles — portalled to body ── */}
+      {selectionMode && handleRects && createPortal(
+        <div className="sel-handles-overlay">
+          {(['nw','n','ne','e','se','s','sw','w'] as const).map(h => {
+            const r = handleRects;
+            const half = 4.5; // half handle size
+            let left = 0, top = 0;
+            if (h.includes('w')) left = r.left - half;
+            else if (h.includes('e')) left = r.right - half;
+            else left = r.left + r.width / 2 - half;
+            if (h.includes('n')) top = r.top - half;
+            else if (h.includes('s')) top = r.bottom - half;
+            else top = r.top + r.height / 2 - half;
+
+            return (
+              <div
+                key={h}
+                className={`sel-handle sel-handle--${h}`}
+                style={{ left, top, position: 'fixed' }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const sel = selectedElRef.current;
+                  if (!sel) return;
+                  if (!sel.style.position || sel.style.position === 'static') {
+                    sel.style.position = 'relative';
+                  }
+                  dragStateRef.current = {
+                    mode: 'resize',
+                    handle: h,
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    origLeft: parseFloat(sel.style.left || '0'),
+                    origTop: parseFloat(sel.style.top || '0'),
+                    origWidth: sel.offsetWidth,
+                    origHeight: sel.offsetHeight,
+                  };
+                  sel.classList.add('sel-dragging');
+                }}
+              />
+            );
+          })}
+        </div>,
+        document.body
+      )}
+
+      {/* ── Dimension tooltip during resize ── */}
+      {dimTip && createPortal(
+        <div className="sel-dimension-tip" style={{ left: dimTip.x, top: dimTip.y }}>
+          {dimTip.text}
         </div>,
         document.body
       )}
