@@ -98,6 +98,8 @@ interface Props {
   onEdit: (pageNumber: number, html: string) => void;
   /** Canvas zoom level (100 = 100%). Used to scale drag/resize deltas. */
   zoom?: number;
+  /** Page margins in mm — used for snap guides */
+  margins?: { t: number; r: number; b: number; l: number };
 }
 
 // ── Block-level tags that can be selected ────────────────────────────────────
@@ -131,6 +133,7 @@ export default function DocumentPage({
   styleOverride, selectionMode = false,
   onElementSelect, onExitSelectionMode, styleApply, onEdit,
   zoom = 100,
+  margins = { t: 12, r: 16, b: 12, l: 16 },
 }: Props) {
   const editorRef            = useRef<HTMLDivElement>(null);
   const editImgRef           = useRef<HTMLImageElement | null>(null);
@@ -152,9 +155,11 @@ export default function DocumentPage({
     origTop: number;
     origWidth: number;
     origHeight: number;
+    origScreenRect?: DOMRect; // for snap calculations
   } | null>(null);
   const [handleRects, setHandleRects] = useState<DOMRect | null>(null);
   const [dimTip, setDimTip] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [snapGuides, setSnapGuides] = useState<{ type: 'h' | 'v'; pos: number; extent: [number, number] }[]>([]);
 
   // Track active paragraph at cursor position (text editing mode)
   const activeParaRef = useRef<HTMLElement | null>(null);
@@ -494,6 +499,7 @@ export default function DocumentPage({
         origTop: top,
         origWidth: sel.offsetWidth,
         origHeight: sel.offsetHeight,
+        origScreenRect: sel.getBoundingClientRect(),
       };
       sel.classList.add('sel-dragging');
     };
@@ -508,8 +514,82 @@ export default function DocumentPage({
       const dy = (e.clientY - drag.startY) / scale;
 
       if (drag.mode === 'move') {
-        sel.style.left = `${drag.origLeft + dx}px`;
-        sel.style.top  = `${drag.origTop  + dy}px`;
+        const SNAP_THRESH = 6; // screen px
+        const guides: { type: 'h' | 'v'; pos: number; extent: [number, number] }[] = [];
+        let snapDx = 0, snapDy = 0;
+
+        // Build snap targets from page margins + center
+        const pageEl = editorRef.current;
+        const osr = drag.origScreenRect;
+        if (pageEl && osr) {
+          const pr = pageEl.getBoundingClientRect();
+          const mmPx = 3.7795 * scale; // 1mm in screen px
+
+          // Snap target X positions (screen coords)
+          const snapXTargets = [
+            pr.left + margins.l * mmPx,                    // margin-left
+            (pr.left + pr.right) / 2,                       // center-x
+            pr.right - margins.r * mmPx,                   // margin-right
+          ];
+          // Snap target Y positions (screen coords)
+          const snapYTargets = [
+            pr.top + margins.t * mmPx,                     // margin-top
+            (pr.top + pr.bottom) / 2,                       // center-y
+            pr.bottom - margins.b * mmPx,                  // margin-bottom
+          ];
+
+          // Add sibling element edges as snap targets
+          const siblings = pageEl.querySelectorAll(':scope > *');
+          siblings.forEach(sib => {
+            if (sib === sel || !(sib instanceof HTMLElement)) return;
+            const sr = sib.getBoundingClientRect();
+            if (sr.width === 0 && sr.height === 0) return;
+            snapXTargets.push(sr.left, sr.right, sr.left + sr.width / 2);
+            snapYTargets.push(sr.top, sr.bottom, sr.top + sr.height / 2);
+          });
+
+          // Tentative screen position of dragged element
+          const tLeft   = osr.left   + dx * scale;
+          const tRight  = osr.right  + dx * scale;
+          const tCenterX = (tLeft + tRight) / 2;
+          const tTop    = osr.top    + dy * scale;
+          const tBottom = osr.bottom + dy * scale;
+          const tCenterY = (tTop + tBottom) / 2;
+
+          // Check X snaps: left edge, right edge, center
+          for (const tx of snapXTargets) {
+            const pairs = [
+              { val: tLeft, label: 'left' },
+              { val: tRight, label: 'right' },
+              { val: tCenterX, label: 'center' },
+            ];
+            for (const p of pairs) {
+              if (Math.abs(p.val - tx) < SNAP_THRESH && snapDx === 0) {
+                snapDx = (tx - p.val) / scale;
+                guides.push({ type: 'v', pos: tx, extent: [pr.top, pr.bottom] });
+              }
+            }
+          }
+
+          // Check Y snaps: top edge, bottom edge, center
+          for (const ty of snapYTargets) {
+            const pairs = [
+              { val: tTop, label: 'top' },
+              { val: tBottom, label: 'bottom' },
+              { val: tCenterY, label: 'center' },
+            ];
+            for (const p of pairs) {
+              if (Math.abs(p.val - ty) < SNAP_THRESH && snapDy === 0) {
+                snapDy = (ty - p.val) / scale;
+                guides.push({ type: 'h', pos: ty, extent: [pr.left, pr.right] });
+              }
+            }
+          }
+        }
+
+        sel.style.left = `${drag.origLeft + dx + snapDx}px`;
+        sel.style.top  = `${drag.origTop  + dy + snapDy}px`;
+        setSnapGuides(guides);
         refreshActionBar();
         refreshHandles();
       } else if (drag.mode === 'resize') {
@@ -524,10 +604,80 @@ export default function DocumentPage({
         if (h.includes('s')) newH = Math.max(20, drag.origHeight + dy);
         if (h.includes('n')) { newH = Math.max(20, drag.origHeight - dy); newT = drag.origTop + dy; }
 
+        // ── Snap resize edges to margins + siblings ──
+        const SNAP_THRESH = 6;
+        const resizeGuides: typeof snapGuides = [];
+        const pageEl = editorRef.current;
+        const osr = drag.origScreenRect;
+        if (pageEl && osr) {
+          const pr = pageEl.getBoundingClientRect();
+          const mmPx = 3.7795 * scale;
+
+          const snapXTargets = [
+            pr.left + margins.l * mmPx, (pr.left + pr.right) / 2, pr.right - margins.r * mmPx,
+          ];
+          const snapYTargets = [
+            pr.top + margins.t * mmPx, (pr.top + pr.bottom) / 2, pr.bottom - margins.b * mmPx,
+          ];
+          const siblings = pageEl.querySelectorAll(':scope > *');
+          siblings.forEach(sib => {
+            if (sib === sel || !(sib instanceof HTMLElement)) return;
+            const sr = sib.getBoundingClientRect();
+            if (sr.width === 0 && sr.height === 0) return;
+            snapXTargets.push(sr.left, sr.right, sr.left + sr.width / 2);
+            snapYTargets.push(sr.top, sr.bottom, sr.top + sr.height / 2);
+          });
+
+          // Snap moving edges
+          if (h.includes('e')) {
+            const tRight = osr.left + newW * scale;
+            for (const tx of snapXTargets) {
+              if (Math.abs(tRight - tx) < SNAP_THRESH) {
+                newW += (tx - tRight) / scale;
+                resizeGuides.push({ type: 'v', pos: tx, extent: [pr.top, pr.bottom] });
+                break;
+              }
+            }
+          }
+          if (h.includes('w')) {
+            const tLeft = osr.right - newW * scale;
+            for (const tx of snapXTargets) {
+              if (Math.abs(tLeft - tx) < SNAP_THRESH) {
+                const adj = (tx - tLeft) / scale;
+                newL += adj; newW -= adj;
+                resizeGuides.push({ type: 'v', pos: tx, extent: [pr.top, pr.bottom] });
+                break;
+              }
+            }
+          }
+          if (h.includes('s')) {
+            const tBottom = osr.top + newT * scale - drag.origTop * scale + newH * scale;
+            for (const ty of snapYTargets) {
+              if (Math.abs(tBottom - ty) < SNAP_THRESH) {
+                newH += (ty - tBottom) / scale;
+                resizeGuides.push({ type: 'h', pos: ty, extent: [pr.left, pr.right] });
+                break;
+              }
+            }
+          }
+          if (h.includes('n')) {
+            const tTop = osr.bottom - (drag.origHeight - newT + drag.origTop) * scale;
+            for (const ty of snapYTargets) {
+              if (Math.abs(tTop - ty) < SNAP_THRESH) {
+                const adj = (ty - tTop) / scale;
+                newT += adj; newH -= adj;
+                resizeGuides.push({ type: 'h', pos: ty, extent: [pr.left, pr.right] });
+                break;
+              }
+            }
+          }
+        }
+
         sel.style.width  = `${newW}px`;
         sel.style.height = `${newH}px`;
         sel.style.left   = `${newL}px`;
         sel.style.top    = `${newT}px`;
+        setSnapGuides(resizeGuides);
         refreshActionBar();
         refreshHandles();
 
@@ -543,6 +693,7 @@ export default function DocumentPage({
         sel.classList.remove('sel-dragging');
         dragStateRef.current = null;
         setDimTip(null);
+        setSnapGuides([]);
         // Commit the position/size change
         if (editorRef.current) onEdit(pageNumber, editorRef.current.innerHTML);
         refreshActionBar();
@@ -967,6 +1118,7 @@ export default function DocumentPage({
                     origTop: parseFloat(sel.style.top || '0'),
                     origWidth: sel.offsetWidth,
                     origHeight: sel.offsetHeight,
+                    origScreenRect: sel.getBoundingClientRect(),
                   };
                   sel.classList.add('sel-dragging');
                 }}
@@ -982,6 +1134,24 @@ export default function DocumentPage({
         <div className="sel-dimension-tip" style={{ left: dimTip.x, top: dimTip.y }}>
           {dimTip.text}
         </div>,
+        document.body
+      )}
+
+      {/* ── Snap guide lines ── */}
+      {snapGuides.length > 0 && createPortal(
+        <>
+          {snapGuides.map((g, i) =>
+            g.type === 'v' ? (
+              <div key={`sg-${i}`} className="snap-guide snap-guide--v" style={{
+                position: 'fixed', left: g.pos, top: g.extent[0], height: g.extent[1] - g.extent[0],
+              }} />
+            ) : (
+              <div key={`sg-${i}`} className="snap-guide snap-guide--h" style={{
+                position: 'fixed', left: g.extent[0], top: g.pos, width: g.extent[1] - g.extent[0],
+              }} />
+            )
+          )}
+        </>,
         document.body
       )}
 
