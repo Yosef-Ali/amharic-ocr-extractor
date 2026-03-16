@@ -232,7 +232,8 @@ export default function EditorShell({
   // ── Element selection (inspector) ──────────────────────────────────────
   const handleElementSelect = (styles: ElementStyles | null) => {
     setElementStyles(styles);
-    if (styles && selectionMode && rightDrawer !== 'inspector') setRightDrawer('inspector');
+    // Inspector updates if already open, but does NOT auto-open on element select.
+    // User opens it manually via the toolbar button when they want it.
   };
   const handleElementStyleChange = (p: Record<string, string>) => {
     setStyleApplySignal({ patch: p, nonce: Date.now() });
