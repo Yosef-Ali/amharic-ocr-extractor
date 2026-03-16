@@ -96,6 +96,8 @@ interface Props {
   onExitSelectionMode?:  () => void;
   styleApply?: { patch: Record<string, string>; nonce: number } | null;
   onEdit: (pageNumber: number, html: string) => void;
+  /** Canvas zoom level (100 = 100%). Used to scale drag/resize deltas. */
+  zoom?: number;
 }
 
 // ── Block-level tags that can be selected ────────────────────────────────────
@@ -128,6 +130,7 @@ export default function DocumentPage({
   pageNumber, html, compact = false, docHandle,
   styleOverride, selectionMode = false,
   onElementSelect, onExitSelectionMode, styleApply, onEdit,
+  zoom = 100,
 }: Props) {
   const editorRef            = useRef<HTMLDivElement>(null);
   const editImgRef           = useRef<HTMLImageElement | null>(null);
@@ -435,13 +438,31 @@ export default function DocumentPage({
     return () => document.removeEventListener('selectionchange', update);
   }, [selectionMode]);
 
-  // Keep action bar in sync when user scrolls
+  // Keep action bar + handles in sync on scroll, zoom, pan
   useEffect(() => {
     if (!selectionMode) return;
     const onScroll = () => { refreshActionBar(); refreshHandles(); };
     window.addEventListener('scroll', onScroll, true);
-    return () => window.removeEventListener('scroll', onScroll, true);
-  }, [selectionMode, refreshActionBar]);
+    window.addEventListener('resize', onScroll);
+    // rAF loop: detect position changes from zoom/pan transforms
+    let raf: number;
+    let lastKey = '';
+    const syncLoop = () => {
+      const sel = selectedElRef.current;
+      if (sel) {
+        const r = sel.getBoundingClientRect();
+        const key = `${r.left|0},${r.top|0},${r.width|0},${r.height|0}`;
+        if (key !== lastKey) { lastKey = key; onScroll(); }
+      }
+      raf = requestAnimationFrame(syncLoop);
+    };
+    raf = requestAnimationFrame(syncLoop);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+      cancelAnimationFrame(raf);
+    };
+  }, [selectionMode, refreshActionBar, refreshHandles]);
 
   // ── Drag-to-move logic ─────────────────────────────────────────────────
   useEffect(() => {
@@ -482,8 +503,9 @@ export default function DocumentPage({
       const sel = selectedElRef.current;
       if (!drag || !sel) return;
 
-      const dx = e.clientX - drag.startX;
-      const dy = e.clientY - drag.startY;
+      const scale = zoom / 100;
+      const dx = (e.clientX - drag.startX) / scale;
+      const dy = (e.clientY - drag.startY) / scale;
 
       if (drag.mode === 'move') {
         sel.style.left = `${drag.origLeft + dx}px`;

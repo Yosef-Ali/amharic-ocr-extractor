@@ -452,6 +452,7 @@ export default function EditorShell({
                 onEdit={onEdit}
                 onError={onError}
                 docHandle={docHandleRef}
+                zoom={zoom}
               />
             ) : viewMode === 'document' && hasResult ? (
               <div className="es-doc-wrap">
@@ -465,6 +466,7 @@ export default function EditorShell({
                   styleApply={styleApplySignal}
                   onEdit={onEdit}
                   docHandle={docHandleRef}
+                  zoom={zoom}
                 />
               </div>
             ) : viewMode === 'scan' || !hasResult ? (

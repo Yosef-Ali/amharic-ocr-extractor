@@ -24,6 +24,7 @@ interface Props {
   onEdit:          (pageNumber: number, html: string) => void;
   onError?:        (msg: string) => void;
   docHandle?:      { current: DocumentPageHandle | null };
+  zoom?:           number;
 }
 
 // ── Colours ────────────────────────────────────────────────────────────────
@@ -35,7 +36,7 @@ export default function SplitPageView({
   pageNumber, pageImage, html, imageQuality,
   isRegenerating = false, styleOverride, selectionMode = false,
   onElementSelect, onExitSelectionMode, styleApply,
-  onEdit, onError, docHandle,
+  onEdit, onError, docHandle, zoom = 100,
 }: Props) {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const imgRef     = useRef<HTMLImageElement>(null);
@@ -389,6 +390,7 @@ export default function SplitPageView({
             onExitSelectionMode={onExitSelectionMode}
             styleApply={styleApply}
             onEdit={onEdit}
+            zoom={zoom}
             compact
           />
 
