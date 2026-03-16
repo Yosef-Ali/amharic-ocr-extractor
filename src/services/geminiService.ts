@@ -60,7 +60,16 @@ function buildOcrPrompt(): string {
 
 TASK: Extract ALL text from this page image with 100% accuracy.
 
-RULES:
+CRITICAL — AMHARIC / ETHIOPIC (ፊደል) TEXT RULES:
+- NEVER substitute, correct, modernize, or "fix" any Amharic word. Output EXACTLY what is printed.
+- Visually similar Ethiopic characters MUST be distinguished carefully:
+  ሀ ≠ ሐ ≠ ኀ  |  ሰ ≠ ሠ  |  ጸ ≠ ፀ  |  አ ≠ ዐ
+- Preserve ALL Ethiopic punctuation exactly: ። (full stop) ፣ (comma) ፤ (semicolon) ፡ (wordspace) :: (old-style full stop)
+- Church/religious texts use archaic forms — do NOT replace them with modern equivalents.
+- If a word is unclear, output your best character-level reading — NEVER skip or paraphrase it.
+- Mixed Amharic + English/numbers: keep both scripts exactly as printed, in the correct reading order.
+
+GENERAL RULES:
 - Output ONLY the raw text — nothing else, no explanations.
 - Preserve every character, punctuation mark, and number exactly as it appears.
 - Preserve paragraph breaks with blank lines.
@@ -84,7 +93,13 @@ TASK: Convert the extracted OCR text below into clean, professional HTML that fa
 EXTRACTED TEXT:
 ${extractedText}
 
-STRICT OUTPUT RULES:
+ABSOLUTE RULE — TEXT INTEGRITY:
+You MUST use the EXACT text from "EXTRACTED TEXT" above — copy it character-by-character into your HTML.
+- NEVER rewrite, paraphrase, modernize, or "improve" any Amharic word.
+- NEVER drop words, add words, or reorder words.
+- NEVER substitute similar-looking Ethiopic characters (ሀ≠ሐ≠ኀ, ሰ≠ሠ, ጸ≠ፀ).
+- If the extracted text has errors, preserve those errors — your job is LAYOUT, not editing.
+- Every single word from the extracted text MUST appear in your HTML output.
 - Output raw HTML only — zero markdown, zero code fences, zero \`\`\`html wrappers.
 - Do NOT include <html>, <head>, <body>, or <doctype> tags.
 - Start your output directly with the first HTML element.
