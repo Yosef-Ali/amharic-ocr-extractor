@@ -2893,7 +2893,8 @@
   bottom: 82px;
   right: 28px;
   width: 340px;
-  height: 480px;
+  height: 420px;
+  max-height: calc(100vh - 160px);
   background: var(--t-bg);
   border: 1px solid var(--t-surface3);
   border-radius: 18px;
