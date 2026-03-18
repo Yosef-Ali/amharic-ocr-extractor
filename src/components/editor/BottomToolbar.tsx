@@ -54,8 +54,8 @@ export default function BottomToolbar({
       )}
 
       <div className="bt-row">
-        {/* Left — Page navigation */}
-        <div className="bt-group">
+        {/* Left — Page navigation (hidden on mobile; top header handles it) */}
+        <div className="bt-group es-hide-mobile">
           <button className="bt-icon" onClick={onPrev} disabled={activePage <= 1} title="Previous page">
             <ChevronLeft size={16} />
           </button>
