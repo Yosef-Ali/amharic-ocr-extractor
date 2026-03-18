@@ -1,6 +1,6 @@
 import {
   ChevronLeft, ChevronRight, Layers, Loader2, Save, Download,
-  RefreshCw, Trash2, Zap, Sparkles, MoreHorizontal, BookOpen,
+  RefreshCw, Trash2, Zap, Sparkles, MoreHorizontal, BookOpen, Image as ImageIcon,
 } from 'lucide-react';
 import { useState } from 'react';
 import { type ImageQuality } from '../../services/geminiService';
@@ -13,6 +13,7 @@ interface Props {
   isProcessing:     boolean;
   isRegenerating:   boolean;
   isPdfExporting:   boolean;
+  isSaving?:        boolean;
   imageQuality:     ImageQuality;
   processingStatus: string;
 
@@ -26,16 +27,17 @@ interface Props {
   onShowLibrary:       () => void;
   onDownloadPDF:       () => void;
   onImageQualityChange: (q: ImageQuality) => void;
+  onCoverPage?:        () => void;
 }
 
 export default function BottomToolbar({
   activePage, totalPages, hasResult, hasAnyResults,
-  isProcessing, isRegenerating, isPdfExporting,
+  isProcessing, isRegenerating, isPdfExporting, isSaving,
   imageQuality, processingStatus,
   onPrev, onNext, onExtract, onForceExtract,
   onRegenerate, onDeletePage,
   onSave, onShowLibrary, onDownloadPDF,
-  onImageQualityChange,
+  onImageQualityChange, onCoverPage,
 }: Props) {
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -105,9 +107,9 @@ export default function BottomToolbar({
         <div className="bt-group">
           {hasAnyResults && (
             <>
-              <button className="bt-btn bt-btn--save" onClick={onSave} disabled={isProcessing} title="Save">
-                <Save size={14} />
-                <span className="bt-label-desktop">Save</span>
+              <button className="bt-btn bt-btn--save" onClick={onSave} disabled={isProcessing || isSaving} title="Save to library">
+                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                <span className="bt-label-desktop">{isSaving ? 'Saving…' : 'Save'}</span>
               </button>
               <button
                 className="bt-btn bt-btn--pdf"
@@ -133,6 +135,11 @@ export default function BottomToolbar({
                   <button onClick={() => { onShowLibrary(); setMoreOpen(false); }}>
                     <BookOpen size={14} /> Library
                   </button>
+                  {onCoverPage && (
+                    <button onClick={() => { onCoverPage(); setMoreOpen(false); }}>
+                      <ImageIcon size={14} /> Cover Page
+                    </button>
+                  )}
                   {hasAnyResults && (
                     <button onClick={() => { onForceExtract(); setMoreOpen(false); }}>
                       <RefreshCw size={14} /> Re-extract all

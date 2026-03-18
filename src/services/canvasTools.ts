@@ -268,4 +268,27 @@ export const CANVAS_TOOL_DECLARATIONS = [
       },
     },
   },
+  {
+    name: 'generateCoverPage',
+    description:
+      'Generate an editable book cover page using NanoBanana 2 (Gemini 3.1 Flash Image). ' +
+      'Generates a decorative background image with editable text overlay (title, subtitle, author). ' +
+      'Three modes: "generate" creates from scratch, "improve" enhances existing cover background, ' +
+      '"reference" creates new cover inspired by a reference image style. ' +
+      'Supports two binding types: "saddle-stitch" (simple cover) and "perfect-binding" (adds spine with rotated title). ' +
+      'The generated cover is applied as page 0 with all text editable on the canvas.',
+    parameters: {
+      type: 'object',
+      properties: {
+        mode:        { type: 'string', description: '"generate"|"improve"|"reference". Default "generate".' },
+        title:       { type: 'string', description: 'Book title text (required for generate/reference mode)' },
+        subtitle:    { type: 'string', description: 'Optional subtitle' },
+        author:      { type: 'string', description: 'Optional author name' },
+        style:       { type: 'string', description: '"orthodox"|"modern"|"classic"|"minimalist"|"ornate". Default "orthodox".' },
+        binding:     { type: 'string', description: '"saddle-stitch"|"perfect-binding". Default "saddle-stitch". Perfect binding adds a spine strip with rotated title on the book edge.' },
+        instruction: { type: 'string', description: 'Improvement instructions (for "improve" mode)' },
+      },
+      required: ['title'],
+    },
+  },
 ] as const;

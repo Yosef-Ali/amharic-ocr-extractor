@@ -43,18 +43,24 @@ export default function UploadZone({ onFile }: Props) {
         </p>
       </div>
 
-      <div className="flex items-center gap-3 mt-4 relative z-10">
+      <div className="flex items-center gap-3 mt-4 relative z-10 flex-wrap justify-center">
         <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-bold text-gray-500 bg-gray-100/80 px-3 py-1.5 rounded-full">
           <FileText size={14} className="text-red-500" /> PDF
         </span>
         <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-bold text-gray-500 bg-gray-100/80 px-3 py-1.5 rounded-full">
-          <Upload size={14} className="text-blue-500" /> Images (PNG, JPG, WEBP)
+          <FileText size={14} className="text-blue-500" /> Word (.docx)
+        </span>
+        <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-bold text-gray-500 bg-gray-100/80 px-3 py-1.5 rounded-full">
+          <FileText size={14} className="text-green-500" /> Text (.txt)
+        </span>
+        <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-bold text-gray-500 bg-gray-100/80 px-3 py-1.5 rounded-full">
+          <Upload size={14} className="text-purple-500" /> Images
         </span>
       </div>
       <input
         ref={inputRef}
         type="file"
-        accept=".pdf,image/*"
+        accept=".pdf,.docx,.txt,.md,image/*,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
         className="hidden"
         onChange={(e) => {
           if (e.target.files?.[0]) onFile(e.target.files[0]);

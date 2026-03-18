@@ -7,9 +7,9 @@ import AdminPanel    from './components/AdminPanel';
 import Toast, { type ToastMessage } from './components/Toast';
 import AuthScreen    from './components/AuthScreen';
 
-import { pdfToImages, imageFileToBase64 } from './services/pdfService';
+import { pdfToImages, imageFileToBase64, detectFileType, docxToHtmlPages, textToHtmlPages } from './services/pdfService';
 import { extractPageHTML, autoFillImagePlaceholders, type ImageQuality } from './services/geminiService';
-import { saveDocument, initStorage, type SavedDocument } from './services/storageService';
+import { saveDocument, initStorage, initializeSchema, type SavedDocument } from './services/storageService';
 import { CanvasExecutor } from './services/canvasExecutor';
 import { WsBridge }      from './services/wsBridge';
 import { ensureUsersTable, upsertUser, checkUserBlocked } from './services/adminService';
@@ -60,6 +60,7 @@ export default function App() {
     const u = result?.data?.user ?? null;
     setNeonUser(u);
     initStorage(u?.id ?? null);
+    if (u?.id) initializeSchema().catch(() => {/* best-effort */});
     if (u?.id && u?.email) {
       try {
         await ensureUsersTable();
@@ -96,6 +97,7 @@ export default function App() {
   const [isProcessing,     setIsProcessing]     = useState(false);
   const [processingStatus, setProcessingStatus] = useState('');
   const [isPdfExporting,   setIsPdfExporting]   = useState(false);
+  const [isSaving,         setIsSaving]         = useState(false);
   const [showLibrary,      setShowLibrary]      = useState(false);
   const [toast,            setToast]            = useState<ToastMessage | null>(null);
   const [imageQuality,     setImageQuality]     = useState<ImageQuality>('fast');
@@ -186,17 +188,47 @@ export default function App() {
     setIsProcessing(true);
 
     try {
-      let images: string[];
-      if (file.type === 'application/pdf') {
-        images = await pdfToImages(file);
+      const fileType = detectFileType(file);
+
+      if (fileType === 'docx') {
+        // DOCX → HTML pages (text is already digital, no OCR needed)
+        setProcessingStatus('Converting Word document…');
+        const htmlPages = await docxToHtmlPages(file);
+        // Create blank page images (white A4) as scan placeholders
+        const blankImages = htmlPages.map(() => '');
+        setPageImages(blankImages);
+        const results: Record<number, string> = {};
+        htmlPages.forEach((html, i) => { results[i + 1] = html; });
+        setPageResults(results);
+        setFromPage(1);
+        setToPage(htmlPages.length);
+      } else if (fileType === 'text') {
+        // Plain text → HTML pages
+        setProcessingStatus('Reading text file…');
+        const text = await file.text();
+        const htmlPages = textToHtmlPages(text);
+        const blankImages = htmlPages.map(() => '');
+        setPageImages(blankImages);
+        const results: Record<number, string> = {};
+        htmlPages.forEach((html, i) => { results[i + 1] = html; });
+        setPageResults(results);
+        setFromPage(1);
+        setToPage(htmlPages.length);
       } else {
-        images = [await imageFileToBase64(file)];
+        // PDF or image — existing flow (renders to images for OCR)
+        let images: string[];
+        if (fileType === 'pdf') {
+          images = await pdfToImages(file);
+        } else {
+          images = [await imageFileToBase64(file)];
+        }
+        setPageImages(images);
+        setFromPage(1);
+        setToPage(images.length);
       }
-      setPageImages(images);
-      setFromPage(1);
-      setToPage(images.length);
     } catch (err) {
       console.error(err);
+      setToast({ id: Date.now().toString(), message: `Failed to open file: ${(err as Error).message}`, variant: 'error' });
     } finally {
       setIsProcessing(false);
       setProcessingStatus('');
@@ -295,19 +327,77 @@ export default function App() {
   // Delete a single page from results
   // -------------------------------------------------------------------------
   const handleDeletePage = useCallback((pageNumber: number) => {
-    setPageResults((prev) => {
-      const next = { ...prev };
-      delete next[pageNumber];
+    // Remove the scan image and shift all subsequent page results down by 1
+    setPageImages(prev => prev.filter((_, i) => i !== pageNumber - 1));
+    setPageResults(prev => {
+      const next: Record<number, string> = {};
+      if (prev[0]) next[0] = prev[0]; // keep cover
+      Object.entries(prev).forEach(([k, v]) => {
+        const n = Number(k);
+        if (n === 0) return;
+        if (n < pageNumber) next[n] = v;
+        else if (n > pageNumber) next[n - 1] = v;
+        // n === pageNumber is deleted
+      });
       return next;
     });
   }, []);
+
+  // Reorder pages: move page at fromPage to toPage position (1-indexed)
+  const handleReorderPages = useCallback((fromPage: number, toPage: number) => {
+    if (fromPage === toPage) return;
+    setPageImages(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(fromPage - 1, 1);
+      next.splice(toPage - 1, 0, moved);
+      return next;
+    });
+    setPageResults(prev => {
+      // Build ordered array of [pageNum, html] for pages 1..n, reorder, re-key
+      const cover = prev[0];
+      const total = Object.keys(prev).filter(k => Number(k) > 0).length;
+      const arr: (string | undefined)[] = Array.from({ length: total }, (_, i) => prev[i + 1]);
+      const [moved] = arr.splice(fromPage - 1, 1);
+      arr.splice(toPage - 1, 0, moved);
+      const next: Record<number, string> = {};
+      if (cover) next[0] = cover;
+      arr.forEach((html, i) => { if (html) next[i + 1] = html; });
+      return next;
+    });
+  }, []);
+
+  // Insert a blank page after the given page number (0 = insert before page 1)
+  const handleInsertPage = useCallback((afterPage: number) => {
+    setPageImages(prev => {
+      const next = [...prev];
+      next.splice(afterPage, 0, '');   // blank image
+      return next;
+    });
+    setPageResults(prev => {
+      const cover = prev[0];
+      const total = pageImages.length;
+      const arr: (string | undefined)[] = Array.from({ length: total }, (_, i) => prev[i + 1]);
+      arr.splice(afterPage, 0, undefined);  // blank page result
+      const next: Record<number, string> = {};
+      if (cover) next[0] = cover;
+      arr.forEach((html, i) => { if (html) next[i + 1] = html; });
+      return next;
+    });
+  }, [pageImages.length]);
 
   // -------------------------------------------------------------------------
   // Save to library
   // -------------------------------------------------------------------------
   const handleSave = async () => {
-    await saveDocument(fileName, pageImages, pageResults);
-    setToast({ id: Date.now().toString(), message: `"${fileName}" saved to library.`, variant: 'success' });
+    setIsSaving(true);
+    try {
+      await saveDocument(fileName, pageImages, pageResults);
+      setToast({ id: Date.now().toString(), message: `"${fileName}" saved to library.`, variant: 'success' });
+    } catch (err) {
+      setToast({ id: Date.now().toString(), message: `Save failed: ${(err as Error).message}`, variant: 'error' });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // -------------------------------------------------------------------------
@@ -470,9 +560,12 @@ export default function App() {
         onEdit={handleEdit}
         onRegenerate={regenerateSinglePage}
         onDeletePage={handleDeletePage}
+        onReorderPages={handleReorderPages}
+        onInsertPage={handleInsertPage}
         onExtract={() => processPages(false)}
         onForceExtract={() => processPages(true)}
         onSave={handleSave}
+        isSaving={isSaving}
         onClear={handleClear}
         onShowLibrary={handleShowLibrary}
         onDownloadPDF={handleDownloadPDF}
@@ -504,24 +597,33 @@ export default function App() {
         }}
       >
         {Object.entries(pageResults)
-          .sort(([a], [b]) => +a - +b)
-          .map(([page, html]) => (
-            <div
-              key={page}
-              className="document-page"
-              style={{
-                width:      '210mm',
-                minHeight:  '297mm',
-                padding:    '12mm 16mm',
-                fontFamily: "'Noto Serif Ethiopic', 'Noto Sans Ethiopic', serif",
-                fontSize:   '1rem',
-                boxSizing:  'border-box',
-                lineHeight: '1.6',
-                background: 'white',
-              }}
-              dangerouslySetInnerHTML={{ __html: html }}
-            />
-          ))}
+          .sort(([a], [b]) => {
+            // front cover (0) first, back cover (-1) last, content pages in between
+            if (+a === -1) return 1;
+            if (+b === -1) return -1;
+            return +a - +b;
+          })
+          .map(([page, html]) => {
+            const isCoverPage = page === '0' || page === '-1';
+            return (
+              <div
+                key={page}
+                className="document-page"
+                style={{
+                  width:      '210mm',
+                  minHeight:  '297mm',
+                  padding:    isCoverPage ? '0' : '12mm 16mm',
+                  fontFamily: "'Noto Serif Ethiopic', 'Noto Sans Ethiopic', serif",
+                  fontSize:   '1rem',
+                  boxSizing:  'border-box',
+                  lineHeight: '1.6',
+                  background: isCoverPage ? 'transparent' : 'white',
+                  overflow:   isCoverPage ? 'hidden' : undefined,
+                }}
+                dangerouslySetInnerHTML={{ __html: html }}
+              />
+            );
+          })}
       </div>
 
       {/* Library modal */}

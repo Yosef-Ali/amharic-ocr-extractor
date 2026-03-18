@@ -18,12 +18,12 @@ interface Props {
 
 // ── Quick-action suggestions ─────────────────────────────────────────────────
 const SUGGESTIONS = [
+  'Remove all borders and boxes from titles',
   'Clean up — remove excessive borders',
   'Fix spacing and margins',
   'Improve heading hierarchy',
   'Make layout more compact',
   'Fix text alignment',
-  'Remove visual clutter',
 ];
 
 // ── Component ────────────────────────────────────────────────────────────────

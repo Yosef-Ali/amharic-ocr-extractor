@@ -57,7 +57,16 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
   const handleFilePick = (files: FileList | null) => {
     if (!files?.length) return;
     const file = files[0];
-    if (file.type === 'application/pdf' || file.type.startsWith('image/')) onFile(file);
+    const name = file.name.toLowerCase();
+    if (
+      file.type === 'application/pdf' ||
+      file.type.startsWith('image/') ||
+      file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      file.type === 'text/plain' ||
+      name.endsWith('.docx') ||
+      name.endsWith('.txt') ||
+      name.endsWith('.md')
+    ) onFile(file);
   };
 
   const handleOpenDoc = async (doc: SavedDocument) => {
@@ -158,7 +167,7 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
             <input
               ref={fileInputRef}
               type="file"
-              accept="application/pdf,image/png,image/jpeg,image/webp"
+              accept="application/pdf,image/png,image/jpeg,image/webp,.docx,.txt,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
               className="sr-only"
               onChange={e => handleFilePick(e.target.files)}
               disabled={isProcessing}
@@ -174,7 +183,7 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
                   <Plus size={20} />
                 </div>
                 <span className="home-upload-label">New Project</span>
-                <span className="home-upload-hint">Drop PDF / image, or click</span>
+                <span className="home-upload-hint">Drop PDF, Word, text, or image</span>
               </>
             )}
           </label>
@@ -228,6 +237,7 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
                 <ProjectCard
                   key={doc.id}
                   doc={doc}
+                  thumbSrc={toThumbSrc(doc.thumbnailUrl) ?? toThumbSrc(doc.pageImages?.[0])}
                   onOpen={() => handleOpenDoc(doc)}
                   onDelete={e => handleDelete(e, doc.id)}
                   onDownload={e => handleDownload(e, doc)}
@@ -251,6 +261,7 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
                 <ProjectRow
                   key={doc.id}
                   doc={doc}
+                  thumbSrc={toThumbSrc(doc.thumbnailUrl) ?? toThumbSrc(doc.pageImages?.[0])}
                   onOpen={() => handleOpenDoc(doc)}
                   onDelete={e => handleDelete(e, doc.id)}
                   onDownload={e => handleDownload(e, doc)}
@@ -273,21 +284,28 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
   );
 }
 
+/** Normalize a thumbnail value (Blob URL, data: URL, or raw base64) to an img src. */
+function toThumbSrc(val: string | undefined | null): string | null {
+  if (!val) return null;
+  if (val.startsWith('http') || val.startsWith('data:')) return val;
+  return `data:image/jpeg;base64,${val}`;
+}
+
 // ── Project Card (recent, large) ───────────────────────────────────────────
-function ProjectCard({ doc, onOpen, onDelete, onDownload, isLoading, isDownloading }: {
+function ProjectCard({ doc, thumbSrc, onOpen, onDelete, onDownload, isLoading, isDownloading }: {
   doc: SavedDocument;
+  thumbSrc: string | null;
   onOpen: () => void;
   onDelete: (e: React.MouseEvent) => void;
   onDownload: (e: React.MouseEvent) => void;
   isLoading?: boolean;
   isDownloading?: boolean;
 }) {
-  const thumb = doc.pageImages?.[0];
   return (
     <button className="proj-card" onClick={onOpen} disabled={isLoading || isDownloading}>
       <div className="proj-card-thumb">
-        {thumb
-          ? <img src={`data:image/jpeg;base64,${thumb}`} alt="" className="proj-card-thumb-img" />
+        {thumbSrc
+          ? <img src={thumbSrc} alt="" className="proj-card-thumb-img" />
           : <FileText size={28} className="text-gray-300" />
         }
       </div>
@@ -318,8 +336,9 @@ function ProjectCard({ doc, onOpen, onDelete, onDownload, isLoading, isDownloadi
 }
 
 // ── Project Row (older, compact list) ─────────────────────────────────────
-function ProjectRow({ doc, onOpen, onDelete, onDownload, isLoading, isDownloading }: {
+function ProjectRow({ doc, thumbSrc, onOpen, onDelete, onDownload, isLoading, isDownloading }: {
   doc: SavedDocument;
+  thumbSrc: string | null;
   onOpen: () => void;
   onDelete: (e: React.MouseEvent) => void;
   onDownload: (e: React.MouseEvent) => void;
@@ -329,7 +348,10 @@ function ProjectRow({ doc, onOpen, onDelete, onDownload, isLoading, isDownloadin
   return (
     <button className="proj-row" onClick={onOpen} disabled={isLoading || isDownloading}>
       <div className="proj-row-icon">
-        <Upload size={14} />
+        {thumbSrc
+          ? <img src={thumbSrc} alt="" className="proj-row-thumb" />
+          : <Upload size={14} />
+        }
       </div>
       <div className="proj-row-text">
         <span className="proj-row-name">{doc.name}</span>

@@ -1,16 +1,20 @@
 import {
-  useState, useRef, useEffect, useCallback,
+  useState, useRef, useEffect, useCallback, useMemo,
   type KeyboardEvent, type ClipboardEvent, type DragEvent,
 } from 'react';
 import {
   MessageSquare, X, Send, Paperclip, Trash2, Bot, User,
   ImageIcon, Pencil, MessageCircle, Copy, Check, Lock,
-  FileText, Sparkles, Zap,
+  FileText, Sparkles, Zap, Loader2,
 } from 'lucide-react';
 import {
-  chatWithAI, editPageWithChat,
+  chatWithAI, editPageWithChat, editPageWithTools,
   type ChatTurn, type CanvasContext,
 } from '../services/geminiService';
+import { type CanvasExecutor } from '../services/canvasExecutor';
+import { type ToolCallFeedback } from '../services/canvasTools';
+import { MarkdownText } from '../utils/markdownRenderer';
+import { isApiKeyError, setApiKey } from '../services/geminiService';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface EditContext {
@@ -21,11 +25,12 @@ export interface EditContext {
 }
 
 interface Props {
-  editContext?:   EditContext;
-  user?:          { id: string; email?: string; name?: string } | null;
+  editContext?:    EditContext;
+  canvasExecutor?: CanvasExecutor;
+  user?:           { id: string; email?: string; name?: string } | null;
   /** When provided, panel open-state is controlled externally (dock mode — FAB hidden) */
-  open?:          boolean;
-  onOpenChange?:  (open: boolean) => void;
+  open?:           boolean;
+  onOpenChange?:   (open: boolean) => void;
 }
 
 // ── Suggestion chips ──────────────────────────────────────────────────────────
@@ -36,6 +41,15 @@ const CANVAS_CHIPS = [
   { icon: '🔤', text: "What is the document's title?" },
 ];
 
+const LAYOUT_CHIPS = [
+  { icon: '🚫', text: 'Remove all borders and boxes' },
+  { icon: '⬛', text: 'Make this two columns' },
+  { icon: '↕️',  text: 'Increase all heading sizes' },
+  { icon: '—',  text: 'Add a divider after the title' },
+  { icon: '≡',  text: 'Justify all body text' },
+  { icon: '📖', text: 'Generate a cover page for this book' },
+];
+
 const GENERAL_CHIPS = [
   { icon: '📄', text: 'How does OCR extraction work?' },
   { icon: '✂️', text: 'How do I crop an image region?' },
@@ -43,44 +57,6 @@ const GENERAL_CHIPS = [
   { icon: '🌍', text: 'What languages are supported?' },
 ];
 
-// ── Markdown renderer ─────────────────────────────────────────────────────────
-function inlineMd(text: string): React.ReactNode[] {
-  const tokens = text.split(/(\*\*[^*\n]+\*\*|\*[^*\n]+\*|`[^`\n]+`)/);
-  return tokens.map((t, i) => {
-    if (t.startsWith('**') && t.endsWith('**')) return <strong key={i}>{t.slice(2, -2)}</strong>;
-    if (t.startsWith('*')  && t.endsWith('*'))  return <em key={i}>{t.slice(1, -1)}</em>;
-    if (t.startsWith('`')  && t.endsWith('`'))  return <code key={i} className="fc-md-code">{t.slice(1, -1)}</code>;
-    return t;
-  });
-}
-
-function MarkdownText({ text }: { text: string }) {
-  const paragraphs = text.trim().split(/\n{2,}/);
-  return (
-    <div className="fc-md">
-      {paragraphs.map((para, i) => {
-        const lines = para.split('\n');
-        const listLines = lines.filter(l => /^[-*•]\s/.test(l.trim()));
-        if (listLines.length > 0 && listLines.length === lines.filter(l => l.trim()).length) {
-          return (
-            <ul key={i} className="fc-md-ul">
-              {listLines.map((l, j) => (
-                <li key={j}>{inlineMd(l.replace(/^[-*•]\s*/, ''))}</li>
-              ))}
-            </ul>
-          );
-        }
-        return (
-          <p key={i} className="fc-md-p">
-            {lines.map((line, j) => (
-              <span key={j}>{inlineMd(line)}{j < lines.length - 1 && <br />}</span>
-            ))}
-          </p>
-        );
-      })}
-    </div>
-  );
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fileToDataUrl(file: File): Promise<string> {
@@ -93,7 +69,7 @@ function fileToDataUrl(file: File): Promise<string> {
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export default function FloatingChat({ editContext, user, open: controlledOpen, onOpenChange }: Props) {
+export default function FloatingChat({ editContext, canvasExecutor, user, open: controlledOpen, onOpenChange }: Props) {
   const isControlled                = onOpenChange !== undefined;
   const [internalOpen, setInternal] = useState(false);
   const open                        = isControlled ? (controlledOpen ?? false) : internalOpen;
@@ -106,8 +82,11 @@ export default function FloatingChat({ editContext, user, open: controlledOpen, 
   const [attachName, setAttachName] = useState('');
   const [loading, setLoading]       = useState(false);
   const [dragging, setDragging]     = useState(false);
-  const [mode, setMode]             = useState<'chat' | 'edit'>('chat');
+  const [mode, setMode]             = useState<'chat' | 'edit' | 'layout'>('chat');
+  const [toolCalls, setToolCalls]   = useState<ToolCallFeedback[]>([]);
   const [copiedIdx, setCopiedIdx]   = useState<number | null>(null);
+  const [showKeyInput, setShowKeyInput] = useState(false);
+  const [pendingKey,   setPendingKey]   = useState('');
 
   // Switch to edit mode when editContext arrives
   useEffect(() => {
@@ -194,7 +173,32 @@ export default function FloatingChat({ editContext, user, open: controlledOpen, 
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
 
     try {
-      if (mode === 'edit' && editContext) {
+      if (mode === 'layout' && editContext && canvasExecutor) {
+        setToolCalls([]);
+        const summary = await editPageWithTools(
+          editContext.image,
+          editContext.html,
+          text,
+          canvasExecutor,
+          editContext.pageNumber,
+          {
+            onToolCall: (fb: ToolCallFeedback) => setToolCalls(prev => {
+              const existing = prev.findIndex(t => t.id === fb.id);
+              if (existing >= 0) {
+                const next = [...prev];
+                next[existing] = fb;
+                return next;
+              }
+              return [...prev, fb];
+            }),
+          },
+        );
+        setMessages(prev => [
+          ...prev,
+          { role: 'ai', text: `✅ ${summary}` },
+        ]);
+        setToolCalls([]);
+      } else if (mode === 'edit' && editContext) {
         const newHtml = await editPageWithChat(editContext.image, editContext.html, text);
         editContext.onEdit(newHtml);
         setMessages(prev => [
@@ -210,10 +214,18 @@ export default function FloatingChat({ editContext, user, open: controlledOpen, 
         setMessages(prev => [...prev, { role: 'ai', text: reply }]);
       }
     } catch (err) {
-      setMessages(prev => [
-        ...prev,
-        { role: 'ai', text: `⚠️ ${(err as Error).message ?? 'Something went wrong. Please try again.'}` },
-      ]);
+      if (isApiKeyError(err)) {
+        setMessages(prev => [...prev, {
+          role: 'ai',
+          text: '🔑 **API key expired or invalid.**\n\nGet a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and paste it below.',
+        }]);
+        setShowKeyInput(true);
+      } else {
+        setMessages(prev => [
+          ...prev,
+          { role: 'ai', text: `⚠️ ${(err as Error).message ?? 'Something went wrong. Please try again.'}` },
+        ]);
+      }
     } finally {
       setLoading(false);
     }
@@ -230,8 +242,18 @@ export default function FloatingChat({ editContext, user, open: controlledOpen, 
     setTimeout(() => setCopiedIdx(null), 2000);
   };
 
+  // ── Mode switcher ─────────────────────────────────────────────────────────
+  const switchMode = useCallback((newMode: 'chat' | 'edit' | 'layout') => {
+    setMode(newMode);
+    if (messages.length > 0) setMessages([]);
+    if (toolCalls.length > 0) setToolCalls([]);
+  }, [messages.length, toolCalls.length]);
+
   // ── Chips ─────────────────────────────────────────────────────────────────
-  const chips = (mode === 'chat' && editContext) ? CANVAS_CHIPS : GENERAL_CHIPS;
+  const chips = useMemo(() => {
+    if (mode === 'layout') return LAYOUT_CHIPS;
+    return (mode === 'chat' && editContext) ? CANVAS_CHIPS : GENERAL_CHIPS;
+  }, [mode, !!editContext]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -271,16 +293,25 @@ export default function FloatingChat({ editContext, user, open: controlledOpen, 
               <div className="fc-mode-pills">
                 <button
                   className={`fc-mode-pill${mode === 'chat' ? ' active' : ''}`}
-                  onClick={() => { setMode('chat'); setMessages([]); }}
+                  onClick={() => switchMode('chat')}
                 >
                   <MessageCircle size={10} /> Chat
                 </button>
                 <button
                   className={`fc-mode-pill${mode === 'edit' ? ' active' : ''}`}
-                  onClick={() => { setMode('edit'); setMessages([]); }}
+                  onClick={() => switchMode('edit')}
                 >
-                  <Pencil size={10} /> Edit p.{editContext.pageNumber}
+                  <Pencil size={10} /> Edit
                 </button>
+                {canvasExecutor && (
+                  <button
+                    className={`fc-mode-pill${mode === 'layout' ? ' active fc-mode-pill--layout' : ''}`}
+                    onClick={() => switchMode('layout')}
+                    title="AI Layout mode — surgical print document editing"
+                  >
+                    <Zap size={10} /> Layout
+                  </button>
+                )}
               </div>
             )}
 
@@ -324,7 +355,16 @@ export default function FloatingChat({ editContext, user, open: controlledOpen, 
               <div className="fc-messages">
                 {messages.length === 0 && (
                   <div className="fc-empty">
-                    {mode === 'edit' && editContext ? (
+                    {mode === 'layout' && editContext ? (
+                      <>
+                        <Zap size={26} className="fc-empty-icon" style={{ color: '#6366f1' }} />
+                        <p>AI Layout mode — surgical print edits.<br />
+                          <span style={{ fontSize: '0.68rem', color: '#475569' }}>
+                            Gemini will call tools to edit individual elements.
+                          </span>
+                        </p>
+                      </>
+                    ) : mode === 'edit' && editContext ? (
                       <>
                         <Zap size={26} className="fc-empty-icon" style={{ color: '#fbbf24' }} />
                         <p>Describe changes for page {editContext.pageNumber}.<br />
@@ -372,7 +412,7 @@ export default function FloatingChat({ editContext, user, open: controlledOpen, 
                         <div className="fc-msg-bubble-wrap">
                           {msg.role === 'ai' ? (
                             <div className="fc-msg-text">
-                              <MarkdownText text={msg.text} />
+                              <MarkdownText text={msg.text} prefix="fc" />
                             </div>
                           ) : (
                             <p className="fc-msg-text">{msg.text}</p>
@@ -392,6 +432,20 @@ export default function FloatingChat({ editContext, user, open: controlledOpen, 
                   </div>
                 ))}
 
+                {/* Tool-call feedback pills (Layout mode) */}
+                {loading && toolCalls.length > 0 && (
+                  <div className="fc-tool-calls">
+                    {toolCalls.map(tc => (
+                      <span key={tc.id} className={`fc-tool-pill fc-tool-pill--${tc.status}`}>
+                        {tc.status === 'running' && <Loader2 size={9} className="animate-spin" />}
+                        {tc.status === 'done'    && <Check size={9} />}
+                        {tc.status === 'error'   && <span style={{ color: '#ef4444' }}>✕</span>}
+                        {tc.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
                 {loading && (
                   <div className="fc-msg fc-msg--ai">
                     <div className="fc-msg-avatar"><Bot size={11} /></div>
@@ -409,6 +463,42 @@ export default function FloatingChat({ editContext, user, open: controlledOpen, 
                 <div className="fc-drag-overlay">
                   <ImageIcon size={28} />
                   <span>Drop image to attach</span>
+                </div>
+              )}
+
+              {/* API key input (shown after key error) */}
+              {showKeyInput && (
+                <div className="fc-keyinput">
+                  <span className="fc-keyinput-label">🔑 Paste new Gemini API key</span>
+                  <div className="fc-keyinput-row">
+                    <input
+                      type="password"
+                      className="fc-keyinput-field"
+                      placeholder="AIza…"
+                      value={pendingKey}
+                      onChange={e => setPendingKey(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && pendingKey.trim()) {
+                          setApiKey(pendingKey.trim());
+                          setPendingKey('');
+                          setShowKeyInput(false);
+                        }
+                      }}
+                      spellCheck={false}
+                      autoFocus
+                    />
+                    <button
+                      className="fc-keyinput-save"
+                      disabled={!pendingKey.trim()}
+                      onClick={() => {
+                        setApiKey(pendingKey.trim());
+                        setPendingKey('');
+                        setShowKeyInput(false);
+                      }}
+                    >
+                      Save
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -448,11 +538,13 @@ export default function FloatingChat({ editContext, user, open: controlledOpen, 
                   ref={textareaRef}
                   className="fc-textarea"
                   placeholder={
-                    mode === 'edit' && editContext
-                      ? `Describe changes for page ${editContext.pageNumber}…`
-                      : editContext
-                        ? `Ask about page ${editContext.pageNumber}… (Shift+Enter for new line)`
-                        : 'Ask anything… (Shift+Enter for new line)'
+                    mode === 'layout' && editContext
+                      ? `Describe layout edits for page ${editContext.pageNumber}…`
+                      : mode === 'edit' && editContext
+                        ? `Describe changes for page ${editContext.pageNumber}…`
+                        : editContext
+                          ? `Ask about page ${editContext.pageNumber}… (Shift+Enter for new line)`
+                          : 'Ask anything… (Shift+Enter for new line)'
                   }
                   value={input}
                   rows={1}

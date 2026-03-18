@@ -603,6 +603,39 @@ export default function AgentPanel({
       return;
     }
 
+    // ── Cover page intent — generate or improve cover ─────────────────────
+    if (
+      /\b(cover|cover.?page|book.?cover)\b/i.test(text) &&
+      /\b(generate|create|make|design|build|improve|enhance|update)\b/i.test(text)
+    ) {
+      const tId = uid();
+      const isImprove = /\b(improve|enhance|update|fix|better)\b/i.test(text);
+      setProcess(isImprove ? 'Improving cover page…' : 'Generating cover page…');
+      addMsg({ type: 'tool', id: tId, name: 'generateCoverPage', status: 'running', args: { mode: isImprove ? 'improve' : 'generate' } });
+      try {
+        const result = JSON.parse(await executor.execute('generateCoverPage', {
+          mode: isImprove ? 'improve' : 'generate',
+          title: text.replace(/\b(generate|create|make|design|build|improve|enhance|update|a|the|cover|page|book|for|me|please)\b/gi, '').trim() || 'Untitled',
+          style: /\b(orthodox|religious|church|bible)\b/i.test(text) ? 'orthodox'
+            : /\b(modern|contemporary)\b/i.test(text) ? 'modern'
+            : /\b(classic|traditional)\b/i.test(text) ? 'classic'
+            : /\b(minimal|minimalist|simple|clean)\b/i.test(text) ? 'minimalist'
+            : /\b(ornate|decorat|manuscrip|illuminat)\b/i.test(text) ? 'ornate'
+            : 'orthodox',
+          instruction: isImprove ? text : undefined,
+        }) as string);
+        updateMsg(tId, { status: result.error ? 'error' : 'done', summary: result.error ?? result.message });
+        addMsg({ type: 'text', id: uid(), content: result.error ? `❌ ${result.error}` : `✅ Cover page ${isImprove ? 'improved' : 'generated'} and applied.` });
+      } catch (err) {
+        updateMsg(tId, { status: 'error' });
+        addMsg({ type: 'error', id: uid(), message: (err as Error).message ?? 'Cover generation failed.' });
+      } finally {
+        setLoading(false);
+        setProcess('');
+      }
+      return;
+    }
+
     // ── Navigate intent — instant, no AI ───────────────────────────────────
     const navIntent = parseNavigateIntent(text);
     if (navIntent) {
@@ -777,8 +810,10 @@ export default function AgentPanel({
           { icon: '—',  text: 'Add a divider after the title', cat: 'layout' },
           { icon: '🔍', text: 'Analyze and review this page',  cat: 'ai'   },
           { icon: '🎨', text: 'Match my reference image style', cat: 'ai'  },
+          { icon: '📖', text: 'Generate a cover page',          cat: 'ai'  },
         ]
       : []),
+    { icon: '📖', text: 'Create an Orthodox cover page',   cat: 'ai' },
   ];
 
   const CHIPS = panelMode === 'chat' ? CHAT_CHIPS : AGENT_CHIPS;

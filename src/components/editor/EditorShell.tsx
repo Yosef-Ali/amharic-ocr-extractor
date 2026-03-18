@@ -5,7 +5,7 @@ import {
   X, FileText, FileImage, MousePointer2,
   Bot, SlidersHorizontal,
   Maximize, Hand,
-  Minus, Plus, Undo2, Redo2,
+  Minus, Plus, Undo2, Redo2, Sparkles, Home,
 } from 'lucide-react';
 import { type Theme } from '../../hooks/useTheme';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
@@ -25,6 +25,9 @@ import { type ElementStyles, type DocumentPageHandle } from '../DocumentPage';
 import { type ImageQuality }  from '../../services/geminiService';
 import { type CanvasExecutor } from '../../services/canvasExecutor';
 import UserMenu               from '../UserMenu';
+import CoverEditor            from './CoverEditor';
+import CoverEditorPanel       from './CoverEditorPanel';
+import { type CoverBlock, parseCover, serialiseCover } from './coverUtils';
 
 // ── Props ────────────────────────────────────────────────────────────────────
 interface Props {
@@ -36,10 +39,13 @@ interface Props {
   processingStatus:  string;
   regeneratingPages: Set<number>;
   isPdfExporting:    boolean;
+  isSaving?:         boolean;
 
   onEdit:             (pageNumber: number, html: string) => void;
   onRegenerate:       (pageNumber: number) => void;
   onDeletePage:       (pageNumber: number) => void;
+  onReorderPages?:    (fromPage: number, toPage: number) => void;
+  onInsertPage?:      (afterPage: number) => void;
   onExtract:          () => void;
   onForceExtract:     () => void;
   onSave:             () => void;
@@ -57,14 +63,15 @@ interface Props {
   onToggleTheme: () => void;
 }
 
-type DrawerPanel = 'agent' | 'inspector' | null;
+type DrawerPanel = 'agent' | 'inspector' | 'cover' | null;
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function EditorShell({
   fileName, pageImages, pageResults, imageQuality,
   isProcessing, processingStatus, regeneratingPages,
-  isPdfExporting,
+  isPdfExporting, isSaving,
   onEdit, onRegenerate, onDeletePage,
+  onReorderPages, onInsertPage,
   onExtract, onForceExtract, onSave, onClear,
   onShowLibrary, onDownloadPDF,
   onImageQualityChange,
@@ -79,9 +86,13 @@ export default function EditorShell({
 }: Props) {
 
   const totalPages    = pageImages.length;
+  const hasCover      = !!pageResults[0];
+  const hasBackCover  = !!pageResults[-1];
+  const backBgUrl     = (() => { const m = pageResults[-1]?.match(/<img[^>]+src="(data:image\/[^"]+)"/); return m?.[1] ?? ''; })();
   const hasAnyResults = Object.keys(pageResults).length > 0;
   const isMobile      = useMediaQuery('(max-width: 767px)');
   const isTablet      = useMediaQuery('(max-width: 1023px)');
+  const navMin        = hasCover ? 0 : 1;
 
   const [activePage,    setActivePage]    = useState<number>(() => {
     const pages = Object.keys(pageResults).map(Number).sort((a, b) => a - b);
@@ -95,6 +106,11 @@ export default function EditorShell({
   const [styleApplySignal, setStyleApplySignal] =
     useState<{ patch: Record<string, string>; nonce: number } | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('scan');
+
+  // ── Cover editor state ────────────────────────────────────────────────
+  const [coverBgUrl,  setCoverBgUrl]  = useState('');
+  const [coverBlocks, setCoverBlocks] = useState<CoverBlock[]>([]);
+  const [coverSelId,  setCoverSelId]  = useState<string | null>(null);
 
   // ── Zoom & Pan state ──────────────────────────────────────────────────
   const ZOOM_MIN = 25;
@@ -177,20 +193,22 @@ export default function EditorShell({
   const activePageRef = useRef(activePage);
   useEffect(() => { activePageRef.current = activePage; }, [activePage]);
 
-  // Auto-switch to document view when results arrive
+  // Auto-switch to document view when results arrive or when on cover page (page 0)
   useEffect(() => {
+    if (activePage === 0) { setViewMode('document'); return; }
     if (pageResults[activePage] && viewMode === 'scan') {
-      setViewMode('compare');
+      const hasScanImage = !!(pageImages[activePage - 1]);
+      setViewMode(hasScanImage ? 'compare' : 'document');
     }
-  }, [pageResults, activePage]);
+  }, [pageResults, activePage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Collapse sidebar on tablet
   useEffect(() => { setThumbsOpen(!isTablet); }, [isTablet]);
 
   const hasResult    = !!pageResults[activePage];
-  const isRegen      = regeneratingPages.has(activePage);
+  const isRegen      = activePage > 0 && regeneratingPages.has(activePage);
   const currentHtml  = pageResults[activePage] ?? '';
-  const currentImage = pageImages[activePage - 1] ?? '';
+  const currentImage = activePage > 0 ? (pageImages[activePage - 1] ?? '') : '';
   const isPdf        = fileName.toLowerCase().endsWith('.pdf');
 
   // ── Navigation ─────────────────────────────────────────────────────────
@@ -214,7 +232,12 @@ export default function EditorShell({
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return;
-      if (e.key === 'Escape') { setSelectionMode(false); setRightDrawer(null); setHandTool(false); return; }
+      if (e.key === 'Escape') {
+        setSelectionMode(false); setRightDrawer(null); setHandTool(false);
+        // Escape from blank cover page → go to page 1
+        if (activePage === 0 && !pageResults[0] && totalPages > 0) changePage(1);
+        return;
+      }
       // Zoom shortcuts
       if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomIn(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key === '-') { e.preventDefault(); zoomOut(); return; }
@@ -222,7 +245,7 @@ export default function EditorShell({
       // Hand tool toggle
       if (e.key === 'h' || e.key === 'H') { setHandTool(h => !h); return; }
       if (selectionMode) return;
-      if (e.key === 'ArrowLeft')  changePage(Math.max(1, activePage - 1));
+      if (e.key === 'ArrowLeft')  changePage(Math.max(navMin, activePage - 1));
       if (e.key === 'ArrowRight') changePage(Math.min(totalPages, activePage + 1));
     };
     window.addEventListener('keydown', onKey);
@@ -232,8 +255,7 @@ export default function EditorShell({
   // ── Element selection (inspector) ──────────────────────────────────────
   const handleElementSelect = (styles: ElementStyles | null) => {
     setElementStyles(styles);
-    // Inspector updates if already open, but does NOT auto-open on element select.
-    // User opens it manually via the toolbar button when they want it.
+    if (styles) setRightDrawer('inspector');  // auto-open on element click
   };
   const handleElementStyleChange = (p: Record<string, string>) => {
     setStyleApplySignal({ patch: p, nonce: Date.now() });
@@ -276,9 +298,80 @@ export default function EditorShell({
   };
 
 
+  // ── Cover page handler ───────────────────────────────────────────────
+  const handleApplyCover = useCallback((coverHtml: string) => {
+    onEdit(0, coverHtml);
+    setViewMode('document');
+  }, [onEdit]);
+
+  // Parse cover HTML → controlled state whenever pageResults[0] changes
+  useEffect(() => {
+    if (!pageResults[0]) { setCoverBlocks([]); setCoverBgUrl(''); return; }
+    const { bgUrl, blocks } = parseCover(pageResults[0]);
+    setCoverBgUrl(bgUrl);
+    setCoverBlocks(blocks);
+  }, [pageResults[0]]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-open/close 'cover' drawer when on cover or back cover page
+  useEffect(() => {
+    if (activePage === 0 || activePage === -1) setRightDrawer('cover');
+    else if (rightDrawer === 'cover') setRightDrawer(null);
+  }, [activePage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // saveCover — serialise and persist cover HTML
+  const saveCover = useCallback((newBlocks: CoverBlock[]) => {
+    onEdit(0, serialiseCover(coverBgUrl, newBlocks));
+  }, [coverBgUrl, onEdit]);
+
+  // Cover block handlers
+  const handleCoverMove = useCallback((id: string, x: number, y: number) => {
+    setCoverBlocks(prev => {
+      const next = prev.map(b => b.id === id ? { ...b, x, y } : b);
+      saveCover(next);
+      return next;
+    });
+  }, [saveCover]);
+
+  const handleCoverTextChange = useCallback((id: string, text: string) => {
+    setCoverBlocks(prev => {
+      const next = prev.map(b => b.id === id ? { ...b, text } : b);
+      saveCover(next);
+      return next;
+    });
+  }, [saveCover]);
+
+  const handleCoverUpdate = useCallback((id: string, patch: Partial<CoverBlock>) => {
+    setCoverBlocks(prev => {
+      const next = prev.map(b => b.id === id ? { ...b, ...patch } : b);
+      saveCover(next);
+      return next;
+    });
+  }, [saveCover]);
+
+  const handleCoverAdd = useCallback(() => {
+    const id = `blk-${Date.now()}`;
+    const nb: CoverBlock = { id, text: 'New text', x: 20, y: 50, w: 60, color: '#ffffff', size: 1.4, weight: 700, italic: false, align: 'center', shadow: true };
+    setCoverBlocks(prev => {
+      const next = [...prev, nb];
+      saveCover(next);
+      return next;
+    });
+    setCoverSelId(id);
+  }, [saveCover]);
+
+  const handleCoverDelete = useCallback((id: string) => {
+    setCoverBlocks(prev => {
+      const next = prev.filter(b => b.id !== id);
+      saveCover(next);
+      return next;
+    });
+    setCoverSelId(s => s === id ? null : s);
+  }, [saveCover]);
+
   // ── Drawer title ──────────────────────────────────────────────────────
   const drawerTitle = rightDrawer === 'agent' ? 'AI Agent'
     : rightDrawer === 'inspector' ? 'Inspector'
+    : rightDrawer === 'cover' ? 'Cover Editor'
     : '';
 
   // ── Render ────────────────────────────────────────────────────────────
@@ -289,6 +382,14 @@ export default function EditorShell({
       <header className="es-header">
         {/* Left cluster */}
         <div className="es-header-left">
+          <button
+            className="es-icon-btn"
+            onClick={onClear}
+            title="Back to home"
+          >
+            <Home size={16} />
+          </button>
+          <div className="es-header-sep" />
           <button
             className="es-icon-btn"
             onClick={() => setThumbsOpen(o => !o)}
@@ -303,12 +404,15 @@ export default function EditorShell({
         </div>
 
         {/* Center — page nav */}
-        {totalPages > 0 && (
+        {(totalPages > 0 || hasCover) && (
           <div className="es-page-nav">
-            <button className="es-nav-btn" onClick={() => changePage(Math.max(1, activePage - 1))} disabled={activePage <= 1}>
+            <button className="es-nav-btn" onClick={() => changePage(Math.max(navMin, activePage - 1))} disabled={activePage <= navMin}>
               <ChevronLeft size={14} />
             </button>
-            <span className="es-page-ct"><strong>{activePage}</strong> / {totalPages}</span>
+            <span className="es-page-ct">
+              <strong>{activePage === -1 ? 'Back' : activePage === 0 ? 'Cover' : activePage}</strong>
+              {totalPages > 0 && <> / {totalPages}</>}
+            </span>
             <button className="es-nav-btn" onClick={() => changePage(Math.min(totalPages, activePage + 1))} disabled={activePage >= totalPages}>
               <ChevronRight size={14} />
             </button>
@@ -408,6 +512,13 @@ export default function EditorShell({
               regeneratingPages={regeneratingPages}
               activePage={activePage}
               onSelect={changePage}
+              onDoubleClick={page => {
+                changePage(page);
+                setRightDrawer(page === 0 ? 'cover' : 'inspector');
+              }}
+              onReorder={onReorderPages}
+              onInsert={onInsertPage}
+              onDelete={onDeletePage}
             />
           </aside>
         )}
@@ -417,9 +528,9 @@ export default function EditorShell({
         )}
 
         {/* ── Main content area ───────────────────────────────────────── */}
-        <main className="es-main">
-          {/* View mode tabs */}
-          <ViewModeTabs mode={viewMode} onChange={setViewMode} hasResults={hasResult} />
+        <main className="es-main" style={{ position: 'relative' }}>
+          {/* View mode tabs — hidden on cover page (page 0 has no scan) */}
+          {activePage !== 0 && <ViewModeTabs mode={viewMode} onChange={setViewMode} hasResults={hasResult} />}
 
           {/* Content area — scrollable + zoomable */}
           <div
@@ -437,7 +548,7 @@ export default function EditorShell({
                 transformOrigin: 'top center',
               }}
             >
-            {viewMode === 'compare' && hasResult ? (
+            {viewMode === 'compare' && hasResult && activePage > 0 ? (
               <SplitPageView
                 key={activePage}
                 pageNumber={activePage}
@@ -455,8 +566,58 @@ export default function EditorShell({
                 docHandle={docHandleRef}
                 zoom={zoom}
               />
+            ) : activePage === -1 ? (
+              /* ── Back cover ── */
+              <div className="es-doc-wrap" style={{ position: 'relative' }}>
+                {pageResults[-1] ? (
+                  <>
+                    <div className="ce-canvas" style={{ backgroundImage: `url('${(() => { const m = pageResults[-1].match(/<img[^>]+src="(data:image\/[^"]+)"/); return m?.[1] ?? ''; })()}')` }} />
+                    <button
+                      style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', zIndex: 30, background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', backdropFilter: 'blur(4px)', letterSpacing: '0.06em' }}
+                      onClick={() => { onEdit(-1, ''); }}
+                      title="Remove back cover"
+                    >✕ Remove</button>
+                  </>
+                ) : (
+                  <div style={{ width: '210mm', minHeight: '297mm', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', background: 'var(--t-surface)', borderRadius: '2px', boxShadow: '0 2px 12px rgba(0,0,0,.15)', color: 'var(--t-text3)', fontSize: '0.85rem' }}>
+                    <Sparkles size={28} style={{ opacity: 0.35 }} />
+                    <span>Generate back cover in the panel →</span>
+                  </div>
+                )}
+              </div>
+            ) : activePage === 0 && !hasResult ? (
+              /* ── Cover page — no cover yet: blank placeholder (controls in right drawer) ── */
+              <div className="es-doc-wrap" style={{ position: 'relative' }}>
+                <div style={{ width: '210mm', minHeight: '297mm', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', background: 'var(--t-surface)', borderRadius: '2px', boxShadow: '0 2px 12px rgba(0,0,0,.15)', color: 'var(--t-text3)', fontSize: '0.85rem' }}>
+                  <Sparkles size={28} style={{ opacity: 0.35 }} />
+                  <span>Use the panel on the right to generate your cover</span>
+                </div>
+              </div>
+            ) : activePage === 0 && hasResult ? (
+              /* ── Cover page — pure canvas (controls in right drawer) ── */
+              <div className="es-doc-wrap" style={{ position: 'relative' }}>
+                <CoverEditor
+                  bgUrl={coverBgUrl}
+                  blocks={coverBlocks}
+                  selId={coverSelId}
+                  onSelect={setCoverSelId}
+                  onMove={handleCoverMove}
+                  onTextChange={handleCoverTextChange}
+                />
+                <button
+                  style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', zIndex: 30, background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', backdropFilter: 'blur(4px)', letterSpacing: '0.06em' }}
+                  onClick={() => { onEdit(0, ''); }}
+                  title="New cover background"
+                >↺ New Cover</button>
+              </div>
             ) : viewMode === 'document' && hasResult ? (
-              <div className="es-doc-wrap">
+              <div
+                className="es-doc-wrap"
+                onDoubleClick={e => {
+                  // Double-click on page margin/border area (not inside page content) → open inspector
+                  if (e.target === e.currentTarget) { setSelectionMode(true); setRightDrawer('inspector'); }
+                }}
+              >
                 <DocumentPage
                   pageNumber={activePage}
                   html={currentHtml}
@@ -468,9 +629,10 @@ export default function EditorShell({
                   onEdit={onEdit}
                   docHandle={docHandleRef}
                   zoom={zoom}
+                  margins={{ t: pageLayout.marginT, r: pageLayout.marginR, b: pageLayout.marginB, l: pageLayout.marginL }}
                 />
               </div>
-            ) : viewMode === 'scan' || !hasResult ? (
+            ) : (viewMode === 'scan' || !hasResult) && activePage > 0 ? (
               <div className="es-scan-wrap">
                 {currentImage ? (
                   <>
@@ -517,9 +679,10 @@ export default function EditorShell({
             isProcessing={isProcessing}
             isRegenerating={isRegen}
             isPdfExporting={isPdfExporting}
+            isSaving={isSaving}
             imageQuality={imageQuality}
             processingStatus={processingStatus}
-            onPrev={() => changePage(Math.max(1, activePage - 1))}
+            onPrev={() => changePage(Math.max(navMin, activePage - 1))}
             onNext={() => changePage(Math.min(totalPages, activePage + 1))}
             onExtract={onExtract}
             onForceExtract={onForceExtract}
@@ -529,6 +692,7 @@ export default function EditorShell({
             onShowLibrary={onShowLibrary}
             onDownloadPDF={onDownloadPDF}
             onImageQualityChange={onImageQualityChange}
+            onCoverPage={() => changePage(0)}
           />
         </main>
 
@@ -571,9 +735,28 @@ export default function EditorShell({
               onDownloadPDF={onDownloadPDF}
             />
           )}
+          {rightDrawer === 'cover' && (
+            <CoverEditorPanel
+              hasCover={hasCover}
+              hasBackCover={hasBackCover}
+              bgUrl={coverBgUrl}
+              backBgUrl={backBgUrl}
+              activeCoverSide={activePage === -1 ? 'back' : 'front'}
+              blocks={coverBlocks}
+              selId={coverSelId}
+              onSelect={setCoverSelId}
+              onUpdate={handleCoverUpdate}
+              onAdd={handleCoverAdd}
+              onDelete={handleCoverDelete}
+              onApply={handleApplyCover}
+              onApplyBack={html => onEdit(-1, html)}
+              onError={onError}
+            />
+          )}
         </RightDrawer>
 
       </div>
+
     </div>
   );
 }

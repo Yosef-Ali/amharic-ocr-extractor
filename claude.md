@@ -1,5 +1,25 @@
 # Amharic PDF OCR & Layout Extractor — Claude Build Spec
 
+---
+
+## CRITICAL: Gemini Model Rules
+
+**DO NOT change OCR or image generation model names** — they are specific preview models needed for fast execution and image capabilities.
+
+| Role | Model | File | Rule |
+|---|---|---|---|
+| **Agent chat / function calling** | `gemini-3-flash-preview` | `geminiService.ts` (MODEL) | Tools go in `config.tools` (NOT top-level). Use `gemini-3-flash-preview` or `gemini-3.1-pro-preview` |
+| **AgentPanel flash** | `gemini-3-flash-preview` | `AgentPanel.tsx` (MODEL_API) | Fast agent model |
+| **AgentPanel pro** | `gemini-3.1-pro-preview` | `AgentPanel.tsx` (MODEL_API) | Pro agent model |
+| **OCR extraction** | `gemini-3.1-flash-image-preview` | `geminiService.ts` (OCR_FAST) | **DO NOT CHANGE** — fast preview model for batch OCR |
+| **Image generation** | `gemini-3-pro-image-preview` | `geminiService.ts` (IMAGE_MODEL) | **DO NOT CHANGE** — needed for image gen responseModalities |
+
+**IMPORTANT**: `gemini-2.5-*` models are **LEGACY/DEPRECATED** — never use them.
+Tools/function declarations MUST go inside `config.tools`, not as a top-level `tools` parameter.
+If function calling breaks, only update MODEL / MODEL_API. Never touch OCR_FAST or IMAGE_MODEL.
+
+---
+
 ## Project Location
 `~/amharic-ocr-extractor/` — standalone directory at Mac home root
 

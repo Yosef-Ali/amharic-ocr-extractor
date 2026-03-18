@@ -4,6 +4,7 @@ import { APPROVAL_REQUIRED_TOOLS } from '../types/a2ui';
 const MODEL       = 'gemini-3-flash-preview';          // agent chat — function calling (tools in config.tools)
 const OCR_FAST    = 'gemini-3.1-flash-image-preview';  // Pass 1 & 2 batch extraction (fast model — DO NOT CHANGE)
 const IMAGE_MODEL = 'gemini-3-pro-image-preview';      // image generation & editing (DO NOT CHANGE)
+const NANOBANANA2 = 'gemini-3.1-flash-image-preview';  // NanoBanana 2 — cover page generation (pro quality at flash speed)
 
 // ---------------------------------------------------------------------------
 // Types
@@ -396,7 +397,7 @@ const LAYOUT_SYSTEM_PROMPT = `You are an expert Amharic print document designer 
 CRITICAL: TOOL DISCIPLINE
 ══════════════════════════════════════════════════
 - ONLY call tools listed in your function declarations. Never invent tools.
-- Use ONLY these tools: getDocumentStructure, editTextBlock, editImageFrame, setColumnLayout, insertElement, deleteElement, batchEdit, getPageScreenshot, setActivePage, extractPage, extractAllPages.
+- Use ONLY these tools: getDocumentStructure, editTextBlock, editImageFrame, setColumnLayout, insertElement, deleteElement, batchEdit, getPageScreenshot, setActivePage, extractPage, extractAllPages, generateCoverPage.
 - You have full document access through these tools — you need nothing else.
 
 ══════════════════════════════════════════════════
@@ -457,6 +458,15 @@ AMHARIC-SPECIFIC RULES:
 - Preserve Ge'ez numerals (፩ ፪ ፫) in headings — do not replace with Arabic.
 - Religious headings (ጸሎት, ምዕራፍ, ክፍል) get color #b91c1c and letter-spacing 0.1em.
 - Red decorative rules: <hr style="border: none; border-top: 2px solid #b91c1c; margin: 1rem 0;">
+
+══════════════════════════════════════════════════
+MODE 4 — COVER PAGE
+══════════════════════════════════════════════════
+When the user asks to generate, create, make, or design a cover page:
+1. Call generateCoverPage with the title and any details they provide.
+2. Use style "orthodox" for Ethiopian/religious texts, "modern" for contemporary, etc.
+3. If the user wants to improve an existing cover, use mode "improve" with instructions.
+4. After success, respond briefly: "✅ Cover page generated." — do NOT echo any HTML or image data.
 
 NEVER:
 - Add web CSS (hover, focus, media queries, responsive units, viewport units).
@@ -887,10 +897,354 @@ export async function chatWithAI(
         'You help users understand, translate, summarize, and work with their scanned documents. ' +
         'When canvas context is provided you can see the current page image and its extracted HTML — ' +
         'use this to answer questions accurately about what the page contains. ' +
+        'The app has a Cover Page Generator powered by NanoBanana 2 (Gemini 3.1 Flash Image) that can generate, improve, or create covers from reference images. ' +
+        'If users ask about cover pages in chat mode, tell them to switch to Layout mode and say "generate a cover page" or use the Cover Page button in the toolbar menu. ' +
         'Format responses with markdown: **bold**, *italic*, `code`, bullet lists with "- ". ' +
         'Be concise, helpful, and direct. Use paragraph breaks for readability.',
     },
   });
 
   return response.text?.trim() ?? 'No response generated.';
+}
+
+// ---------------------------------------------------------------------------
+// Cover Page Generator — NanoBanana 2 (gemini-3.1-flash-image-preview)
+// Three modes: generate from scratch, improve existing, generate with reference
+// ---------------------------------------------------------------------------
+
+export type CoverStyle = 'orthodox' | 'modern' | 'classic' | 'minimalist' | 'ornate';
+
+export type BindingType = 'saddle-stitch' | 'perfect-binding';
+
+/** 'full-design' = AI renders title/author as typography in the image.
+ *  'background-only' = text-free background; text added as HTML overlays. */
+export type CoverDesignMode = 'full-design' | 'background-only';
+
+/** How to handle existing text when regenerating. */
+export type TextRemovalMode = 'keep' | 'remove-all' | 'remove-title' | 'remove-author';
+
+export interface CoverPageOptions {
+  title:       string;
+  subtitle?:   string;
+  author?:     string;
+  style:       CoverStyle;
+  binding?:    BindingType;
+  aspectRatio?: ImageAspectRatio;
+  imageSize?:   ImageSize;
+  designMode?:  CoverDesignMode;
+}
+
+const COVER_STYLE_DESCRIPTIONS: Record<CoverStyle, string> = {
+  orthodox:    'Ethiopian Orthodox style with traditional cross patterns, gold and burgundy colors, ornamental Ge\'ez borders, and ecclesiastical motifs',
+  modern:      'Clean modern design with bold typography, geometric shapes, subtle gradients, and contemporary layout',
+  classic:     'Traditional book cover with elegant serif typography, decorative frames, muted earth tones, and refined borders',
+  minimalist:  'Ultra-minimal design with large whitespace, single accent color, simple typography, and restrained composition',
+  ornate:      'Richly decorated with intricate Ethiopian manuscript illumination patterns, vibrant colors, and detailed ornamental borders',
+};
+
+/** Prompt for background-only (text-free) mode */
+function buildCoverBackgroundPrompt(options: CoverPageOptions): string {
+  const { style = 'orthodox', binding = 'saddle-stitch' } = options;
+  const styleDesc = COVER_STYLE_DESCRIPTIONS[style];
+
+  const sizeNote = binding === 'perfect-binding'
+    ? 'The image is for a BOOK COVER SPREAD: back cover (left half) + front cover (right half), landscape orientation. Leave the right half more visually prominent with open areas for text overlay. The left half should be simpler with space for a description blurb.'
+    : 'A4 book cover (210mm × 297mm, portrait 3:4). Leave a clear central area (upper third to middle) and a contrasting lower portion where title and author text will be overlaid.';
+
+  return `Generate a FLAT, SIMPLE background image for a book cover. Text will be overlaid separately — this is the background layer only.
+
+PAGE SIZE: ${sizeNote}
+DESIGN STYLE: ${styleDesc}
+
+CRITICAL REQUIREMENTS:
+- ZERO TEXT: Do NOT include ANY letters, words, numbers, titles, names, glyphs, or characters of ANY script (Latin, Amharic, or otherwise). Not even as subtle overlays or watermarks. The image must be 100% text-free.
+- FLAT design — no 3D objects, no depth illusions, no perspective geometry.
+- NO diagonal lines, NO sharp geometric shards, NO origami/polygon shapes.
+- NO technological elements — no circuit boards, microchips, wires, sci-fi motifs.
+- Use SIMPLE, CALM visual elements: soft gradients, watercolor washes, subtle organic patterns, or broad color fields.
+- Leave large open calm areas with good contrast for text overlay.
+- Fill the entire canvas edge to edge. No white margins.
+- Output a single image — no mockup, no collage, no variants.`;
+}
+
+/** Prompt for full AI design mode — typography baked into the image */
+function buildFullAICoverPrompt(options: CoverPageOptions): string {
+  const { style = 'orthodox', binding = 'saddle-stitch', title, subtitle, author } = options;
+  const styleDesc = COVER_STYLE_DESCRIPTIONS[style];
+
+  const textLines = [
+    `TITLE: "${title}"`,
+    subtitle ? `SUBTITLE: "${subtitle}"` : '',
+    author   ? `AUTHOR: "${author}"` : '',
+  ].filter(Boolean).join('\n');
+
+  const sizeNote = binding === 'perfect-binding'
+    ? 'Landscape book cover spread (16:9). Left half = back cover (simpler, space for blurb). Right half = front cover (main design + title). Narrow center = spine with vertical title.'
+    : 'A4 portrait book cover (3:4, 210mm × 297mm). Full front cover — title prominent in upper/central area, author name near bottom.';
+
+  return `Design a COMPLETE, professional book cover. The title and author name must be beautifully rendered as elegant typography directly in the image.
+
+BOOK DETAILS:
+${textLines}
+
+COVER SIZE: ${sizeNote}
+DESIGN STYLE: ${styleDesc}
+
+REQUIREMENTS:
+- The title${author ? ' and author name' : ''} MUST appear in the image as artistic, legible typography — this is the final cover design.
+- For Amharic/Ethiopic text: use traditional Ethiopic calligraphic letterforms, graceful and ornate.
+- For Latin text: use elegant serif or display typeface appropriate to the style.
+- Typography should be an INTEGRAL part of the design, not an afterthought.
+- FLAT design — no 3D objects, no depth illusions, no perspective geometry.
+- NO technological elements — no circuit boards, microchips, wires, sci-fi motifs.
+- Use SIMPLE, CALM visual elements: soft gradients, watercolor washes, organic textures, subtle cultural patterns.
+- The design must feel ELEGANT and PRINT-READY.
+- Fill the entire canvas edge to edge. No white margins.
+- Output a single final cover image — no mockups, no variants.`;
+}
+
+/**
+ * Generate a cover image using NanoBanana 2.
+ * - designMode 'full-design' (default): AI renders title/author as typography in the image.
+ * - designMode 'background-only': text-free background; text will be added as HTML overlays.
+ */
+export async function generateCoverBackground(options: CoverPageOptions): Promise<string> {
+  const defaultRatio = options.binding === 'perfect-binding' ? '16:9' : '3:4';
+  const prompt = (options.designMode ?? 'full-design') === 'full-design'
+    ? buildFullAICoverPrompt(options)
+    : buildCoverBackgroundPrompt(options);
+  const response = await client.models.generateContent({
+    model: NANOBANANA2,
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    config: {
+      responseModalities: ['IMAGE', 'TEXT'],
+      imageConfig: {
+        aspectRatio: options.aspectRatio ?? defaultRatio,
+        imageSize:   options.imageSize   ?? '2K',
+      },
+    },
+  });
+
+  for (const part of response.candidates?.[0]?.content?.parts ?? []) {
+    if (part.inlineData?.data) {
+      return `data:${part.inlineData.mimeType ?? 'image/png'};base64,${part.inlineData.data}`;
+    }
+  }
+  throw new Error('Cover background generation returned no image');
+}
+
+/**
+ * Improve an existing cover background using NanoBanana 2.
+ * Pass the current background as a data URL + improvement instructions.
+ */
+export async function improveCoverBackground(
+  existingBgDataUrl: string,
+  instruction: string,
+  options?: Pick<CoverPageOptions, 'aspectRatio' | 'imageSize'>,
+  textMode: TextRemovalMode = 'keep',
+): Promise<string> {
+  const [header, data] = existingBgDataUrl.split(',');
+  const mimeType = header.match(/:(.*?);/)?.[1] ?? 'image/jpeg';
+
+  const textInstruction =
+    textMode === 'remove-all'    ? 'REMOVE ALL TEXT from the image — strip every letter, word, title, author name, number, or glyph of any script. Output a completely text-free decorative background.'
+    : textMode === 'remove-title' ? 'REMOVE ONLY the main title / heading text. Keep the author name and any other text elements. Preserve all decorative elements.'
+    : textMode === 'remove-author'? 'REMOVE ONLY the author name text. Keep the title and any other text elements. Preserve all decorative elements.'
+    : 'Keep all existing text exactly as-is — do NOT move, restyle, or remove any text.';
+
+  const improvePart = instruction.trim()
+    ? `Also apply these visual improvements: ${instruction}`
+    : 'Improve the overall design quality, colors, and visual composition.';
+
+  const response = await client.models.generateContent({
+    model: NANOBANANA2,
+    contents: [{
+      role: 'user',
+      parts: [
+        { inlineData: { mimeType, data } },
+        { text: `This is a book cover image. Follow these instructions precisely:
+
+TEXT HANDLING: ${textInstruction}
+
+DESIGN IMPROVEMENTS: ${improvePart}
+
+Output the modified cover image.` },
+      ],
+    }],
+    config: {
+      responseModalities: ['IMAGE', 'TEXT'],
+      imageConfig: {
+        aspectRatio: options?.aspectRatio ?? '3:4',
+        imageSize:   options?.imageSize   ?? '2K',
+      },
+    },
+  });
+
+  for (const part of response.candidates?.[0]?.content?.parts ?? []) {
+    if (part.inlineData?.data) {
+      return `data:${part.inlineData.mimeType ?? 'image/png'};base64,${part.inlineData.data}`;
+    }
+  }
+  throw new Error('Cover background improvement returned no image');
+}
+
+/**
+ * Generate a cover background using a reference image for style inspiration.
+ */
+export async function generateCoverBackgroundFromReference(
+  referenceDataUrl: string,
+  options: CoverPageOptions,
+): Promise<string> {
+  const [header, data] = referenceDataUrl.split(',');
+  const mimeType = header.match(/:(.*?);/)?.[1] ?? 'image/jpeg';
+  const defaultRatio = options.binding === 'perfect-binding' ? '16:9' : '3:4';
+
+  const response = await client.models.generateContent({
+    model: NANOBANANA2,
+    contents: [{
+      role: 'user',
+      parts: [
+        { inlineData: { mimeType, data } },
+        { text: `Use this image as a STYLE REFERENCE for the design aesthetic, color palette, and composition.\n\nNow create a NEW, ORIGINAL book cover BACKGROUND (not a copy) inspired by this style:\n\n${buildCoverBackgroundPrompt(options)}\n\nDo NOT reproduce the reference image — use it only for stylistic inspiration. Output ONLY the decorative background — absolutely NO text.` },
+      ],
+    }],
+    config: {
+      responseModalities: ['IMAGE', 'TEXT'],
+      imageConfig: {
+        aspectRatio: options.aspectRatio ?? defaultRatio,
+        imageSize:   options.imageSize   ?? '2K',
+      },
+    },
+  });
+
+  for (const part of response.candidates?.[0]?.content?.parts ?? []) {
+    if (part.inlineData?.data) {
+      return `data:${part.inlineData.mimeType ?? 'image/png'};base64,${part.inlineData.data}`;
+    }
+  }
+  throw new Error('Cover background generation from reference returned no image');
+}
+
+/**
+ * Build editable cover HTML from a background image URL and text options.
+ *
+ * - Saddle stitch: Single A4 portrait front cover — background fills the page, text overlaid.
+ * - Perfect binding: Landscape spread — back cover (left) + spine strip + front cover (right).
+ *   The background image spans the full spread; spine is an overlay strip in the centre.
+ */
+export function buildEditableCoverHTML(
+  bgDataUrl: string,
+  options: CoverPageOptions,
+  noOverlay = false,
+): string {
+  const { title, subtitle, author, binding = 'saddle-stitch' } = options;
+
+  const ts = '0 2px 8px rgba(0,0,0,0.7), 0 0 2px rgba(0,0,0,0.5)';
+  const font = "'Noto Serif Ethiopic','Noto Sans Ethiopic',serif";
+
+  // Full AI design: image already contains typography — use <img> for reliable PDF export
+  if (noOverlay || (options.designMode ?? 'full-design') === 'full-design') {
+    if (binding === 'perfect-binding') {
+      return `<div style="position:relative;width:420mm;height:297mm;overflow:hidden;padding:0;margin:0;box-sizing:border-box;"><img src="${bgDataUrl}" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;object-position:top center;display:block;" /></div>`;
+    }
+    return `<div style="position:relative;width:210mm;height:297mm;overflow:hidden;padding:0;margin:0 auto;box-sizing:border-box;"><img src="${bgDataUrl}" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;object-position:top center;display:block;" /></div>`;
+  }
+
+  if (binding === 'perfect-binding') {
+    // ── Perfect binding: landscape spread  ─────────────────────────────
+    return `<div style="position:relative;width:420mm;height:297mm;overflow:hidden;padding:0;margin:0;box-sizing:border-box;">
+  <img src="${bgDataUrl}" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;object-position:top center;display:block;" />
+  <!-- dark overlay for text contrast -->
+  <div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,0.35) 0%,rgba(0,0,0,0.12) 30%,rgba(0,0,0,0.05) 45%,rgba(0,0,0,0.05) 55%,rgba(0,0,0,0.12) 70%,rgba(0,0,0,0.35) 100%);pointer-events:none;"></div>
+  <!-- spine strip -->
+  <div style="position:absolute;top:0;bottom:0;left:50%;transform:translateX(-50%);width:18mm;background:linear-gradient(180deg,rgba(20,8,8,0.92) 0%,rgba(60,20,20,0.88) 50%,rgba(20,8,8,0.92) 100%);display:flex;align-items:center;justify-content:center;border-left:1px solid rgba(255,255,255,0.08);border-right:1px solid rgba(255,255,255,0.08);z-index:2;">
+    <div contenteditable="true" style="writing-mode:vertical-rl;transform:rotate(180deg);font-family:${font};font-size:0.65rem;font-weight:700;color:#d4a574;letter-spacing:0.15em;white-space:nowrap;padding:1rem 0;text-shadow:0 1px 3px rgba(0,0,0,0.5);">${title || 'Book Title'}</div>
+  </div>
+  <!-- Back cover text (left half) -->
+  <div contenteditable="true" style="position:absolute;top:50%;left:12%;transform:translateY(-50%);width:30%;text-align:center;font-family:${font};font-size:0.8rem;font-weight:400;color:#e0d5c5;line-height:1.7;text-shadow:0 1px 4px rgba(0,0,0,0.6);z-index:1;">${subtitle || 'Back cover description or summary text.'}</div>
+  <!-- Front cover: title (right half) -->
+  <div contenteditable="true" style="position:absolute;top:18%;right:5%;width:38%;text-align:center;font-family:${font};font-size:1.8rem;font-weight:900;color:#ffffff;text-shadow:${ts};line-height:1.3;letter-spacing:0.02em;z-index:1;">${title || 'Book Title'}</div>
+  ${subtitle ? `<div contenteditable="true" style="position:absolute;top:40%;right:8%;width:32%;text-align:center;font-family:${font};font-size:0.95rem;font-weight:600;color:#e8d5b7;text-shadow:${ts};line-height:1.4;letter-spacing:0.05em;z-index:1;">${subtitle}</div>` : ''}
+  ${author ? `<div contenteditable="true" style="position:absolute;bottom:10%;right:10%;width:28%;text-align:center;font-family:${font};font-size:0.85rem;font-weight:600;color:#d4a574;text-shadow:${ts};letter-spacing:0.08em;z-index:1;">${author}</div>` : ''}
+</div>`;
+  }
+
+  // ── Saddle stitch: A4 portrait front cover (background-only mode) ────
+  return `<div style="position:relative;width:210mm;height:297mm;overflow:hidden;padding:0;margin:0 auto;box-sizing:border-box;">
+  <img src="${bgDataUrl}" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;object-position:top center;display:block;" />
+  <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0.3) 0%,rgba(0,0,0,0.08) 35%,rgba(0,0,0,0.08) 65%,rgba(0,0,0,0.35) 100%);pointer-events:none;z-index:1;"></div>
+  <div contenteditable="true" style="position:absolute;top:20%;left:50%;transform:translateX(-50%);text-align:center;font-family:${font};font-size:2.2rem;font-weight:900;color:#ffffff;text-shadow:${ts};max-width:80%;line-height:1.3;letter-spacing:0.02em;z-index:2;">${title || 'Book Title'}</div>
+  ${subtitle ? `<div contenteditable="true" style="position:absolute;top:40%;left:50%;transform:translateX(-50%);text-align:center;font-family:${font};font-size:1.15rem;font-weight:600;color:#e8d5b7;text-shadow:${ts};max-width:70%;line-height:1.4;letter-spacing:0.05em;z-index:2;">${subtitle}</div>` : ''}
+  ${author ? `<div contenteditable="true" style="position:absolute;bottom:10%;left:50%;transform:translateX(-50%);text-align:center;font-family:${font};font-size:1rem;font-weight:600;color:#d4a574;text-shadow:${ts};max-width:70%;letter-spacing:0.08em;z-index:2;">${author}</div>` : ''}
+</div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Back Cover Generator
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate a back cover using the front cover image as style reference.
+ * Produces a complementary A4 portrait image suitable for the back of the book.
+ */
+export async function generateBackCover(
+  frontCoverBgDataUrl: string,
+  options: Pick<CoverPageOptions, 'title' | 'subtitle' | 'author' | 'style' | 'designMode'>,
+): Promise<string> {
+  const [header, data] = frontCoverBgDataUrl.split(',');
+  const mimeType = header.match(/:(.*?);/)?.[1] ?? 'image/jpeg';
+  const isFullDesign = (options.designMode ?? 'full-design') === 'full-design';
+
+  const textSection = isFullDesign
+    ? `BACK COVER TEXT TO INCLUDE:
+- Book title: "${options.title}"
+${options.author ? `- Author: "${options.author}"` : ''}
+${options.subtitle ? `- Brief description area (back cover blurb space)` : ''}
+- Optional: a simple barcode/ISBN placeholder area at the bottom`
+    : 'ZERO TEXT — this is a background-only image, no letters or characters.';
+
+  const prompt = `This is the FRONT COVER of a book. Design a matching BACK COVER.
+
+The back cover must:
+- Use the SAME visual style, color palette, textures, and design language as the front cover
+- Be A4 portrait orientation (210mm × 297mm, 3:4 ratio)
+- Feel like it belongs to the same book — complementary but not identical
+- Have a slightly simpler composition than the front cover
+- Leave space in the center for a back-cover description blurb
+
+${textSection}
+
+REQUIREMENTS:
+- FLAT design — no 3D objects, no depth illusions
+- NO technological elements
+- Same style as the front: ${COVER_STYLE_DESCRIPTIONS[options.style ?? 'orthodox']}
+- Fill the entire canvas edge to edge
+- Output a single back cover image`;
+
+  const response = await client.models.generateContent({
+    model: NANOBANANA2,
+    contents: [{
+      role: 'user',
+      parts: [
+        { inlineData: { mimeType, data } },
+        { text: prompt },
+      ],
+    }],
+    config: {
+      responseModalities: ['IMAGE', 'TEXT'],
+      imageConfig: { aspectRatio: '3:4', imageSize: '2K' },
+    },
+  });
+
+  for (const part of response.candidates?.[0]?.content?.parts ?? []) {
+    if (part.inlineData?.data) {
+      return `data:${part.inlineData.mimeType ?? 'image/png'};base64,${part.inlineData.data}`;
+    }
+  }
+  throw new Error('Back cover generation returned no image');
+}
+
+/** Build the HTML wrapper for a back cover image (same structure as front). */
+export function buildBackCoverHTML(bgDataUrl: string): string {
+  return `<div style="position:relative;width:210mm;height:297mm;overflow:hidden;padding:0;margin:0 auto;box-sizing:border-box;"><img src="${bgDataUrl}" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;object-position:top center;display:block;" /></div>`;
 }

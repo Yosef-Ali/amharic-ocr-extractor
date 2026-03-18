@@ -26,6 +26,23 @@ async function uploadToBlob(base64: string, filename: string): Promise<string | 
 const isUrl = (s: string) => s.startsWith('https://') || s.startsWith('http://');
 
 // ---------------------------------------------------------------------------
+// One-time schema migration — called from App.tsx after sign-in
+// ---------------------------------------------------------------------------
+let _schemaReady = false;
+
+async function ensureSchema(): Promise<void> {
+  if (_schemaReady) return;
+  try {
+    await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`;
+  } catch { /* column already exists */ }
+  _schemaReady = true;
+}
+
+export async function initializeSchema(): Promise<void> {
+  return ensureSchema();
+}
+
+// ---------------------------------------------------------------------------
 // Auth context — set by App.tsx when a user signs in/out
 // ---------------------------------------------------------------------------
 let _userId: string | null = null;
@@ -47,6 +64,7 @@ export interface SavedDocument {
   name: string;
   savedAt: string;
   pageCount: number;
+  thumbnailUrl?: string;
   pageImages: string[];
   pageResults: Record<number, string>;
 }
@@ -54,6 +72,24 @@ export interface SavedDocument {
 // ---------------------------------------------------------------------------
 // Save document (always creates a new record)
 // ---------------------------------------------------------------------------
+/** Extract a thumbnail data URL from pageResults (cover) or first pageImage. */
+function extractThumbnailBase64(
+  pageImages: string[],
+  pageResults: Record<number, string>,
+): string | null {
+  // Prefer cover image (pageResults[0])
+  const coverHtml = pageResults[0];
+  if (coverHtml) {
+    const m = coverHtml.match(/<img[^>]+src="(data:image\/[^"]+)"/)
+           ?? coverHtml.match(/url\('(data:image\/[^']+)'\)/);
+    if (m?.[1]) return m[1].replace(/^data:image\/[^;]+;base64,/, '');
+  }
+  // Fallback to first page scan image
+  const first = pageImages[0];
+  if (first && !isUrl(first)) return first;
+  return null;
+}
+
 export async function saveDocument(
   name: string,
   pageImages: string[],
@@ -62,18 +98,25 @@ export async function saveDocument(
   const userId = requireUserId();
   const id     = uuidv4();
 
-  // Upload each page image to Vercel Blob; fall back to raw base64 if unavailable.
-  const storedImages = await Promise.all(
-    pageImages.map(async (img, i) => {
-      if (isUrl(img)) return img; // already a URL — don't re-upload
-      const url = await uploadToBlob(img, `${id}/page-${i + 1}.jpg`);
-      return url ?? img;          // keep base64 if upload fails (local dev)
-    }),
-  );
+  // Upload page images and thumbnail in parallel
+  const thumbBase64 = extractThumbnailBase64(pageImages, pageResults);
+  const [storedImages, thumbnailUrl] = await Promise.all([
+    Promise.all(
+      pageImages.map(async (img, i) => {
+        if (isUrl(img)) return img;
+        const url = await uploadToBlob(img, `${id}/page-${i + 1}.jpg`);
+        return url ?? img;
+      }),
+    ),
+    thumbBase64
+      ? uploadToBlob(thumbBase64, `${id}/thumbnail.jpg`)
+          .then(url => url ?? `data:image/jpeg;base64,${thumbBase64}`)
+      : Promise.resolve(null),
+  ]);
 
   await sql`
-    INSERT INTO documents (id, user_id, name, page_count, saved_at, updated_at)
-    VALUES (${id}, ${userId}, ${name}, ${pageImages.length}, NOW(), NOW())
+    INSERT INTO documents (id, user_id, name, page_count, thumbnail_url, saved_at, updated_at)
+    VALUES (${id}, ${userId}, ${name}, ${pageImages.length}, ${thumbnailUrl}, NOW(), NOW())
   `;
   await sql`
     INSERT INTO document_content (document_id, page_images, page_results)
@@ -90,19 +133,23 @@ export async function saveDocument(
 // ---------------------------------------------------------------------------
 export async function loadAllDocuments(): Promise<SavedDocument[]> {
   const userId = requireUserId();
+  await ensureSchema();
   const rows = await sql`
-    SELECT id, name, saved_at, page_count
-    FROM   documents
-    WHERE  user_id = ${userId}
-    ORDER  BY saved_at DESC
+    SELECT d.id, d.name, d.saved_at, d.page_count,
+           COALESCE(d.thumbnail_url, c.page_images->>0) AS thumbnail_url
+    FROM   documents d
+    LEFT JOIN document_content c ON c.document_id = d.id
+    WHERE  d.user_id = ${userId}
+    ORDER  BY d.saved_at DESC
   `;
   return rows.map(r => ({
-    id:          r.id as string,
-    name:        r.name as string,
-    savedAt:     r.saved_at as string,
-    pageCount:   r.page_count as number,
-    pageImages:  [],
-    pageResults: {},
+    id:           r.id as string,
+    name:         r.name as string,
+    savedAt:      r.saved_at as string,
+    pageCount:    r.page_count as number,
+    thumbnailUrl: (r.thumbnail_url as string | null) ?? undefined,
+    pageImages:   [],
+    pageResults:  {},
   }));
 }
 
