@@ -421,16 +421,16 @@ export default function EditorShell({
 
         {/* Right cluster */}
         <div className="es-header-right">
-          {/* Tool toggles */}
+          {/* Tool toggles — hide selection + agent on mobile */}
           <button
-            className={`es-icon-btn${selectionMode ? ' es-icon-btn--active' : ''}`}
+            className={`es-icon-btn es-hide-mobile${selectionMode ? ' es-icon-btn--active' : ''}`}
             onClick={() => setSelectionMode(m => !m)}
             title="Select mode"
           >
             <MousePointer2 size={14} />
           </button>
           <button
-            className={`es-icon-btn${rightDrawer === 'agent' ? ' es-icon-btn--active' : ''}`}
+            className={`es-icon-btn es-hide-mobile${rightDrawer === 'agent' ? ' es-icon-btn--active' : ''}`}
             onClick={() => toggleDrawer('agent')}
             title="AI Agent"
             style={{ position: 'relative' }}
@@ -445,21 +445,19 @@ export default function EditorShell({
           >
             <SlidersHorizontal size={14} />
           </button>
-          <div className="es-header-sep" />
+          <div className="es-header-sep es-hide-mobile" />
 
-          {/* ── Undo / Redo ───────────────────────────────── */}
-          <button className="es-icon-btn" onClick={handleUndo} title="Undo (Ctrl+Z)">
+          {/* ── Undo / Redo — hide on mobile ────────────── */}
+          <button className="es-icon-btn es-hide-mobile" onClick={handleUndo} title="Undo (Ctrl+Z)">
             <Undo2 size={14} />
           </button>
-          <button className="es-icon-btn" onClick={handleRedo} title="Redo (Ctrl+Shift+Z)">
+          <button className="es-icon-btn es-hide-mobile" onClick={handleRedo} title="Redo (Ctrl+Shift+Z)">
             <Redo2 size={14} />
           </button>
 
-          <div className="es-header-sep" />
-
-          {/* ── Zoom & Pan controls ─────────────────────── */}
+          {/* ── Zoom & Pan — hand only on mobile ─────────── */}
           <button
-            className={`es-icon-btn${handTool ? ' es-icon-btn--active' : ''}`}
+            className={`es-icon-btn es-hide-mobile${handTool ? ' es-icon-btn--active' : ''}`}
             onClick={() => setHandTool(h => !h)}
             title="Hand tool (H)"
           >
@@ -482,7 +480,7 @@ export default function EditorShell({
 
           <div className="es-header-sep" />
           <ThemeToggleButton theme={theme} onClick={onToggleTheme} iconSize={14} />
-          <SettingsPanel />
+          <div className="es-hide-mobile"><SettingsPanel /></div>
           {user && <UserMenu user={user} onSignOut={onSignOut} />}
           <button className="es-icon-btn es-icon-btn--danger" onClick={onClear} title="Close document">
             <X size={16} />

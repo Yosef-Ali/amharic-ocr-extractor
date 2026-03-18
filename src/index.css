@@ -1875,13 +1875,21 @@
 
 /* ── Responsive ──────────────────────────────────────────── */
 @media (max-width: 767px) {
-  .es-header { padding: 0 6px; height: 40px; }
-  .es-file-info { display: none; }
-  .es-zoom-bar { display: none; }
-  .bt-label-desktop { display: none; }
+  /* Header */
+  .es-header       { padding: 0 6px; height: 44px; gap: 4px; }
+  .es-header-left  { gap: 2px; }
+  .es-header-right { gap: 2px; }
+  .es-file-info    { display: none; }
+  .es-zoom-bar     { display: none; }
+  .es-hide-mobile  { display: none !important; }
+  /* Content */
   .es-content { padding: 12px 8px; }
-  .bt-bar { padding: 4px 8px; }
-  .bt-btn { padding: 5px 8px; font-size: 0.68rem; }
+  /* Bottom toolbar */
+  .bt-label-desktop { display: none; }
+  .bt-bar   { padding: 4px 6px; }
+  .bt-btn   { padding: 5px 8px; font-size: 0.68rem; gap: 4px; }
+  .bt-mode  { font-size: 0.68rem; padding: 3px 6px; }
+  .bt-group { gap: 3px; }
 }
 @media (min-width: 768px) and (max-width: 1023px) {
   .es-sidebar { width: 160px; }

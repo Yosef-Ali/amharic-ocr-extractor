@@ -60,9 +60,10 @@ export default function BottomToolbar({
             <ChevronLeft size={16} />
           </button>
           <span className="bt-page-count">
-            <strong>{activePage}</strong>
-            <span className="bt-sep">/</span>
-            {totalPages}
+            <strong>
+              {activePage === 0 ? 'Cover' : activePage === -1 ? 'Back' : activePage}
+            </strong>
+            {activePage > 0 && <><span className="bt-sep">/</span>{totalPages}</>}
           </span>
           <button className="bt-icon" onClick={onNext} disabled={activePage >= totalPages} title="Next page">
             <ChevronRight size={16} />
