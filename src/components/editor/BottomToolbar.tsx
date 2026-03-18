@@ -1,9 +1,10 @@
 import {
   ChevronLeft, ChevronRight, Layers, Loader2, Save, Download,
-  RefreshCw, Trash2, Zap, Sparkles, MoreHorizontal, BookOpen, Image as ImageIcon,
+  RefreshCw, Trash2, Zap, Sparkles, MoreHorizontal, BookOpen, Image as ImageIcon, HelpCircle,
 } from 'lucide-react';
 import { useState } from 'react';
 import { type ImageQuality } from '../../services/geminiService';
+import HelpModal from './HelpModal';
 
 interface Props {
   activePage:       number;
@@ -39,7 +40,8 @@ export default function BottomToolbar({
   onSave, onShowLibrary, onDownloadPDF,
   onImageQualityChange, onCoverPage,
 }: Props) {
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreOpen,  setMoreOpen]  = useState(false);
+  const [showHelp,  setShowHelp]  = useState(false);
 
   return (
     <div className="bt-bar">
@@ -150,12 +152,18 @@ export default function BottomToolbar({
                       <Trash2 size={14} /> Delete page {activePage}
                     </button>
                   )}
+                  <hr style={{ margin: '4px 0', border: 'none', borderTop: '1px solid var(--t-border)' }} />
+                  <button onClick={() => { setShowHelp(true); setMoreOpen(false); }}>
+                    <HelpCircle size={14} /> User Guide
+                  </button>
                 </div>
               </>
             )}
           </div>
         </div>
       </div>
+
+      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
     </div>
   );
 }
