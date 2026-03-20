@@ -10,6 +10,7 @@ import AuthScreen    from './components/AuthScreen';
 import { pdfToImages, imageFileToBase64, detectFileType, docxToHtmlPages, textToHtmlPages, type PageDimension } from './services/pdfService';
 import { extractPageHTML, autoFillImagePlaceholders, type ImageQuality } from './services/geminiService';
 import { saveDocument, initStorage, initializeSchema, type SavedDocument } from './services/storageService';
+import { buildDocumentExport, saveDocumentExport } from './services/exportService';
 import { CanvasExecutor } from './services/canvasExecutor';
 import { WsBridge }      from './services/wsBridge';
 import { ensureUsersTable, upsertUser, checkUserBlocked } from './services/adminService';
@@ -411,8 +412,17 @@ export default function App() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await saveDocument(fileName, pageImages, pageResults);
+      const docId = await saveDocument(fileName, pageImages, pageResults);
       setToast({ id: Date.now().toString(), message: `"${fileName}" saved to library.`, variant: 'success' });
+      // Admin: persist structured AI-data export for later use (RAG, embeddings, training, etc.)
+      if (isAdmin && neonUser && docId) {
+        try {
+          const exported = buildDocumentExport(docId, fileName, pageResults);
+          await saveDocumentExport(docId, neonUser.id, exported);
+        } catch {
+          // Non-critical — don't surface export errors to the user
+        }
+      }
     } catch (err) {
       setToast({ id: Date.now().toString(), message: `Save failed: ${(err as Error).message}`, variant: 'error' });
     } finally {

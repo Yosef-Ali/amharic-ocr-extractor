@@ -94,7 +94,7 @@ export async function saveDocument(
   name: string,
   pageImages: string[],
   pageResults: Record<number, string>,
-): Promise<void> {
+): Promise<string> {   // returns the new document UUID
   const userId = requireUserId();
   const id     = uuidv4();
 
@@ -126,6 +126,7 @@ export async function saveDocument(
       ${JSON.stringify(pageResults)}::jsonb
     )
   `;
+  return id;
 }
 
 // ---------------------------------------------------------------------------

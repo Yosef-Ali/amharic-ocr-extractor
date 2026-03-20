@@ -2,12 +2,17 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   X, Users, FileText, BarChart3, Trash2, RefreshCw,
   ChevronDown, ChevronRight, ShieldCheck, Loader2, Ban, ShieldOff,
+  Download, Database,
 } from 'lucide-react';
 import {
   getAdminStats, getAdminUsers, getAdminDocuments, adminDeleteDocument,
   blockUser, unblockUser,
   type AdminUser, type AdminDocument, type AdminStats,
 } from '../services/adminService';
+import {
+  listExports, getExportJson, deleteExport, getExportStats, downloadExportJson,
+  type ExportMeta,
+} from '../services/exportService';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmt(iso: string) {
@@ -34,7 +39,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = 'overview' | 'users' | 'documents';
+type Tab = 'overview' | 'users' | 'documents' | 'aidata';
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function AdminPanel({ onClose }: Props) {
@@ -49,18 +54,28 @@ export default function AdminPanel({ onClose }: Props) {
   const [filterUid, setFilterUid] = useState<string | null>(null);
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
 
+  // AI Data tab state
+  const [exports,      setExports]      = useState<ExportMeta[]>([]);
+  const [exportStats,  setExportStats]  = useState<{ totalExports: number; totalChunks: number; totalPages: number } | null>(null);
+  const [deletingExp,  setDeletingExp]  = useState<string | null>(null);
+  const [downloading,  setDownloading]  = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [s, u, d] = await Promise.all([
+      const [s, u, d, exps, expStats] = await Promise.all([
         getAdminStats(),
         getAdminUsers(),
         getAdminDocuments(),
+        listExports(),
+        getExportStats(),
       ]);
       setStats(s);
       setUsers(u);
       setDocs(d);
+      setExports(exps);
+      setExportStats(expStats);
     } catch (e) {
       setError((e as Error).message ?? 'Failed to load admin data');
     } finally {
@@ -94,6 +109,28 @@ export default function AdminPanel({ onClose }: Props) {
 
   const filteredDocs = filterUid ? docs.filter(d => d.userId === filterUid) : docs;
 
+  const handleDeleteExport = async (id: string) => {
+    if (!confirm('Delete this AI data export? This cannot be undone.')) return;
+    setDeletingExp(id);
+    try {
+      await deleteExport(id);
+      setExports(prev => prev.filter(e => e.id !== id));
+      if (exportStats) setExportStats({ ...exportStats, totalExports: exportStats.totalExports - 1 });
+    } finally {
+      setDeletingExp(null);
+    }
+  };
+
+  const handleDownloadExport = async (exp: ExportMeta) => {
+    setDownloading(exp.id);
+    try {
+      const full = await getExportJson(exp.id);
+      if (full) downloadExportJson(full, exp.documentName);
+    } finally {
+      setDownloading(null);
+    }
+  };
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="adm-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -117,7 +154,7 @@ export default function AdminPanel({ onClose }: Props) {
 
         {/* Tabs */}
         <div className="adm-tabs">
-          {(['overview', 'users', 'documents'] as Tab[]).map(t => (
+          {(['overview', 'users', 'documents', 'aidata'] as Tab[]).map(t => (
             <button
               key={t}
               className={`adm-tab${tab === t ? ' adm-tab--active' : ''}`}
@@ -126,9 +163,11 @@ export default function AdminPanel({ onClose }: Props) {
               {t === 'overview'   && <BarChart3 size={13} />}
               {t === 'users'      && <Users size={13} />}
               {t === 'documents'  && <FileText size={13} />}
-              {t.charAt(0).toUpperCase() + t.slice(1)}
+              {t === 'aidata'     && <Database size={13} />}
+              {t === 'aidata' ? 'AI Data' : t.charAt(0).toUpperCase() + t.slice(1)}
               {t === 'users'     && !loading && <span className="adm-tab-badge">{users.length}</span>}
               {t === 'documents' && !loading && <span className="adm-tab-badge">{docs.length}</span>}
+              {t === 'aidata'    && !loading && <span className="adm-tab-badge">{exports.length}</span>}
             </button>
           ))}
         </div>
@@ -274,6 +313,71 @@ export default function AdminPanel({ onClose }: Props) {
                     ))}
                   </tbody>
                 </table>
+              )}
+
+              {/* ── AI Data ── */}
+              {tab === 'aidata' && (
+                <div>
+                  {exportStats && (
+                    <div className="adm-stat-grid" style={{ marginBottom: '1.25rem' }}>
+                      <StatCard label="Exports"      value={exportStats.totalExports} icon={<Database size={18} />} />
+                      <StatCard label="Total Chunks" value={exportStats.totalChunks}  icon={<BarChart3 size={18} />} />
+                      <StatCard label="Total Pages"  value={exportStats.totalPages}   icon={<FileText size={18} />} />
+                    </div>
+                  )}
+
+                  <table className="adm-table">
+                    <thead>
+                      <tr>
+                        <th>Document</th>
+                        <th>User</th>
+                        <th>Pages</th>
+                        <th>Chunks</th>
+                        <th>Languages</th>
+                        <th>Updated</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {exports.length === 0 && (
+                        <tr><td colSpan={7} className="adm-empty">No AI data exports yet. Save a document to generate one.</td></tr>
+                      )}
+                      {exports.map(e => (
+                        <tr key={e.id}>
+                          <td className="adm-td-name">{e.documentName}</td>
+                          <td className="adm-td-email">{e.userEmail ?? e.userId}</td>
+                          <td>{e.pageCount}</td>
+                          <td>{e.chunkCount}</td>
+                          <td>{e.languages.join(', ') || '—'}</td>
+                          <td>{fmt(e.updatedAt)}</td>
+                          <td style={{ display: 'flex', gap: '0.3rem' }}>
+                            <button
+                              className="adm-del-btn"
+                              style={{ background: 'var(--adm-accent, #2563eb)', color: '#fff' }}
+                              onClick={() => handleDownloadExport(e)}
+                              disabled={downloading === e.id}
+                              title="Download .ai-data.json"
+                            >
+                              {downloading === e.id
+                                ? <Loader2 size={12} className="animate-spin" />
+                                : <Download size={12} />}
+                            </button>
+                            <button
+                              className="adm-del-btn"
+                              onClick={() => handleDeleteExport(e.id)}
+                              disabled={deletingExp === e.id}
+                              title="Delete export"
+                            >
+                              {deletingExp === e.id
+                                ? <Loader2 size={12} className="animate-spin" />
+                                : <Trash2 size={12} />}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
 
               {/* ── Documents ── */}
