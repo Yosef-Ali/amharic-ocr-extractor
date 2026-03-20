@@ -24,6 +24,7 @@ import DocumentPage          from '../DocumentPage';
 import { type ElementStyles, type DocumentPageHandle } from '../DocumentPage';
 import { type ImageQuality }  from '../../services/geminiService';
 import { type CanvasExecutor } from '../../services/canvasExecutor';
+import { type PageDimension }  from '../../services/pdfService';
 import UserMenu               from '../UserMenu';
 import CoverEditor            from './CoverEditor';
 import CoverEditorPanel       from './CoverEditorPanel';
@@ -33,6 +34,7 @@ import { type CoverBlock, parseCover, serialiseCover } from './coverUtils';
 interface Props {
   fileName:          string;
   pageImages:        string[];
+  pageDimensions:    PageDimension[];
   pageResults:       Record<number, string>;
   imageQuality:      ImageQuality;
   isProcessing:      boolean;
@@ -67,7 +69,7 @@ type DrawerPanel = 'agent' | 'inspector' | 'cover' | null;
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function EditorShell({
-  fileName, pageImages, pageResults, imageQuality,
+  fileName, pageImages, pageDimensions, pageResults, imageQuality,
   isProcessing, processingStatus, regeneratingPages,
   isPdfExporting, isSaving,
   onEdit, onRegenerate, onDeletePage,
@@ -196,9 +198,11 @@ export default function EditorShell({
   // Auto-switch to document view when results arrive or when on cover page (page 0)
   useEffect(() => {
     if (activePage === 0) { setViewMode('document'); return; }
-    if (pageResults[activePage] && viewMode === 'scan') {
+    if (pageResults[activePage]) {
       const hasScanImage = !!(pageImages[activePage - 1]);
-      setViewMode(hasScanImage ? 'compare' : 'document');
+      // Always force document view when there's a result but no scan image (text-based pages)
+      if (!hasScanImage) { setViewMode('document'); return; }
+      if (viewMode === 'scan') setViewMode('compare');
     }
   }, [pageResults, activePage]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -210,6 +214,11 @@ export default function EditorShell({
   const currentHtml  = pageResults[activePage] ?? '';
   const currentImage = activePage > 0 ? (pageImages[activePage - 1] ?? '') : '';
   const isPdf        = fileName.toLowerCase().endsWith('.pdf');
+
+  // ── Dynamic page dimensions ──────────────────────────────────────────
+  const activePageDim = activePage > 0
+    ? (pageDimensions[activePage - 1] ?? { widthMm: 210, heightMm: 297 })
+    : { widthMm: 210, heightMm: 297 }; // covers default to A4
 
   // ── Navigation ─────────────────────────────────────────────────────────
   const changePage = useCallback((p: number) => {
@@ -577,7 +586,7 @@ export default function EditorShell({
                     >✕ Remove</button>
                   </>
                 ) : (
-                  <div style={{ width: '210mm', minHeight: '297mm', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', background: 'var(--t-surface)', borderRadius: '2px', boxShadow: '0 2px 12px rgba(0,0,0,.15)', color: 'var(--t-text3)', fontSize: '0.85rem' }}>
+                  <div style={{ width: `${activePageDim.widthMm}mm`, minHeight: `${activePageDim.heightMm}mm`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', background: 'var(--t-surface)', borderRadius: '2px', boxShadow: '0 2px 12px rgba(0,0,0,.15)', color: 'var(--t-text3)', fontSize: '0.85rem' }}>
                     <Sparkles size={28} style={{ opacity: 0.35 }} />
                     <span>Generate back cover in the panel →</span>
                   </div>
@@ -586,7 +595,7 @@ export default function EditorShell({
             ) : activePage === 0 && !hasResult ? (
               /* ── Cover page — no cover yet: blank placeholder (controls in right drawer) ── */
               <div className="es-doc-wrap" style={{ position: 'relative' }}>
-                <div style={{ width: '210mm', minHeight: '297mm', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', background: 'var(--t-surface)', borderRadius: '2px', boxShadow: '0 2px 12px rgba(0,0,0,.15)', color: 'var(--t-text3)', fontSize: '0.85rem' }}>
+                <div style={{ width: `${activePageDim.widthMm}mm`, minHeight: `${activePageDim.heightMm}mm`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', background: 'var(--t-surface)', borderRadius: '2px', boxShadow: '0 2px 12px rgba(0,0,0,.15)', color: 'var(--t-text3)', fontSize: '0.85rem' }}>
                   <Sparkles size={28} style={{ opacity: 0.35 }} />
                   <span>Use the panel on the right to generate your cover</span>
                 </div>
@@ -619,6 +628,8 @@ export default function EditorShell({
                 <DocumentPage
                   pageNumber={activePage}
                   html={currentHtml}
+                  pageWidth={`${activePageDim.widthMm}mm`}
+                  pageHeight={`${activePageDim.heightMm}mm`}
                   styleOverride={layoutToStyle(pageLayout)}
                   selectionMode={selectionMode}
                   onElementSelect={handleElementSelect}
@@ -646,21 +657,32 @@ export default function EditorShell({
                     )}
                   </>
                 ) : (
-                  <div className="es-empty">
-                    <Loader2 size={28} className="animate-spin" style={{ color: '#94a3b8' }} />
+                  <div className="es-empty" style={{ flexDirection: 'column', gap: '0.5rem' }}>
+                    <FileText size={28} style={{ color: '#94a3b8' }} />
+                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Text page — no scan available</span>
                   </div>
                 )}
                 {!hasResult && !isRegen && (
                   <div className="es-unextracted-bar">
                     <span>Page {activePage} — not yet extracted</span>
-                    <button
-                      className="bt-btn bt-btn--primary"
-                      onClick={() => onRegenerate(activePage)}
-                      disabled={isRegen || isProcessing}
-                    >
-                      {isRegen ? <Loader2 size={12} className="animate-spin" /> : <Layers size={12} />}
-                      <span>{isRegen ? 'Extracting…' : 'Extract this page'}</span>
-                    </button>
+                    {currentImage ? (
+                      <button
+                        className="bt-btn bt-btn--primary"
+                        onClick={() => onRegenerate(activePage)}
+                        disabled={isRegen || isProcessing}
+                      >
+                        {isRegen ? <Loader2 size={12} className="animate-spin" /> : <Layers size={12} />}
+                        <span>{isRegen ? 'Extracting…' : 'Extract this page'}</span>
+                      </button>
+                    ) : (
+                      <button
+                        className="bt-btn bt-btn--primary"
+                        onClick={() => setViewMode('document')}
+                      >
+                        <FileText size={12} />
+                        <span>Edit in document view →</span>
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -680,6 +702,7 @@ export default function EditorShell({
             isSaving={isSaving}
             imageQuality={imageQuality}
             processingStatus={processingStatus}
+            hasImage={!!currentImage}
             onPrev={() => changePage(Math.max(navMin, activePage - 1))}
             onNext={() => changePage(Math.min(totalPages, activePage + 1))}
             onExtract={onExtract}
@@ -719,6 +742,7 @@ export default function EditorShell({
               onSave={onSave}
               onDownloadPDF={onDownloadPDF}
               onClose={() => setRightDrawer(null)}
+              fileName={fileName}
             />
           )}
           {rightDrawer === 'inspector' && (

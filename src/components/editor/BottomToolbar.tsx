@@ -17,6 +17,7 @@ interface Props {
   isSaving?:        boolean;
   imageQuality:     ImageQuality;
   processingStatus: string;
+  hasImage?:        boolean;
 
   onPrev:              () => void;
   onNext:              () => void;
@@ -35,6 +36,7 @@ export default function BottomToolbar({
   activePage, totalPages, hasResult, hasAnyResults,
   isProcessing, isRegenerating, isPdfExporting, isSaving,
   imageQuality, processingStatus,
+  hasImage = true,
   onPrev, onNext, onExtract, onForceExtract,
   onRegenerate, onDeletePage,
   onSave, onShowLibrary, onDownloadPDF,
@@ -90,11 +92,17 @@ export default function BottomToolbar({
           {/* Extract */}
           <button className="bt-btn bt-btn--primary" onClick={onExtract} disabled={isProcessing}>
             {isProcessing ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />}
-            <span>{isProcessing ? 'Extracting…' : 'Extract'}</span>
+            <span>
+              {isProcessing
+                ? (processingStatus.match(/page (\d+) of (\d+)/i)
+                    ? `Page ${processingStatus.match(/page (\d+) of (\d+)/i)![1]}/${processingStatus.match(/page (\d+) of (\d+)/i)![2]}…`
+                    : 'Extracting…')
+                : 'Extract'}
+            </span>
           </button>
 
-          {/* Re-extract current page */}
-          {hasResult && (
+          {/* Re-extract current page — hidden for text-based pages with no scan image */}
+          {hasResult && hasImage && (
             <button
               className="bt-icon"
               onClick={onRegenerate}
@@ -149,7 +157,7 @@ export default function BottomToolbar({
                     </button>
                   )}
                   {hasResult && (
-                    <button className="bt-overflow-danger" onClick={() => { onDeletePage(); setMoreOpen(false); }}>
+                    <button className="bt-overflow-danger" onClick={() => { if (window.confirm('Delete this page?')) { onDeletePage(); setMoreOpen(false); } }}>
                       <Trash2 size={14} /> Delete page {activePage}
                     </button>
                   )}

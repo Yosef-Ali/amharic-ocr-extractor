@@ -7,7 +7,7 @@ import AdminPanel    from './components/AdminPanel';
 import Toast, { type ToastMessage } from './components/Toast';
 import AuthScreen    from './components/AuthScreen';
 
-import { pdfToImages, imageFileToBase64, detectFileType, docxToHtmlPages, textToHtmlPages } from './services/pdfService';
+import { pdfToImages, imageFileToBase64, detectFileType, docxToHtmlPages, textToHtmlPages, type PageDimension } from './services/pdfService';
 import { extractPageHTML, autoFillImagePlaceholders, type ImageQuality } from './services/geminiService';
 import { saveDocument, initStorage, initializeSchema, type SavedDocument } from './services/storageService';
 import { CanvasExecutor } from './services/canvasExecutor';
@@ -91,6 +91,7 @@ export default function App() {
   // ── Document state ──────────────────────────────────────────────────────
   const [fileName,         setFileName]         = useState('');
   const [pageImages,       setPageImages]       = useState<string[]>([]);
+  const [pageDimensions,   setPageDimensions]   = useState<PageDimension[]>([]);
   const [pageResults,      setPageResults]      = useState<Record<number, string>>({});
   const [fromPage,         setFromPage]         = useState(1);
   const [toPage,           setToPage]           = useState(1);
@@ -194,9 +195,9 @@ export default function App() {
         // DOCX → HTML pages (text is already digital, no OCR needed)
         setProcessingStatus('Converting Word document…');
         const htmlPages = await docxToHtmlPages(file);
-        // Create blank page images (white A4) as scan placeholders
         const blankImages = htmlPages.map(() => '');
         setPageImages(blankImages);
+        setPageDimensions(htmlPages.map(() => ({ widthMm: 210, heightMm: 297 }))); // default A4 for text-based
         const results: Record<number, string> = {};
         htmlPages.forEach((html, i) => { results[i + 1] = html; });
         setPageResults(results);
@@ -209,6 +210,7 @@ export default function App() {
         const htmlPages = textToHtmlPages(text);
         const blankImages = htmlPages.map(() => '');
         setPageImages(blankImages);
+        setPageDimensions(htmlPages.map(() => ({ widthMm: 210, heightMm: 297 }))); // default A4 for text
         const results: Record<number, string> = {};
         htmlPages.forEach((html, i) => { results[i + 1] = html; });
         setPageResults(results);
@@ -216,15 +218,20 @@ export default function App() {
         setToPage(htmlPages.length);
       } else {
         // PDF or image — existing flow (renders to images for OCR)
-        let images: string[];
         if (fileType === 'pdf') {
-          images = await pdfToImages(file);
+          const { images, dimensions } = await pdfToImages(file);
+          setPageImages(images);
+          setPageDimensions(dimensions);
+          setFromPage(1);
+          setToPage(images.length);
         } else {
-          images = [await imageFileToBase64(file)];
+          const img = await imageFileToBase64(file);
+          setPageImages([img]);
+          // For single images, default to A4
+          setPageDimensions([{ widthMm: 210, heightMm: 297 }]);
+          setFromPage(1);
+          setToPage(1);
         }
-        setPageImages(images);
-        setFromPage(1);
-        setToPage(images.length);
       }
     } catch (err) {
       console.error(err);
@@ -246,6 +253,12 @@ export default function App() {
       for (let p = fromPage; p <= toPage; p++) {
         if (!force && pageResults[p]) {
           prevHTML = pageResults[p];
+          continue;
+        }
+
+        // Skip OCR for text-based pages (DOCX/plain text) that have no scan image
+        if (!pageImages[p - 1]) {
+          if (pageResults[p]) prevHTML = pageResults[p];
           continue;
         }
 
@@ -301,12 +314,19 @@ export default function App() {
   // Re-extract a single page (independent of the global extract loop)
   // -------------------------------------------------------------------------
   const regenerateSinglePage = useCallback(async (pageNumber: number) => {
+    // Skip OCR for text-based pages (DOCX/text) that have no scan image
+    if (!pageImages[pageNumber - 1]) {
+      setToast({ id: Date.now().toString(), message: 'This is a text-based page — edit directly in the document', variant: 'error' });
+      return;
+    }
+
     setRegeneratingPages((prev) => { const next = new Set(prev); next.add(pageNumber); return next; });
     const prevHTML = pageNumber > 1 ? pageResults[pageNumber - 1] : undefined;
 
     try {
       const html = await extractPageHTML(pageImages[pageNumber - 1], prevHTML);
-      setPageResults((prev) => ({ ...prev, [pageNumber]: html }));
+      const { html: finalHtml } = await autoFillImagePlaceholders(html, pageImages[pageNumber - 1]);
+      setPageResults((prev) => ({ ...prev, [pageNumber]: finalHtml }));
       setToast({ id: Date.now().toString(), message: `Page ${pageNumber} re-extracted.`, variant: 'success' });
     } catch (err: unknown) {
       const error = err as Error & { status?: number };
@@ -407,6 +427,8 @@ export default function App() {
     setFileName(doc.name);
     setPageImages(doc.pageImages);
     setPageResults(doc.pageResults);
+    // Loaded documents don't store dimensions yet — default to A4
+    setPageDimensions(doc.pageImages.map(() => ({ widthMm: 210, heightMm: 297 })));
     setFromPage(1);
     setToPage(doc.pageCount);
   };
@@ -427,10 +449,22 @@ export default function App() {
       const pages = document.querySelectorAll('#pdf-export-container .document-page');
       if (pages.length === 0) { setIsPdfExporting(false); return; }
 
-      const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+      // Use first page dimensions to initialise the PDF, fallback to A4
+      const firstDim = pageDimensions[0] ?? { widthMm: 210, heightMm: 297 };
+      const pdf = new jsPDF({
+        unit: 'mm',
+        format: [firstDim.widthMm, firstDim.heightMm],
+        orientation: firstDim.widthMm > firstDim.heightMm ? 'landscape' : 'portrait',
+      });
 
       for (let i = 0; i < pages.length; i++) {
         const pageEl = pages[i] as HTMLElement;
+        // Resolve dimension for this page (page index from data attribute or sequential)
+        const pageIdx = parseInt(pageEl.dataset.dimIndex ?? String(i), 10);
+        const dim = pageDimensions[pageIdx] ?? { widthMm: 210, heightMm: 297 };
+        const wMm = dim.widthMm;
+        const hMm = dim.heightMm;
+
         const saved  = {
           minHeight: pageEl.style.minHeight,
           maxHeight: pageEl.style.maxHeight,
@@ -439,8 +473,8 @@ export default function App() {
           transform: pageEl.style.transform,
         };
 
-        pageEl.style.minHeight = '297mm';
-        pageEl.style.maxHeight = '297mm';
+        pageEl.style.minHeight = `${hMm}mm`;
+        pageEl.style.maxHeight = `${hMm}mm`;
         pageEl.style.overflow  = 'hidden';
         pageEl.style.boxShadow = 'none';
         pageEl.style.transform = 'none';
@@ -450,13 +484,13 @@ export default function App() {
           useCORS: true,
           logging: false,
           width:   pageEl.scrollWidth,
-          height:  Math.round(297 * (96 / 25.4)),
+          height:  Math.round(hMm * (96 / 25.4)),
         });
 
         Object.assign(pageEl.style, saved);
 
-        if (i > 0) pdf.addPage();
-        pdf.addImage(canvas.toDataURL('image/jpeg', 0.98), 'JPEG', 0, 0, 210, 297);
+        if (i > 0) pdf.addPage([wMm, hMm], wMm > hMm ? 'landscape' : 'portrait');
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.98), 'JPEG', 0, 0, wMm, hMm);
       }
 
       pdf.save(`${fileName.replace(/\.[^.]+$/, '') || 'document'}.pdf`);
@@ -474,6 +508,7 @@ export default function App() {
   const handleClear = useCallback(() => {
     setFileName('');
     setPageImages([]);
+    setPageDimensions([]);
     setPageResults({});
     setFromPage(1);
     setToPage(1);
@@ -550,6 +585,7 @@ export default function App() {
       <EditorShell
         fileName={fileName}
         pageImages={pageImages}
+        pageDimensions={pageDimensions}
         pageResults={pageResults}
         imageQuality={imageQuality}
         isProcessing={isProcessing}
@@ -591,7 +627,6 @@ export default function App() {
           position: 'absolute',
           left: '-99999px',
           top: 0,
-          width: '210mm',
           pointerEvents: 'none',
           zIndex: -1,
         }}
@@ -604,14 +639,19 @@ export default function App() {
             return +a - +b;
           })
           .map(([page, html]) => {
+            const pageNum = +page;
             const isCoverPage = page === '0' || page === '-1';
+            // Use the actual page dimension (0-indexed); covers/back covers fallback to A4
+            const dimIdx = pageNum > 0 ? pageNum - 1 : 0;
+            const dim = pageDimensions[dimIdx] ?? { widthMm: 210, heightMm: 297 };
             return (
               <div
                 key={page}
                 className="document-page"
+                data-dim-index={pageNum > 0 ? pageNum - 1 : 0}
                 style={{
-                  width:      '210mm',
-                  minHeight:  '297mm',
+                  width:      `${dim.widthMm}mm`,
+                  minHeight:  `${dim.heightMm}mm`,
                   padding:    isCoverPage ? '0' : '12mm 16mm',
                   fontFamily: "'Noto Serif Ethiopic', 'Noto Sans Ethiopic', serif",
                   fontSize:   '1rem',

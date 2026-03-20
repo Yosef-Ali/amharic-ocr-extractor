@@ -100,6 +100,10 @@ interface Props {
   zoom?: number;
   /** Page margins in mm — used for snap guides */
   margins?: { t: number; r: number; b: number; l: number };
+  /** Dynamic page width as CSS value (e.g. '210mm'). Defaults to '210mm' (A4). */
+  pageWidth?: string;
+  /** Dynamic page height as CSS value (e.g. '297mm'). Defaults to '297mm' (A4). */
+  pageHeight?: string;
 }
 
 // ── Block-level tags that can be selected ────────────────────────────────────
@@ -134,6 +138,8 @@ export default function DocumentPage({
   onElementSelect, onExitSelectionMode, styleApply, onEdit,
   zoom = 100,
   margins = { t: 12, r: 16, b: 12, l: 16 },
+  pageWidth  = '210mm',
+  pageHeight = '297mm',
 }: Props) {
   const editorRef            = useRef<HTMLDivElement>(null);
   const editImgRef           = useRef<HTMLImageElement | null>(null);
@@ -999,8 +1005,8 @@ export default function DocumentPage({
           spellCheck={false}
           className={`document-page relative bg-white focus:outline-none flex-1 ${compact ? 'overflow-y-auto rounded-b-xl' : 'overflow-hidden mx-auto rounded-[2px]'}${selectionMode ? ' sel-mode' : ''}`}
           style={{
-            width:      compact ? '100%' : '210mm',
-            minHeight:  compact ? 'auto' : '297mm',
+            width:      compact ? '100%' : pageWidth,
+            minHeight:  compact ? 'auto' : pageHeight,
             padding:    compact ? '24px 32px' : '12mm 16mm',
             fontFamily: "'Noto Serif Ethiopic', 'Noto Sans Ethiopic', serif",
             fontSize:   '1rem',
@@ -1009,8 +1015,8 @@ export default function DocumentPage({
             cursor:     selectionMode ? 'default' : undefined,
             userSelect: selectionMode ? 'none' : undefined,
             ...styleOverride,
-            // Always enforce A4 height cap — must come after styleOverride
-            ...(compact ? {} : { maxHeight: '297mm', overflowY: 'hidden' }),
+            // Always enforce page height cap — must come after styleOverride
+            ...(compact ? {} : { maxHeight: pageHeight, overflowY: 'hidden' }),
           }}
         />
       </div>

@@ -13,6 +13,10 @@ import {
   MessageCircle, Wrench,
 } from 'lucide-react';
 import { editPageWithTools, chatWithAI, setApiKey, isApiKeyError, type ChatTurn, type CanvasContext } from '../../services/geminiService';
+import {
+  getProjectMemory, saveProjectMemory, buildProjectContext, appendAgentSummary,
+  type ProjectMemory,
+} from '../../services/projectMemory';
 import { type CanvasExecutor } from '../../services/canvasExecutor';
 import {
   type A2UIMessage,
@@ -49,6 +53,8 @@ interface Props {
   onNavigatePage?: (page: number) => void;
   onSave?:         () => void;
   onDownloadPDF?:  () => void;
+  /** Document file name — used as the per-project memory key */
+  fileName?:       string;
 }
 
 // ── Shimmer skeleton ──────────────────────────────────────────────────────
@@ -374,6 +380,7 @@ export default function AgentPanel({
   context, activePage = 1, pageImage = '',
   totalPages = 0, extractedPages = new Set<number>(),
   executor, onClose, onNavigatePage, onSave, onDownloadPDF,
+  fileName = '',
 }: Props) {
   const [panelMode,  setPanelMode]  = useState<'chat' | 'agent'>('chat');
   const [messages,   setMessages]   = useState<A2UIMessage[]>([]);
@@ -384,6 +391,44 @@ export default function AgentPanel({
   const [refImages,  setRefImages]  = useState<{ name: string; base64: string; preview: string }[]>([]);
   const [processLabel, setProcess]  = useState('');
   const [keyError,   setKeyError]   = useState(false);
+
+  // ── Per-document memory (load once on mount, save on unmount) ─────────────
+  const memoryRef = useRef<ProjectMemory>(getProjectMemory(fileName || 'untitled'));
+
+  // Restore persisted chat history on mount (so panel reopen continues the conversation)
+  const [historyRestored, setHistoryRestored] = useState(false);
+  useEffect(() => {
+    if (historyRestored || !fileName) return;
+    const mem = getProjectMemory(fileName);
+    memoryRef.current = mem;
+    if (mem.chatHistory.length > 0) {
+      setChatHistory(mem.chatHistory);
+    }
+    setHistoryRestored(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileName]);
+
+  // Save memory whenever chat history changes (debounced via unmount)
+  const chatHistoryRef = useRef(chatHistory);
+  useEffect(() => { chatHistoryRef.current = chatHistory; }, [chatHistory]);
+
+  useEffect(() => {
+    return () => {
+      if (!fileName) return;
+      const mem = memoryRef.current;
+      saveProjectMemory({ ...mem, chatHistory: chatHistoryRef.current });
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileName]);
+
+  // Build a fresh project context string on every render (live doc state)
+  const projectContext = buildProjectContext({
+    docKey:         fileName || 'untitled',
+    totalPages,
+    extractedPages,
+    activePage,
+    memory:         memoryRef.current,
+  });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef    = useRef<HTMLTextAreaElement>(null);
@@ -494,7 +539,7 @@ export default function AgentPanel({
       const canvasCtx: CanvasContext | undefined =
         context ? { pageNumber: context.pageNumber, html: context.html, image: context.image } : undefined;
 
-      const reply = await chatWithAI(newHistory, canvasCtx);
+      const reply = await chatWithAI(newHistory, canvasCtx, projectContext);
 
       setMessages(prev => prev.filter(m => !(m.type === 'thinking' && m.id === thinkId)));
       addMsg({ type: 'text', id: uid(), content: reply });
@@ -686,6 +731,7 @@ export default function AgentPanel({
         {
           model: apiModel,
           referenceImages: refImages.map(r => r.base64),
+          projectContext,
 
           onToolCall: (fb) => {
             const label: Record<string, string> = {
@@ -746,6 +792,13 @@ export default function AgentPanel({
       // Remove any remaining thinking shimmer
       setMessages(prev => prev.filter(m => !(m.type === 'thinking' && m.id === thinkId)));
       addMsg({ type: 'text', id: uid(), content: summary });
+
+      // Log to per-document memory so future sessions know what was done
+      if (fileName && summary && summary !== 'Done.') {
+        const brief = `"${text.slice(0, 60)}${text.length > 60 ? '…' : ''}" → ${summary.replace(/[*_`]/g, '').slice(0, 80)}`;
+        memoryRef.current = appendAgentSummary(memoryRef.current, brief);
+        saveProjectMemory({ ...memoryRef.current, chatHistory: chatHistoryRef.current });
+      }
 
     } catch (err) {
       setMessages(prev => prev.filter(m => !(m.type === 'thinking' && m.id === thinkId)));

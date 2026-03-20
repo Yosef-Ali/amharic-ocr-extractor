@@ -5,14 +5,31 @@ import mammoth from 'mammoth';
 // Use the locally bundled worker (CDN doesn't carry v5.x .mjs files)
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
-export async function pdfToImages(file: File): Promise<string[]> {
+// Page dimension in mm (extracted from PDF's native coordinate system)
+export interface PageDimension {
+  widthMm:  number;
+  heightMm: number;
+}
+
+// 1 PDF point = 1/72 inch = 25.4/72 mm ≈ 0.3528 mm
+const PT_TO_MM = 25.4 / 72;
+
+export async function pdfToImages(file: File): Promise<{ images: string[]; dimensions: PageDimension[] }> {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   const images: string[] = [];
+  const dimensions: PageDimension[] = [];
 
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const unscaledViewport = page.getViewport({ scale: 1.0 });
+
+    // Capture the original page size in mm (PDF units are 72 DPI points)
+    dimensions.push({
+      widthMm:  Math.round(unscaledViewport.width  * PT_TO_MM * 100) / 100,
+      heightMm: Math.round(unscaledViewport.height * PT_TO_MM * 100) / 100,
+    });
+
     const maxDimension = 2560;
     const currentMax = Math.max(unscaledViewport.width, unscaledViewport.height);
     const scale = currentMax > maxDimension ? maxDimension / currentMax : 2.0;
@@ -26,7 +43,7 @@ export async function pdfToImages(file: File): Promise<string[]> {
     images.push(canvas.toDataURL('image/jpeg', 0.92).split(',')[1]);
   }
 
-  return images;
+  return { images, dimensions };
 }
 
 export async function imageFileToBase64(file: File): Promise<string> {

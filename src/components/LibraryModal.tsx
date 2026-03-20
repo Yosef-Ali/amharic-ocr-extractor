@@ -16,6 +16,7 @@ export default function LibraryModal({ onLoad, onClose }: Props) {
   const [docs, setDocs] = useState<SavedDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
     loadAllDocuments().then((d) => { setDocs(d); setLoading(false); });
@@ -47,6 +48,28 @@ export default function LibraryModal({ onLoad, onClose }: Props) {
 
         {/* Body */}
         <div className="overflow-y-auto flex-1 p-3">
+          {/* Search */}
+          {!loading && docs.length > 0 && (
+            <div style={{ padding: '0 0.25rem 0.5rem' }}>
+              <input
+                type="text"
+                placeholder="Search documents…"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '0.75rem',
+                  border: '1px solid #e5e7eb',
+                  fontSize: '0.875rem',
+                  outline: 'none',
+                  background: '#f9fafb',
+                  color: '#1f2937',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+          )}
           {loading && (
             <div className="flex items-center justify-center py-12 text-gray-400 font-medium">
               Loading…
@@ -61,11 +84,19 @@ export default function LibraryModal({ onLoad, onClose }: Props) {
               <p className="text-gray-400 text-sm mt-1">Extract a document and click "Save" to add it here.</p>
             </div>
           )}
-          {docs.map((doc) => (
+          {docs.filter(d => d.name.toLowerCase().includes(query.toLowerCase())).map((doc) => (
             <div
               key={doc.id}
               className="flex items-center justify-between p-3 border-b border-gray-100 last:border-0 gap-3 hover:bg-gray-50 rounded-xl transition-colors group"
             >
+              {/* Thumbnail */}
+              {(doc as any).thumbnailUrl && (
+                <img
+                  src={(doc as any).thumbnailUrl}
+                  alt=""
+                  style={{ width: '40px', height: '52px', objectFit: 'cover', borderRadius: '4px', flexShrink: 0, border: '1px solid #e5e7eb' }}
+                />
+              )}
               <div className="min-w-0 flex-1 px-2">
                 <p className="font-semibold text-gray-800 truncate">{doc.name}</p>
                 <p className="text-xs font-medium text-gray-400 mt-0.5">

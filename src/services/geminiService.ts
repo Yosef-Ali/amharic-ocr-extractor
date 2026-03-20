@@ -711,6 +711,7 @@ export interface EditWithToolsOptions {
   onToolCall?:          (feedback: ToolCallFeedback) => void;
   onApprovalRequest?:   (id: string, action: string, description: string) => Promise<boolean>;
   referenceImages?:     string[];   // raw base64 JPEG, no data: prefix
+  projectContext?:      string;     // injected project-awareness block (doc name, page status, notes)
 }
 
 export async function editPageWithTools(
@@ -721,7 +722,7 @@ export async function editPageWithTools(
   pageNumber: number,
   options?: EditWithToolsOptions,
 ): Promise<string> {
-  const { model, onToolCall, onApprovalRequest, referenceImages } = options ?? {};
+  const { model, onToolCall, onApprovalRequest, referenceImages, projectContext } = options ?? {};
   const activeModel = model ?? MODEL;
 
   type Part    = { text?: string; functionCall?: { name: string; args: Record<string, unknown> }; functionResponse?: { name: string; response: { result: string } } };
@@ -768,7 +769,9 @@ export async function editPageWithTools(
       model: activeModel,
       contents: conversation,
       config: {
-        systemInstruction: LAYOUT_SYSTEM_PROMPT,
+        systemInstruction: projectContext
+          ? `${LAYOUT_SYSTEM_PROMPT}\n\n${projectContext}`
+          : LAYOUT_SYSTEM_PROMPT,
         tools: [{ functionDeclarations: CANVAS_TOOL_DECLARATIONS as unknown as import('@google/genai').FunctionDeclaration[] }],
       },
     });
@@ -853,6 +856,7 @@ export interface CanvasContext {
 export async function chatWithAI(
   history: ChatTurn[],
   canvasContext?: CanvasContext,
+  projectContext?: string,
 ): Promise<string> {
   type Part = { text?: string; inlineData?: { mimeType: string; data: string } };
   type Content = { role: 'user' | 'model'; parts: Part[] };
@@ -900,7 +904,8 @@ export async function chatWithAI(
         'The app has a Cover Page Generator powered by NanoBanana 2 (Gemini 3.1 Flash Image) that can generate, improve, or create covers from reference images. ' +
         'If users ask about cover pages in chat mode, tell them to switch to Layout mode and say "generate a cover page" or use the Cover Page button in the toolbar menu. ' +
         'Format responses with markdown: **bold**, *italic*, `code`, bullet lists with "- ". ' +
-        'Be concise, helpful, and direct. Use paragraph breaks for readability.',
+        'Be concise, helpful, and direct. Use paragraph breaks for readability.' +
+        (projectContext ? `\n\n${projectContext}` : ''),
     },
   });
 
