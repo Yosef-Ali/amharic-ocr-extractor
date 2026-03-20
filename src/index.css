@@ -564,6 +564,50 @@
   margin: 0;
 }
 
+/* Toggle row */
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.settings-toggle-label {
+  font-size: 0.71rem;
+  color: var(--t-text2);
+  line-height: 1.4;
+}
+.settings-toggle {
+  flex-shrink: 0;
+  width: 32px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--t-surface3);
+  border: none;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.18s;
+  padding: 0;
+}
+.settings-toggle--on {
+  background: #7c3aed;
+}
+.settings-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.18s;
+  pointer-events: none;
+}
+.settings-toggle--on .settings-toggle-thumb {
+  transform: translateX(14px);
+}
+
 /* ──────────────────────────────────────────────
    AI Image Placeholders (inserted by OCR — visual marker only)
    ────────────────────────────────────────────── */

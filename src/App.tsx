@@ -11,6 +11,7 @@ import { pdfToImages, imageFileToBase64, detectFileType, docxToHtmlPages, textTo
 import { extractPageHTML, autoFillImagePlaceholders, type ImageQuality } from './services/geminiService';
 import { saveDocument, initStorage, initializeSchema, type SavedDocument } from './services/storageService';
 import { buildDocumentExport, saveDocumentExport } from './services/exportService';
+import { AI_DATA_EXPORT_KEY } from './components/editor/SettingsPanel';
 import { CanvasExecutor } from './services/canvasExecutor';
 import { WsBridge }      from './services/wsBridge';
 import { ensureUsersTable, upsertUser, checkUserBlocked } from './services/adminService';
@@ -414,8 +415,8 @@ export default function App() {
     try {
       const docId = await saveDocument(fileName, pageImages, pageResults);
       setToast({ id: Date.now().toString(), message: `"${fileName}" saved to library.`, variant: 'success' });
-      // Admin: persist structured AI-data export in the background (non-blocking)
-      if (isAdmin && neonUser && docId) {
+      // Persist AI-data export in the background when the user has opted in
+      if (neonUser && docId && localStorage.getItem(AI_DATA_EXPORT_KEY) === 'true') {
         void saveDocumentExport(docId, neonUser.id, buildDocumentExport(docId, fileName, pageResults))
           .catch(() => { /* non-critical */ });
       }

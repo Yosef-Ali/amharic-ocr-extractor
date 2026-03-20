@@ -1,10 +1,21 @@
 import { useState, useRef, useEffect } from 'react';
-import { Settings, Key, ExternalLink } from 'lucide-react';
+import { Settings, Key, ExternalLink, Database } from 'lucide-react';
 import { reinitializeClient } from '../../services/geminiService';
+
+export const AI_DATA_EXPORT_KEY = 'amharic-ocr:aiDataExport';
 
 export default function SettingsPanel() {
   const [open, setOpen] = useState(false);
+  const [aiDataExport, setAiDataExport] = useState(
+    () => localStorage.getItem(AI_DATA_EXPORT_KEY) === 'true',
+  );
   const wrapRef = useRef<HTMLDivElement>(null);
+
+  const toggleAiDataExport = () => {
+    const next = !aiDataExport;
+    setAiDataExport(next);
+    localStorage.setItem(AI_DATA_EXPORT_KEY, String(next));
+  };
 
   // Close on outside click
   useEffect(() => {
@@ -75,6 +86,33 @@ export default function SettingsPanel() {
             <code className="settings-env-hint">VITE_GEMINI_API_KEY</code>
             <p className="settings-hint">
               Set this in your <code>.env</code> file to use your own key.
+            </p>
+          </div>
+
+          {/* Divider */}
+          <div className="settings-divider" />
+
+          {/* AI Data Export */}
+          <div className="settings-section">
+            <div className="settings-section-label">
+              <Database size={11} />
+              AI Data Export
+            </div>
+            <label className="settings-toggle-row">
+              <span className="settings-toggle-label">Save AI data on document save</span>
+              <button
+                role="switch"
+                aria-checked={aiDataExport}
+                className={`settings-toggle${aiDataExport ? ' settings-toggle--on' : ''}`}
+                onClick={toggleAiDataExport}
+              >
+                <span className="settings-toggle-thumb" />
+              </button>
+            </label>
+            <p className="settings-hint">
+              Extracts structured text chunks from each saved document — usable
+              for AI training, RAG pipelines, embeddings, and search indexing.
+              Off by default.
             </p>
           </div>
         </div>
