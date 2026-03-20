@@ -41,6 +41,13 @@ interface Props {
 
 type Tab = 'overview' | 'users' | 'documents' | 'aidata';
 
+const TAB_CONFIG: { id: Tab; label: string; icon: React.ElementType }[] = [
+  { id: 'overview',   label: 'Overview',   icon: BarChart3  },
+  { id: 'users',      label: 'Users',      icon: Users      },
+  { id: 'documents',  label: 'Documents',  icon: FileText   },
+  { id: 'aidata',     label: 'AI Data',    icon: Database   },
+];
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function AdminPanel({ onClose }: Props) {
   const [tab,       setTab]       = useState<Tab>('overview');
@@ -109,6 +116,12 @@ export default function AdminPanel({ onClose }: Props) {
 
   const filteredDocs = filterUid ? docs.filter(d => d.userId === filterUid) : docs;
 
+  // Pre-compute per-user doc list to avoid repeated inline filtering during render
+  const docsByUser = docs.reduce<Record<string, typeof docs>>((acc, d) => {
+    (acc[d.userId] ??= []).push(d);
+    return acc;
+  }, {});
+
   const handleDeleteExport = async (id: string) => {
     if (!confirm('Delete this AI data export? This cannot be undone.')) return;
     setDeletingExp(id);
@@ -154,22 +167,20 @@ export default function AdminPanel({ onClose }: Props) {
 
         {/* Tabs */}
         <div className="adm-tabs">
-          {(['overview', 'users', 'documents', 'aidata'] as Tab[]).map(t => (
-            <button
-              key={t}
-              className={`adm-tab${tab === t ? ' adm-tab--active' : ''}`}
-              onClick={() => setTab(t)}
-            >
-              {t === 'overview'   && <BarChart3 size={13} />}
-              {t === 'users'      && <Users size={13} />}
-              {t === 'documents'  && <FileText size={13} />}
-              {t === 'aidata'     && <Database size={13} />}
-              {t === 'aidata' ? 'AI Data' : t.charAt(0).toUpperCase() + t.slice(1)}
-              {t === 'users'     && !loading && <span className="adm-tab-badge">{users.length}</span>}
-              {t === 'documents' && !loading && <span className="adm-tab-badge">{docs.length}</span>}
-              {t === 'aidata'    && !loading && <span className="adm-tab-badge">{exports.length}</span>}
-            </button>
-          ))}
+          {TAB_CONFIG.map(({ id, label, icon: Icon }) => {
+            const badge = id === 'users' ? users.length : id === 'documents' ? docs.length : id === 'aidata' ? exports.length : null;
+            return (
+              <button
+                key={id}
+                className={`adm-tab${tab === id ? ' adm-tab--active' : ''}`}
+                onClick={() => setTab(id)}
+              >
+                <Icon size={13} />
+                {label}
+                {badge !== null && !loading && <span className="adm-tab-badge">{badge}</span>}
+              </button>
+            );
+          })}
         </div>
 
         {/* Body */}
@@ -280,12 +291,12 @@ export default function AdminPanel({ onClose }: Props) {
                         {expandedUser === u.id && (
                           <tr key={`${u.id}-docs`} className="adm-user-docs-row">
                             <td colSpan={4}>
-                              {docs.filter(d => d.userId === u.id).length === 0 ? (
+                              {(docsByUser[u.id] ?? []).length === 0 ? (
                                 <p className="adm-empty-sub">No documents yet.</p>
                               ) : (
                                 <table className="adm-subtable">
                                   <tbody>
-                                    {docs.filter(d => d.userId === u.id).map(d => (
+                                    {(docsByUser[u.id] ?? []).map(d => (
                                       <tr key={d.id}>
                                         <td>{d.name}</td>
                                         <td>{d.pageCount}p</td>
@@ -352,8 +363,7 @@ export default function AdminPanel({ onClose }: Props) {
                           <td>{fmt(e.updatedAt)}</td>
                           <td style={{ display: 'flex', gap: '0.3rem' }}>
                             <button
-                              className="adm-del-btn"
-                              style={{ background: 'var(--adm-accent, #2563eb)', color: '#fff' }}
+                              className="adm-del-btn adm-download-btn"
                               onClick={() => handleDownloadExport(e)}
                               disabled={downloading === e.id}
                               title="Download .ai-data.json"

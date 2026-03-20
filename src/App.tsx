@@ -414,14 +414,10 @@ export default function App() {
     try {
       const docId = await saveDocument(fileName, pageImages, pageResults);
       setToast({ id: Date.now().toString(), message: `"${fileName}" saved to library.`, variant: 'success' });
-      // Admin: persist structured AI-data export for later use (RAG, embeddings, training, etc.)
+      // Admin: persist structured AI-data export in the background (non-blocking)
       if (isAdmin && neonUser && docId) {
-        try {
-          const exported = buildDocumentExport(docId, fileName, pageResults);
-          await saveDocumentExport(docId, neonUser.id, exported);
-        } catch {
-          // Non-critical — don't surface export errors to the user
-        }
+        void saveDocumentExport(docId, neonUser.id, buildDocumentExport(docId, fileName, pageResults))
+          .catch(() => { /* non-critical */ });
       }
     } catch (err) {
       setToast({ id: Date.now().toString(), message: `Save failed: ${(err as Error).message}`, variant: 'error' });

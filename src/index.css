@@ -254,6 +254,8 @@
 }
 .adm-del-btn:hover:not(:disabled) { background: #fef2f2; color: #dc2626; }
 .adm-del-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.adm-download-btn { background: var(--adm-accent, #2563eb); color: #fff !important; }
+.adm-download-btn:hover:not(:disabled) { background: #1d4ed8; color: #fff; }
 .adm-empty { text-align: center; color: var(--t-text4); padding: 2rem 0; font-size: 0.85rem; }
 
 /* ──────────────────────────────────────────────

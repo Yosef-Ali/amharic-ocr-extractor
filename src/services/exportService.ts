@@ -158,6 +158,8 @@ export function buildDocumentExport(
   source:      'OCR' | 'digital' = 'OCR',
 ): ExportDocument {
   const allChunks: ContentChunk[] = [];
+  const textParts: string[] = [];
+  const langSet   = new Set<Language>();
 
   const sortedKeys = Object.keys(pageResults)
     .map(Number)
@@ -166,11 +168,16 @@ export function buildDocumentExport(
   for (const pageNum of sortedKeys) {
     const html = pageResults[pageNum];
     if (!html) continue;
-    allChunks.push(...htmlToChunks(html, docId, docName, pageNum));
+    const chunks = htmlToChunks(html, docId, docName, pageNum);
+    for (const c of chunks) {
+      allChunks.push(c);
+      textParts.push(c.text);
+      if (c.language !== 'unknown') langSet.add(c.language);
+    }
   }
 
   const contentPages = sortedKeys.filter(n => n > 0).length;
-  const usedLangs    = [...new Set(allChunks.map(c => c.language))].filter(l => l !== 'unknown') as Language[];
+  const usedLangs    = langSet.size > 0 ? [...langSet] : ['unknown' as Language];
 
   return {
     document: {
@@ -178,22 +185,21 @@ export function buildDocumentExport(
       name:       docName,
       totalPages: contentPages,
       exportedAt: new Date().toISOString(),
-      languages:  usedLangs.length > 0 ? usedLangs : ['unknown' as Language],
+      languages:  usedLangs,
       source,
       chunkCount: allChunks.length,
     },
     chunks:   allChunks,
-    fullText: allChunks.map(c => c.text).join('\n'),
+    fullText: textParts.join('\n'),
   };
 }
 
 // ---------------------------------------------------------------------------
 // DB helpers
 // ---------------------------------------------------------------------------
-let _schemaReady = false;
-async function ensureTable(): Promise<void> {
-  if (_schemaReady) return;
-  await sql`
+let _schemaPromise: Promise<void> | null = null;
+function ensureTable(): Promise<void> {
+  return (_schemaPromise ??= sql`
     CREATE TABLE IF NOT EXISTS ai_exports (
       id            TEXT PRIMARY KEY,
       document_name TEXT        NOT NULL,
@@ -205,8 +211,7 @@ async function ensureTable(): Promise<void> {
       exported_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
-  _schemaReady = true;
+  `.then(() => {}));
 }
 
 // ---------------------------------------------------------------------------
