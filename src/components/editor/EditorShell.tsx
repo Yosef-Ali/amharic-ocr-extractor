@@ -430,16 +430,16 @@ export default function EditorShell({
 
         {/* Right cluster */}
         <div className="es-header-right">
-          {/* Tool toggles — hide selection + agent on mobile */}
+          {/* Tool toggles — selection + agent always visible */}
           <button
-            className={`es-icon-btn es-hide-mobile${selectionMode ? ' es-icon-btn--active' : ''}`}
+            className={`es-icon-btn${selectionMode ? ' es-icon-btn--active' : ''}`}
             onClick={() => setSelectionMode(m => !m)}
             title="Select mode"
           >
             <MousePointer2 size={14} />
           </button>
           <button
-            className={`es-icon-btn es-hide-mobile${rightDrawer === 'agent' ? ' es-icon-btn--active' : ''}`}
+            className={`es-icon-btn${rightDrawer === 'agent' ? ' es-icon-btn--active' : ''}`}
             onClick={() => toggleDrawer('agent')}
             title="AI Agent"
             style={{ position: 'relative' }}
