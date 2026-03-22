@@ -5,6 +5,7 @@ import EditorShell   from './components/editor/EditorShell';
 import LibraryModal  from './components/LibraryModal';
 import AdminPanel    from './components/AdminPanel';
 import Toast, { type ToastMessage } from './components/Toast';
+import AuthScreen    from './components/AuthScreen';
 
 import { pdfToImages, imageFileToBase64, detectFileType, docxToHtmlPages, textToHtmlPages, type PageDimension } from './services/pdfService';
 import { extractPageHTML, autoFillImagePlaceholders, type ImageQuality } from './services/geminiService';
@@ -84,6 +85,10 @@ export default function App() {
     setNeonUser(null);
     initStorage(null);
   }, []);
+
+  const handleAuthSuccess = useCallback(async () => {
+    await syncAuthState();
+  }, [syncAuthState]);
 
   // ── Document state ──────────────────────────────────────────────────────
   const [fileName,         setFileName]         = useState('');
@@ -535,6 +540,9 @@ export default function App() {
   // ── Auth gates ────────────────────────────────────────────────────────
   if (authLoading) {
     return <div className="auth-splash"><div className="auth-splash-spinner" /></div>;
+  }
+  if (!neonUser) {
+    return <AuthScreen onSuccess={handleAuthSuccess} />;
   }
   if (isBlocked) {
     return (
