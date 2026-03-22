@@ -541,9 +541,6 @@ export default function App() {
   if (authLoading) {
     return <div className="auth-splash"><div className="auth-splash-spinner" /></div>;
   }
-  if (!neonUser) {
-    return <AuthScreen onSuccess={handleAuthSuccess} />;
-  }
   if (isBlocked) {
     return (
       <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'100vh', gap:'1rem', background:'var(--t-bg)', color:'var(--t-text)' }}>
