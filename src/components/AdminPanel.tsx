@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import {
   getAdminStats, getAdminUsers, getAdminDocuments, adminDeleteDocument,
-  blockUser, unblockUser,
+  blockUser, unblockUser, deleteUser,
   type AdminUser, type AdminDocument, type AdminStats,
 } from '../services/adminService';
 import {
@@ -56,8 +56,9 @@ export default function AdminPanel({ onClose }: Props) {
   const [docs,      setDocs]      = useState<AdminDocument[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState<string | null>(null);
-  const [deleting,  setDeleting]  = useState<string | null>(null);
-  const [toggling,  setToggling]  = useState<string | null>(null);
+  const [deleting,     setDeleting]     = useState<string | null>(null);
+  const [toggling,     setToggling]     = useState<string | null>(null);
+  const [deletingUser, setDeletingUser] = useState<string | null>(null);
   const [filterUid, setFilterUid] = useState<string | null>(null);
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
 
@@ -91,6 +92,19 @@ export default function AdminPanel({ onClose }: Props) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleDeleteUser = async (u: AdminUser) => {
+    if (!confirm(`Delete user "${u.email}" and all their documents? This cannot be undone.`)) return;
+    setDeletingUser(u.id);
+    try {
+      await deleteUser(u.id);
+      setUsers(prev => prev.filter(x => x.id !== u.id));
+      setDocs(prev => prev.filter(d => d.userId !== u.id));
+      if (stats) setStats({ ...stats, totalUsers: stats.totalUsers - 1 });
+    } finally {
+      setDeletingUser(null);
+    }
+  };
 
   const handleToggleBlock = async (u: AdminUser) => {
     setToggling(u.id);
@@ -280,6 +294,16 @@ export default function AdminPanel({ onClose }: Props) {
                                 ? <Loader2 size={11} className="animate-spin" />
                                 : u.blocked ? <ShieldOff size={11} /> : <Ban size={11} />}
                               {u.blocked ? 'Unblock' : 'Block'}
+                            </button>
+                            <button
+                              className="adm-del-btn"
+                              onClick={e => { e.stopPropagation(); handleDeleteUser(u); }}
+                              disabled={deletingUser === u.id}
+                              title="Delete user and all their data"
+                            >
+                              {deletingUser === u.id
+                                ? <Loader2 size={11} className="animate-spin" />
+                                : <Trash2 size={11} />}
                             </button>
                             {expandedUser === u.id
                               ? <ChevronDown size={13} />

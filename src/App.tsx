@@ -176,8 +176,10 @@ export default function App() {
   }, []);
 
   // Admin gate — only show to the exact email set in VITE_ADMIN_EMAIL
-  const adminEmail = (import.meta.env.VITE_ADMIN_EMAIL as string | undefined)?.trim();
-  const isAdmin    = !!adminEmail && neonUser?.email?.toLowerCase() === adminEmail.toLowerCase();
+  const adminEmails = (import.meta.env.VITE_ADMIN_EMAIL as string | undefined)
+    ?.split(',').map(e => e.trim().toLowerCase()).filter(Boolean) ?? [];
+  const isAdmin = adminEmails.length > 0 && !!neonUser?.email &&
+    adminEmails.includes(neonUser.email.toLowerCase());
 
   const hasFile = !!fileName;
 

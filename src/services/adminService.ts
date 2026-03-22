@@ -141,6 +141,14 @@ export async function adminDeleteDocument(id: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Delete user + all their data
+// ---------------------------------------------------------------------------
+export async function deleteUser(id: string): Promise<void> {
+  await sql`DELETE FROM documents WHERE user_id = ${id}`;
+  await sql`DELETE FROM users WHERE id = ${id}`;
+}
+
+// ---------------------------------------------------------------------------
 // Block / unblock / check
 // ---------------------------------------------------------------------------
 export async function blockUser(id: string): Promise<void> {
