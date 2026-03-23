@@ -723,7 +723,7 @@
 /* ── Panel Shared Styles (Artboard Look) ────────── */
 .scan-panel,
 .doc-panel {
-  border-radius: 12px;
+  border-radius: 0;
   box-shadow:
     0 12px 48px rgba(0, 0, 0, 0.45),
     0 4px 16px rgba(0, 0, 0, 0.2);
