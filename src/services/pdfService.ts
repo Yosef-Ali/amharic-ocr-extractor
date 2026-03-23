@@ -12,8 +12,6 @@ export interface PageDimension {
 }
 
 // 1 PDF point = 1/72 inch = 25.4/72 mm ≈ 0.3528 mm
-const PT_TO_MM = 25.4 / 72;
-
 export async function pdfToImages(file: File): Promise<{ images: string[]; dimensions: PageDimension[] }> {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -24,11 +22,8 @@ export async function pdfToImages(file: File): Promise<{ images: string[]; dimen
     const page = await pdf.getPage(i);
     const unscaledViewport = page.getViewport({ scale: 1.0 });
 
-    // Capture the original page size in mm (PDF units are 72 DPI points)
-    dimensions.push({
-      widthMm:  Math.round(unscaledViewport.width  * PT_TO_MM * 100) / 100,
-      heightMm: Math.round(unscaledViewport.height * PT_TO_MM * 100) / 100,
-    });
+    // Always use A4 for the output page size regardless of original document dimensions
+    dimensions.push({ widthMm: 210, heightMm: 297 });
 
     const maxDimension = 2560;
     const currentMax = Math.max(unscaledViewport.width, unscaledViewport.height);
