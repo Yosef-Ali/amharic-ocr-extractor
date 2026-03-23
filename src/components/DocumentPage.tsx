@@ -1003,7 +1003,7 @@ export default function DocumentPage({
           onInput={handleInput}
           onKeyDown={handleKeyDown}
           spellCheck={false}
-          className={`document-page relative bg-white focus:outline-none flex-1 ${compact ? 'overflow-y-auto rounded-b-xl' : 'overflow-hidden mx-auto rounded-[2px]'}${selectionMode ? ' sel-mode' : ''}`}
+          className={`document-page relative bg-white focus:outline-none flex-1 ${compact ? 'overflow-y-auto' : 'overflow-hidden mx-auto'}${selectionMode ? ' sel-mode' : ''}`}
           style={{
             width:      compact ? '100%' : pageWidth,
             minHeight:  compact ? 'auto' : pageHeight,
