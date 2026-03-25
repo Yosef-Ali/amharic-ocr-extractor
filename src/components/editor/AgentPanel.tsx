@@ -76,24 +76,31 @@ function Shimmer({ lines = 3 }: { lines?: number }) {
 // ── Inline Cover Setup Card ───────────────────────────────────────────────
 type CoverStyle = 'orthodox' | 'ornate' | 'classic' | 'modern' | 'minimalist';
 type CoverDesignMode = 'full-design' | 'background-only';
+type CoverBinding = 'saddle-stitch' | 'perfect-binding';
 
 const COVER_STYLES: { value: CoverStyle; label: string; emoji: string }[] = [
-  { value: 'orthodox',   label: 'Orthodox',  emoji: '✝️' },
-  { value: 'ornate',     label: 'Ornate',    emoji: '📜' },
   { value: 'classic',    label: 'Classic',   emoji: '📕' },
   { value: 'modern',     label: 'Modern',    emoji: '🎨' },
+  { value: 'ornate',     label: 'Ornate',    emoji: '📜' },
+  { value: 'orthodox',   label: 'Orthodox',  emoji: '✝️' },
   { value: 'minimalist', label: 'Minimal',   emoji: '◻️' },
+];
+
+const COVER_BINDINGS: { value: CoverBinding; label: string; emoji: string }[] = [
+  { value: 'saddle-stitch',   label: 'Saddle Stitch',   emoji: '📖' },
+  { value: 'perfect-binding', label: 'Perfect Binding', emoji: '📚' },
 ];
 
 function CoverSetupCard({ msg, onSubmit, onCancel }: {
   msg: import('../../types/a2ui').A2UICoverSetupMessage;
-  onSubmit: (opts: { title: string; author: string; style: CoverStyle; designMode: CoverDesignMode }) => void;
+  onSubmit: (opts: { title: string; author: string; style: CoverStyle; designMode: CoverDesignMode; binding: CoverBinding }) => void;
   onCancel: () => void;
 }) {
   const [title,      setTitle]      = useState(msg.suggestedTitle ?? '');
   const [author,     setAuthor]     = useState('');
-  const [style,      setStyle]      = useState<CoverStyle>('orthodox');
+  const [style,      setStyle]      = useState<CoverStyle>('classic');
   const [designMode, setDesignMode] = useState<CoverDesignMode>('full-design');
+  const [binding,    setBinding]    = useState<CoverBinding>('saddle-stitch');
 
   if (msg.status === 'generating') {
     return (
@@ -155,11 +162,24 @@ function CoverSetupCard({ msg, onSubmit, onCancel }: {
         </button>
       </div>
 
+      <div className="ap-cover-section-label">Binding</div>
+      <div className="ap-cover-chips">
+        {COVER_BINDINGS.map(b => (
+          <button
+            key={b.value}
+            className={`ap-cover-chip${binding === b.value ? ' ap-cover-chip--on' : ''}`}
+            onClick={() => setBinding(b.value)}
+          >
+            {b.emoji} {b.label}
+          </button>
+        ))}
+      </div>
+
       <div className="ap-cover-actions">
         <button className="ap-cover-cancel" onClick={onCancel}>Cancel</button>
         <button
           className="ap-cover-generate"
-          onClick={() => onSubmit({ title: title.trim() || 'Untitled', author: author.trim(), style, designMode })}
+          onClick={() => onSubmit({ title: title.trim() || 'Untitled', author: author.trim(), style, designMode, binding })}
           disabled={!title.trim()}
         >
           <Sparkles size={12} /> Generate Cover
@@ -180,7 +200,7 @@ function MessageCard({
   msg: A2UIMessage;
   onApprove?: (id: string) => void;
   onReject?:  (id: string) => void;
-  onCoverSetupSubmit?: (id: string, opts: { title: string; author: string; style: CoverStyle; designMode: CoverDesignMode }) => void;
+  onCoverSetupSubmit?: (id: string, opts: { title: string; author: string; style: CoverStyle; designMode: CoverDesignMode; binding: CoverBinding }) => void;
   onCoverSetupCancel?: (id: string) => void;
 }) {
   if (msg.type === 'user') {
@@ -625,22 +645,32 @@ export default function AgentPanel({
 
   const handleCoverSetupSubmit = async (
     id: string,
-    opts: { title: string; author: string; style: CoverStyle; designMode: CoverDesignMode },
+    opts: { title: string; author: string; style: CoverStyle; designMode: CoverDesignMode; binding: CoverBinding },
   ) => {
     if (!executor) return;
     updateMsg(id, { status: 'generating' } as Partial<A2UIMessage>);
     try {
-      const result = JSON.parse(await executor.execute('generateCoverPage', {
+      const result = JSON.parse(await executor.execute('_generateCover', {
         mode: 'generate',
         title: opts.title,
         author: opts.author || undefined,
         style: opts.style,
         designMode: opts.designMode,
+        binding: opts.binding,
       }) as string);
-      updateMsg(id, {
-        status: result.error ? 'done' : 'done',
-        result: result.error ?? '✅ Cover page generated and applied.',
-      } as Partial<A2UIMessage>);
+      if (result.error) {
+        updateMsg(id, {
+          status: 'done',
+          result: `❌ ${result.error}`,
+        } as Partial<A2UIMessage>);
+      } else {
+        updateMsg(id, {
+          status: 'done',
+          result: '✅ Cover page generated and applied.',
+        } as Partial<A2UIMessage>);
+        // Auto-navigate to cover page so user sees the result
+        onNavigatePage?.(0);
+      }
     } catch (err) {
       updateMsg(id, {
         status: 'done',
@@ -791,10 +821,10 @@ export default function AgentPanel({
     // ── Cover page intent — show A2UI setup card instead of auto-generating ──
     if (
       /\b(cover|cover.?page|book.?cover)\b/i.test(text) &&
-      /\b(generate|create|make|design|build|improve|enhance|update)\b/i.test(text)
+      /\b(ge[nr]\w*|cre\w*|make|design\w*|build|improv\w*|enhanc\w*|updat\w*|add|new|set.?up|want|need)\b/i.test(text)
     ) {
       const suggestedTitle = text
-        .replace(/\b(generate|create|make|design|build|improve|enhance|update|a|an|the|cover|page|book|for|me|please|with|style|orthodox|ornate|classic|modern|minimalist)\b/gi, '')
+        .replace(/\b(ge[nr]\w*|cre\w*|make|design\w*|build|improv\w*|enhanc\w*|updat\w*|add|new|set.?up|want|need|a|an|the|cover|page|book|for|me|please|with|style|orthodox|ornate|classic|modern|minimalist)\b/gi, '')
         .replace(/\s+/g, ' ').trim();
       addMsg({ type: 'cover-setup', id: uid(), suggestedTitle: suggestedTitle || '', status: 'pending' });
       setLoading(false);
@@ -867,10 +897,27 @@ export default function AgentPanel({
               batchEdit:            'Applying batch edits…',
               getPageScreenshot:    'Capturing screenshot…',
               setActivePage:        'Navigating to page…',
+              openCoverSetup:       'Opening cover setup…',
             };
             setProcess(label[fb.name] ?? `Running ${fb.name}…`);
             // Remove thinking shimmer on first real tool call
             setMessages(prev => prev.filter(m => !(m.type === 'thinking' && m.id === thinkId)));
+            // When openCoverSetup completes, inject the A2UI cover-setup card
+            if (fb.name === 'openCoverSetup' && fb.status === 'done') {
+              // Extract suggestedTitle from Gemini args, fall back to cleaned fileName
+              const geminiTitle = (fb.args as Record<string, unknown>)?.suggestedTitle as string | undefined;
+              const fallbackTitle = fileName
+                ? fileName.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ').trim()
+                : '';
+              const suggestedTitle = geminiTitle || fallbackTitle;
+              // Deduplicate: only allow one pending cover-setup card at a time
+              setMessages(prev => {
+                const hasPending = prev.some(m => m.type === 'cover-setup' && m.status === 'pending');
+                if (hasPending) return prev;
+                return [...prev, { type: 'cover-setup', id: uid(), suggestedTitle, status: 'pending' }];
+              });
+              return;
+            }
             // Upsert tool card
             setMessages(prev => {
               const existing = prev.findIndex(m => m.type === 'tool' && m.id === fb.id);

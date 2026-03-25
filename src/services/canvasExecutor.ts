@@ -323,7 +323,7 @@ export class CanvasExecutor {
     const title       = (args.title as string) ?? '';
     const subtitle    = (args.subtitle as string) ?? undefined;
     const author      = (args.author as string) ?? undefined;
-    const style       = ((args.style as string) ?? 'orthodox') as CoverStyle;
+    const style       = ((args.style as string) ?? 'classic') as CoverStyle;
     const binding     = ((args.binding as string) ?? 'saddle-stitch') as BindingType;
     const instruction = (args.instruction as string) ?? '';
 
@@ -376,7 +376,8 @@ export class CanvasExecutor {
       case 'extractAllPages':       return this.extractAllPages(args as unknown as { force?: boolean });
       case 'autoFillImages':        return this.autoFillImages(args as unknown as { pageNumber?: number });
       case 'getTotalPages':         return JSON.stringify({ totalPages: this.ctx.getTotalPages() });
-      case 'generateCoverPage':     return this.generateCover(args as Record<string, unknown>);
+      case '_generateCover':         return this.generateCover(args as Record<string, unknown>);
+      case 'openCoverSetup':        return JSON.stringify({ success: true, needsUI: true, message: 'Opening cover setup…' });
       default:                      return JSON.stringify({ error: `Unknown tool: ${toolName}` });
     }
   }

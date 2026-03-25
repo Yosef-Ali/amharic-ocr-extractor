@@ -24,10 +24,10 @@ interface Props {
 type Mode = 'generate' | 'improve' | 'reference';
 
 const STYLES: { value: CoverStyle; label: string; emoji: string }[] = [
-
-  { value: 'ornate',     label: 'Ornate',     emoji: '📜' },
   { value: 'classic',    label: 'Classic',    emoji: '📕' },
   { value: 'modern',     label: 'Modern',     emoji: '🎨' },
+  { value: 'ornate',     label: 'Ornate',     emoji: '📜' },
+  { value: 'orthodox',   label: 'Orthodox',   emoji: '✝️' },
   { value: 'minimalist', label: 'Minimal',    emoji: '◻️' },
 ];
 

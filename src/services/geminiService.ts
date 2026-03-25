@@ -448,7 +448,7 @@ const LAYOUT_SYSTEM_PROMPT = `You are an expert Amharic print document designer 
 CRITICAL: TOOL DISCIPLINE
 ══════════════════════════════════════════════════
 - ONLY call tools listed in your function declarations. Never invent tools.
-- Use ONLY these tools: getDocumentStructure, editTextBlock, editImageFrame, setColumnLayout, insertElement, deleteElement, batchEdit, getPageScreenshot, setActivePage, extractPage, extractAllPages, generateCoverPage.
+- Use ONLY these tools: getDocumentStructure, editTextBlock, editImageFrame, setColumnLayout, insertElement, deleteElement, batchEdit, getPageScreenshot, setActivePage, extractPage, extractAllPages, openCoverSetup.
 - You have full document access through these tools — you need nothing else.
 
 ══════════════════════════════════════════════════
@@ -514,10 +514,11 @@ AMHARIC-SPECIFIC RULES:
 MODE 4 — COVER PAGE
 ══════════════════════════════════════════════════
 When the user asks to generate, create, make, or design a cover page:
-1. Call generateCoverPage with the title and any details they provide.
-2. Use style "classic" for traditional texts, "modern" for contemporary, etc.
-3. If the user wants to improve an existing cover, use mode "improve" with instructions.
-4. After success, respond briefly: "✅ Cover page generated." — do NOT echo any HTML or image data.
+1. Call openCoverSetup IMMEDIATELY as your ONLY tool call — do NOT call any other tools (no extractPage, no getDocumentStructure, no getPageScreenshot, nothing else).
+2. If the user mentions a title in their request, pass it as the suggestedTitle parameter.
+3. Do NOT ask the user for title, style, or any other info — the form handles that.
+4. After the tool call, respond briefly: "Opening cover setup…" — do NOT generate HTML or image data yourself.
+CRITICAL: openCoverSetup must be the SOLE tool call. Never combine it with other tools.
 
 NEVER:
 - Add web CSS (hover, focus, media queries, responsive units, viewport units).
@@ -849,7 +850,7 @@ export async function editPageWithTools(
       const { name, args } = part.functionCall;
 
       const feedbackId = `${name}-${Date.now()}`;
-      onToolCall?.({ id: feedbackId, name, status: 'running' });
+      onToolCall?.({ id: feedbackId, name, status: 'running', args: args as Record<string, unknown> });
 
       try {
         // Human-in-the-loop: pause on destructive tools and request approval
@@ -968,7 +969,7 @@ export async function chatWithAI(
 // Three modes: generate from scratch, improve existing, generate with reference
 // ---------------------------------------------------------------------------
 
-export type CoverStyle = 'modern' | 'classic' | 'minimalist' | 'ornate';
+export type CoverStyle = 'orthodox' | 'modern' | 'classic' | 'minimalist' | 'ornate';
 
 export type BindingType = 'saddle-stitch' | 'perfect-binding';
 
@@ -991,10 +992,11 @@ export interface CoverPageOptions {
 }
 
 const COVER_STYLE_DESCRIPTIONS: Record<CoverStyle, string> = {
-  modern:      'Clean modern design with bold typography, geometric shapes, subtle gradients, and contemporary layout',
-  classic:     'Traditional book cover with elegant serif typography, decorative frames, muted earth tones, and refined borders',
-  minimalist:  'Ultra-minimal design with large whitespace, single accent color, simple typography, and restrained composition',
-  ornate:      'Richly decorated with intricate Ethiopian manuscript illumination patterns, vibrant colors, and detailed ornamental borders',
+  orthodox:    'Ethiopian Orthodox Christian style with traditional church art motifs — gold leaf accents, deep reds and blues, cross and angel iconography, Ge\'ez script decorative borders, and habesha-inspired patterns. Rich and reverent.',
+  modern:      'Clean modern design with bold typography, geometric shapes, subtle gradients, and contemporary layout. Professional and sleek.',
+  classic:     'Traditional book cover with elegant serif typography, decorative frames, muted earth tones, and refined borders. Timeless and sophisticated.',
+  minimalist:  'Ultra-clean flat design. Solid color background or very subtle texture, generous whitespace, one accent color, and simple geometric element. NO illustrations, NO patterns, NO gradients, NO shadows — just color, space, and simple shapes.',
+  ornate:      'Richly decorated with intricate Ethiopian manuscript illumination patterns, vibrant colors, detailed ornamental borders, and fine geometric interlacing. Celebratory and artistic.',
 };
 
 /** Prompt for background-only (text-free) mode */
@@ -1013,6 +1015,7 @@ DESIGN STYLE: ${styleDesc}
 
 REQUIREMENTS:
 - NO TEXT: Do not include any letters, words, numbers, or readable characters of any script. The image must be text-free.
+- FLAT IMAGE ONLY: No 3D book mockups, no spine creases, no fold lines, no shadow lines running vertically or horizontally across the cover, no page curl effects, no book edge effects. The output must be a perfectly FLAT rectangular image.
 - Leave clear open areas with good contrast so text can be overlaid legibly.
 - Fill the entire canvas edge to edge. No white margins.
 - Output a single image — no mockup, no collage, no variants.`;
@@ -1046,6 +1049,7 @@ REQUIREMENTS:
 - For Amharic/Ethiopic text: use elegant Ethiopic calligraphic letterforms.
 - For Latin text: use a typeface appropriate to the style.
 - The design must feel elegant and print-ready.
+- FLAT IMAGE ONLY: No 3D book mockups, no spine creases, no fold lines, no shadow lines running vertically or horizontally across the cover, no page curl effects, no book edge effects. The output must be a perfectly FLAT rectangular image.
 - Fill the entire canvas edge to edge. No white margins.
 - Output a single final cover image — no mockups, no variants.`;
 }

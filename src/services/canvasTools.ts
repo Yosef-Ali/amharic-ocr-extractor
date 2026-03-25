@@ -7,6 +7,7 @@ export interface ToolCallFeedback {
   name:    string;
   status:  'running' | 'done' | 'error';
   summary?: string;
+  args?:    Record<string, unknown>;
 }
 
 // ── Tool parameter interfaces ──────────────────────────────────────────────
@@ -269,26 +270,18 @@ export const CANVAS_TOOL_DECLARATIONS = [
     },
   },
   {
-    name: 'generateCoverPage',
+    name: 'openCoverSetup',
     description:
-      'Generate an editable book cover page using NanoBanana 2 (Gemini 3.1 Flash Image). ' +
-      'Generates a decorative background image with editable text overlay (title, subtitle, author). ' +
-      'Three modes: "generate" creates from scratch, "improve" enhances existing cover background, ' +
-      '"reference" creates new cover inspired by a reference image style. ' +
-      'Supports two binding types: "saddle-stitch" (simple cover) and "perfect-binding" (adds spine with rotated title). ' +
-      'The generated cover is applied as page 0 with all text editable on the canvas.',
+      'Opens the cover page setup UI so the user can configure and generate a book cover. ' +
+      'Call this IMMEDIATELY whenever the user asks to generate, create, make, design, or build a cover page. ' +
+      'Do NOT attempt to generate cover details yourself — this tool opens an interactive form that collects title, author, style, and design mode from the user. ' +
+      'If the user mentions a title in their request, pass it as suggestedTitle so the form pre-fills it.',
     parameters: {
       type: 'object',
       properties: {
-        mode:        { type: 'string', description: '"generate"|"improve"|"reference". Default "generate".' },
-        title:       { type: 'string', description: 'Book title text (required for generate/reference mode)' },
-        subtitle:    { type: 'string', description: 'Optional subtitle' },
-        author:      { type: 'string', description: 'Optional author name' },
-        style:       { type: 'string', description: '"orthodox"|"modern"|"classic"|"minimalist"|"ornate". Default "orthodox".' },
-        binding:     { type: 'string', description: '"saddle-stitch"|"perfect-binding". Default "saddle-stitch". Perfect binding adds a spine strip with rotated title on the book edge.' },
-        instruction: { type: 'string', description: 'Improvement instructions (for "improve" mode)' },
+        suggestedTitle: { type: 'string', description: 'Optional title extracted from the user\'s request to pre-fill the form.' },
       },
-      required: ['title'],
+      required: [],
     },
   },
 ] as const;

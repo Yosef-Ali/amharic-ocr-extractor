@@ -1225,6 +1225,23 @@
   align-items: center;
   gap: 4px;
 }
+.es-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--t-surface2);
+  border-radius: 8px;
+  padding: 2px;
+}
+.es-btn-group .es-icon-btn {
+  border-radius: 6px;
+}
+.es-btn-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin-left: -1px;
+}
 .es-file-info {
   display: flex;
   align-items: center;
@@ -1962,11 +1979,34 @@
 }
 .bt-status {
   display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--t-text2);
+  padding: 4px 0;
+}
+.bt-status-row {
+  display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.68rem;
-  color: var(--t-text3);
-  padding: 2px 0;
+}
+.bt-status-pct {
+  font-weight: 700;
+  color: var(--t-primary, #6366f1);
+  font-variant-numeric: tabular-nums;
+}
+.bt-progress-track {
+  width: 100%;
+  height: 3px;
+  background: var(--t-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.bt-progress-fill {
+  height: 100%;
+  background: var(--t-primary, #6366f1);
+  border-radius: 2px;
+  transition: width 0.4s ease;
 }
 .bt-row {
   display: flex;
@@ -2033,6 +2073,20 @@
 .bt-btn--primary:hover:not(:disabled) { background: #4f46e5; border-color: #4f46e5; }
 .bt-btn--save { }
 .bt-btn--pdf { }
+.bt-btn--export {
+  opacity: 0.85;
+}
+.bt-btn--export:hover:not(:disabled) {
+  opacity: 1;
+}
+.bt-export-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--t-surface2);
+  border-radius: 10px;
+  padding: 2px;
+}
 
 /* Fast / Pro toggle */
 .bt-mode {

@@ -27,11 +27,11 @@ interface Props {
 }
 
 const STYLES: { value: CoverStyle; label: string; emoji: string }[] = [
-  { value: 'orthodox',   label: 'Ethiopian Orthodox', emoji: '✝️' },
-  { value: 'ornate',     label: 'Ornate Manuscript',  emoji: '📜' },
-  { value: 'classic',    label: 'Classic',             emoji: '📕' },
-  { value: 'modern',     label: 'Modern',              emoji: '🎨' },
-  { value: 'minimalist', label: 'Minimalist',          emoji: '◻️' },
+  { value: 'classic',    label: 'Classic',              emoji: '📕' },
+  { value: 'modern',     label: 'Modern',               emoji: '🎨' },
+  { value: 'ornate',     label: 'Ornate Manuscript',   emoji: '📜' },
+  { value: 'orthodox',   label: 'Orthodox',            emoji: '✝️' },
+  { value: 'minimalist', label: 'Minimalist',           emoji: '◻️' },
 ];
 
 const BINDINGS: { value: BindingType; label: string; icon: typeof BookOpen }[] = [
@@ -45,7 +45,7 @@ export default function CoverPageGenerator({ existingCover, onApply, onClose, on
   const [title,    setTitle]    = useState('');
   const [subtitle, setSubtitle] = useState('');
   const [author,   setAuthor]   = useState('');
-  const [style,    setStyle]    = useState<CoverStyle>('orthodox');
+  const [style,    setStyle]    = useState<CoverStyle>('classic');
   const [binding,  setBinding]  = useState<BindingType>('saddle-stitch');
   const [mode,     setMode]     = useState<Mode>(existingCover ? 'improve' : 'generate');
 

@@ -149,4 +149,5 @@ export const toolIcon: Record<string, string> = {
   extractPage:          '📥',
   extractAllPages:      '📚',
   autoFillImages:       '🖼️',
+  openCoverSetup:       '📕',
 };

@@ -30,10 +30,10 @@ import {
 const COLOR_PRESETS = ['#ffffff','#000000','#d4a574','#fbbf24','#f87171','#a3e635','#38bdf8','#c084fc','#f8fafc','#1e293b'];
 
 const STYLES: { value: CoverStyle; label: string; emoji: string }[] = [
-
-  { value: 'ornate',     label: 'Ornate',     emoji: '📜' },
   { value: 'classic',    label: 'Classic',    emoji: '📕' },
   { value: 'modern',     label: 'Modern',     emoji: '🎨' },
+  { value: 'ornate',     label: 'Ornate',     emoji: '📜' },
+  { value: 'orthodox',   label: 'Orthodox',   emoji: '✝️' },
   { value: 'minimalist', label: 'Minimal',    emoji: '◻️' },
 ];
 

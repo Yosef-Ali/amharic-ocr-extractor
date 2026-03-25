@@ -319,3 +319,91 @@ export function downloadExportJson(exported: ExportDocument, fileName: string): 
   a.click();
   URL.revokeObjectURL(url);
 }
+
+// ---------------------------------------------------------------------------
+// Download as plain .txt — clean Amharic text with page separators
+// ---------------------------------------------------------------------------
+export function downloadAsText(
+  pageResults: Record<number, string>,
+  fileName:    string,
+): void {
+  const sortedKeys = Object.keys(pageResults)
+    .map(Number)
+    .filter(n => n > 0)
+    .sort((a, b) => a - b);
+
+  const parts: string[] = [];
+  for (const pageNum of sortedKeys) {
+    const html = pageResults[pageNum];
+    if (!html?.trim()) continue;
+    // Strip HTML → plain text via DOMParser
+    const doc  = new DOMParser().parseFromString(html, 'text/html');
+    // Remove image placeholders and buttons
+    doc.querySelectorAll('.ai-image-placeholder, button, img, svg, style, script').forEach(el => el.remove());
+    const text = (doc.body.textContent ?? '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    if (text) {
+      parts.push(`──── Page ${pageNum} ────\n\n${text}`);
+    }
+  }
+
+  const fullText = parts.join('\n\n');
+  const blob = new Blob([fullText], { type: 'text/plain;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = fileName.replace(/\.[^.]+$/, '') + '.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ---------------------------------------------------------------------------
+// Download as .docx — uses simple HTML-to-DOCX via Mammoth-compatible Blob
+// ---------------------------------------------------------------------------
+export function downloadAsDocx(
+  pageResults: Record<number, string>,
+  fileName:    string,
+): void {
+  const sortedKeys = Object.keys(pageResults)
+    .map(Number)
+    .filter(n => n > 0)
+    .sort((a, b) => a - b);
+
+  // Build clean HTML body with Amharic font
+  const pages: string[] = [];
+  for (const pageNum of sortedKeys) {
+    const html = pageResults[pageNum];
+    if (!html?.trim()) continue;
+    // Clean up: remove buttons, image placeholders
+    const cleaned = html
+      .replace(/<button[^>]*>.*?<\/button>/gi, '')
+      .replace(/<div[^>]*class="ai-image-placeholder"[^>]*>.*?<\/div>/gi, '');
+    pages.push(
+      `<div style="page-break-after: always;">`
+      + `<p style="color: #999; font-size: 10pt; margin-bottom: 12pt;">Page ${pageNum}</p>`
+      + cleaned
+      + `</div>`
+    );
+  }
+
+  const fullHtml = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: 'Noto Serif Ethiopic', 'Noto Sans Ethiopic', serif; font-size: 12pt; line-height: 1.6; }
+  h1,h2,h3 { font-weight: bold; }
+  p { margin-bottom: 8pt; text-align: justify; }
+</style>
+</head>
+<body>${pages.join('\n')}</body>
+</html>`;
+
+  // Create a .doc file (Word can open HTML saved as .doc)
+  const blob = new Blob([fullHtml], { type: 'application/msword' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = fileName.replace(/\.[^.]+$/, '') + '.doc';
+  a.click();
+  URL.revokeObjectURL(url);
+}

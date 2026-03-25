@@ -1,5 +1,5 @@
 import {
-  ChevronLeft, ChevronRight, Layers, Loader2, Save, Download,
+  Layers, Loader2, Save, Download, FileText, FileDown,
   RefreshCw, Trash2, Zap, Sparkles, MoreHorizontal, BookOpen, Image as ImageIcon, HelpCircle,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -28,18 +28,20 @@ interface Props {
   onSave:              () => void;
   onShowLibrary:       () => void;
   onDownloadPDF:       () => void;
+  onDownloadTxt?:      () => void;
+  onDownloadDocx?:     () => void;
   onImageQualityChange: (q: ImageQuality) => void;
   onCoverPage?:        () => void;
 }
 
 export default function BottomToolbar({
-  activePage, totalPages, hasResult, hasAnyResults,
+  activePage, hasResult, hasAnyResults,
   isProcessing, isRegenerating, isPdfExporting, isSaving,
   imageQuality, processingStatus,
   hasImage = true,
-  onPrev, onNext, onExtract, onForceExtract,
+  onExtract, onForceExtract,
   onRegenerate, onDeletePage,
-  onSave, onShowLibrary, onDownloadPDF,
+  onSave, onShowLibrary, onDownloadPDF, onDownloadTxt, onDownloadDocx,
   onImageQualityChange, onCoverPage,
 }: Props) {
   const [moreOpen,  setMoreOpen]  = useState(false);
@@ -47,31 +49,29 @@ export default function BottomToolbar({
 
   return (
     <div className="bt-bar">
-      {/* Processing status */}
-      {isProcessing && processingStatus && (
-        <div className="bt-status">
-          <Loader2 size={11} className="animate-spin" />
-          <span>{processingStatus}</span>
-        </div>
-      )}
+      {/* Processing status with progress bar */}
+      {isProcessing && processingStatus && (() => {
+        const match = processingStatus.match(/page (\d+) of (\d+)/i);
+        const current = match ? parseInt(match[1]) : 0;
+        const total = match ? parseInt(match[2]) : 0;
+        const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+        return (
+          <div className="bt-status">
+            <div className="bt-status-row">
+              <Loader2 size={11} className="animate-spin" />
+              <span>{processingStatus}</span>
+              {total > 0 && <span className="bt-status-pct">{pct}%</span>}
+            </div>
+            {total > 0 && (
+              <div className="bt-progress-track">
+                <div className="bt-progress-fill" style={{ width: `${pct}%` }} />
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       <div className="bt-row">
-        {/* Left — Page navigation (hidden on mobile; top header handles it) */}
-        <div className="bt-group es-hide-mobile">
-          <button className="bt-icon" onClick={onPrev} disabled={activePage <= 1} title="Previous page">
-            <ChevronLeft size={16} />
-          </button>
-          <span className="bt-page-count">
-            <strong>
-              {activePage === 0 ? 'Cover' : activePage === -1 ? 'Back' : activePage}
-            </strong>
-            {activePage > 0 && <><span className="bt-sep">/</span>{totalPages}</>}
-          </span>
-          <button className="bt-icon" onClick={onNext} disabled={activePage >= totalPages} title="Next page">
-            <ChevronRight size={16} />
-          </button>
-        </div>
-
         {/* Center — Primary actions */}
         <div className="bt-group">
           {/* Quality toggle */}
@@ -114,7 +114,7 @@ export default function BottomToolbar({
           )}
         </div>
 
-        {/* Right — Export + overflow */}
+        {/* Right — Save + Export + overflow */}
         <div className="bt-group">
           {hasAnyResults && (
             <>
@@ -122,15 +122,31 @@ export default function BottomToolbar({
                 {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                 <span className="bt-label-desktop">{isSaving ? 'Saving…' : 'Save'}</span>
               </button>
-              <button
-                className="bt-btn bt-btn--pdf"
-                onClick={onDownloadPDF}
-                disabled={isPdfExporting || isProcessing}
-                title="Download PDF"
-              >
-                {isPdfExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-                <span className="bt-label-desktop">PDF</span>
-              </button>
+
+              {/* Export group — all visible */}
+              <div className="bt-export-group">
+                <button
+                  className="bt-btn bt-btn--pdf"
+                  onClick={onDownloadPDF}
+                  disabled={isPdfExporting || isProcessing}
+                  title="Download PDF"
+                >
+                  {isPdfExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                  <span className="bt-label-desktop">PDF</span>
+                </button>
+                {onDownloadTxt && (
+                  <button className="bt-btn bt-btn--export" onClick={onDownloadTxt} disabled={isProcessing} title="Download as plain text">
+                    <FileText size={14} />
+                    <span className="bt-label-desktop">.txt</span>
+                  </button>
+                )}
+                {onDownloadDocx && (
+                  <button className="bt-btn bt-btn--export" onClick={onDownloadDocx} disabled={isProcessing} title="Download as Word document">
+                    <FileDown size={14} />
+                    <span className="bt-label-desktop">.doc</span>
+                  </button>
+                )}
+              </div>
             </>
           )}
 

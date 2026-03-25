@@ -4,7 +4,7 @@ import {
   PanelLeftClose, PanelLeftOpen,
   X, FileText, FileImage, MousePointer2,
   Bot, SlidersHorizontal,
-  Maximize, Hand, Trash2,
+  Trash2,
   Minus, Plus, Undo2, Redo2, Sparkles, Home, Search,
 } from 'lucide-react';
 import { type Theme } from '../../hooks/useTheme';
@@ -58,6 +58,8 @@ interface Props {
   onClear:            () => void;
   onShowLibrary:      () => void;
   onDownloadPDF:      () => void;
+  onDownloadTxt?:     () => void;
+  onDownloadDocx?:    () => void;
   onImageQualityChange:    (q: ImageQuality) => void;
   onActivePageChange?: (page: number) => void;
   onError:  (msg: string) => void;
@@ -79,7 +81,7 @@ export default function EditorShell({
   onEdit, onRegenerate, onDeletePage, onDeleteCover,
   onReorderPages, onInsertPage,
   onExtract, onForceExtract, onSave, onClear,
-  onShowLibrary, onDownloadPDF,
+  onShowLibrary, onDownloadPDF, onDownloadTxt, onDownloadDocx,
   onImageQualityChange,
   onActivePageChange,
   onError,
@@ -444,6 +446,14 @@ export default function EditorShell({
   return (
     <div className="es-shell">
 
+      {/* Cover delete confirm — fixed overlay at root level, no stacking context issues */}
+      {showDeleteCoverConfirm && (
+        <DeleteConfirmModal
+          onConfirm={() => { setShowDeleteCoverConfirm(false); onDeleteCover?.(); }}
+          onCancel={() => setShowDeleteCoverConfirm(false)}
+        />
+      )}
+
       {/* ══ Header ════════════════════════════════════════════════════════ */}
       <header className="es-header">
         {/* Left cluster */}
@@ -485,68 +495,67 @@ export default function EditorShell({
           </div>
         )}
 
-        {/* Right cluster */}
+        {/* Right cluster — grouped by function */}
         <div className="es-header-right">
-          {/* Tool toggles — selection + agent always visible */}
-          <button
-            className={`es-icon-btn${selectionMode ? ' es-icon-btn--active' : ''}`}
-            onClick={() => setSelectionMode(m => !m)}
-            title="Select mode"
-          >
-            <MousePointer2 size={14} />
-          </button>
-          <button
-            className={`es-icon-btn${rightDrawer === 'agent' ? ' es-icon-btn--active' : ''}`}
-            onClick={() => toggleDrawer('agent')}
-            title="AI Agent"
-            style={{ position: 'relative' }}
-          >
-            <Bot size={14} />
-            {mcpConnected && <span className="es-mcp-dot" />}
-          </button>
-          <button
-            className={`es-icon-btn${rightDrawer === 'inspector' ? ' es-icon-btn--active' : ''}`}
-            onClick={() => toggleDrawer('inspector')}
-            title="Inspector"
-          >
-            <SlidersHorizontal size={14} />
-          </button>
-          <button
-            className={`es-icon-btn${rightDrawer === 'homophone' ? ' es-icon-btn--active' : ''}`}
-            onClick={() => toggleDrawer('homophone')}
-            title="Amharic OCR corrections"
-            style={{ fontFamily: "'Noto Serif Ethiopic', serif", fontSize: 13, fontWeight: 700, letterSpacing: 0 }}
-          >
-            ሀ
-          </button>
+          {/* ── Panels group: open right drawers ── */}
+          <div className="es-btn-group">
+            <button
+              className={`es-icon-btn${rightDrawer === 'agent' ? ' es-icon-btn--active' : ''}`}
+              onClick={() => toggleDrawer('agent')}
+              title="AI Agent"
+              style={{ position: 'relative' }}
+            >
+              <Bot size={14} />
+              <span className="es-btn-label">AI</span>
+              {mcpConnected && <span className="es-mcp-dot" />}
+            </button>
+            <button
+              className={`es-icon-btn${rightDrawer === 'inspector' ? ' es-icon-btn--active' : ''}`}
+              onClick={() => toggleDrawer('inspector')}
+              title="Inspector"
+            >
+              <SlidersHorizontal size={14} />
+            </button>
+            <button
+              className={`es-icon-btn${rightDrawer === 'homophone' ? ' es-icon-btn--active' : ''}`}
+              onClick={() => toggleDrawer('homophone')}
+              title="Amharic OCR corrections"
+              style={{ fontFamily: "'Noto Serif Ethiopic', serif", fontSize: 13, fontWeight: 700, letterSpacing: 0 }}
+            >
+              ሀ
+            </button>
+          </div>
+
           <div className="es-header-sep es-hide-mobile" />
 
-          {/* ── Find & Replace ───────────────────────── */}
-          <button
-            className={`es-icon-btn es-hide-mobile${showFindReplace ? ' es-icon-btn--active' : ''}`}
-            onClick={() => setShowFindReplace(f => !f)}
-            title="Find & Replace (Ctrl+F)"
-          >
-            <Search size={14} />
-          </button>
+          {/* ── Edit group: content manipulation ── */}
+          <div className="es-btn-group es-hide-mobile">
+            <button className="es-icon-btn" onClick={handleUndo} title="Undo (Ctrl+Z)">
+              <Undo2 size={14} />
+            </button>
+            <button className="es-icon-btn" onClick={handleRedo} title="Redo (Ctrl+Shift+Z)">
+              <Redo2 size={14} />
+            </button>
+            <button
+              className={`es-icon-btn${showFindReplace ? ' es-icon-btn--active' : ''}`}
+              onClick={() => setShowFindReplace(f => !f)}
+              title="Find & Replace (Ctrl+F)"
+            >
+              <Search size={14} />
+            </button>
+            <button
+              className={`es-icon-btn${selectionMode ? ' es-icon-btn--active' : ''}`}
+              onClick={() => setSelectionMode(m => !m)}
+              title="Select element to inspect"
+            >
+              <MousePointer2 size={14} />
+            </button>
+          </div>
 
-          {/* ── Undo / Redo — hide on mobile ────────────── */}
-          <button className="es-icon-btn es-hide-mobile" onClick={handleUndo} title="Undo (Ctrl+Z)">
-            <Undo2 size={14} />
-          </button>
-          <button className="es-icon-btn es-hide-mobile" onClick={handleRedo} title="Redo (Ctrl+Shift+Z)">
-            <Redo2 size={14} />
-          </button>
+          <div className="es-header-sep es-hide-mobile" />
 
-          {/* ── Zoom & Pan — hand only on mobile ─────────── */}
-          <button
-            className={`es-icon-btn es-hide-mobile${handTool ? ' es-icon-btn--active' : ''}`}
-            onClick={() => setHandTool(h => !h)}
-            title="Hand tool (H)"
-          >
-            <Hand size={14} />
-          </button>
-          <div className="es-zoom-bar">
+          {/* ── Zoom bar ── */}
+          <div className="es-zoom-bar es-hide-mobile">
             <button className="es-zoom-btn" onClick={zoomOut} disabled={zoom <= ZOOM_MIN} title="Zoom out (Ctrl -)">
               <Minus size={12} />
             </button>
@@ -556,12 +565,11 @@ export default function EditorShell({
             <button className="es-zoom-btn" onClick={zoomIn} disabled={zoom >= ZOOM_MAX} title="Zoom in (Ctrl +)">
               <Plus size={12} />
             </button>
-            <button className="es-zoom-btn" onClick={zoomFit} title="Fit to view">
-              <Maximize size={12} />
-            </button>
           </div>
 
           <div className="es-header-sep" />
+
+          {/* ── App controls ── */}
           <ThemeToggleButton theme={theme} onClick={onToggleTheme} iconSize={14} />
           <div className="es-hide-mobile"><SettingsPanel /></div>
           {user && <UserMenu user={user} onSignOut={onSignOut} />}
@@ -647,35 +655,29 @@ export default function EditorShell({
               {((activePage === 0 && !hasResult) || hasCover) && (
                 <div data-page="0" className="page-wrapper w-full flex justify-center scroll-mt-6" id="page-0">
                   {hasCover ? (
-                    <div className="es-doc-wrap" style={{ position: 'relative' }}>
-                      {showDeleteCoverConfirm && (
-                        <DeleteConfirmModal
-                          onConfirm={() => { setShowDeleteCoverConfirm(false); onDeleteCover?.(); }}
-                          onCancel={() => setShowDeleteCoverConfirm(false)}
-                        />
-                      )}
-                      <CoverEditor
-                        bgUrl={coverBgUrl}
-                        blocks={coverBlocks}
-                        selId={coverSelId}
-                        onSelect={setCoverSelId}
-                        onMove={handleCoverMove}
-                        onTextChange={handleCoverTextChange}
-                      />
-                      {/* Cover action buttons */}
-                      <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', zIndex: 30, display: 'flex', gap: '0.3rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', width: '100%' }}>
+                      {/* Cover toolbar — sits ABOVE the A4 page, always clickable */}
+                      <div style={{ display: 'flex', gap: '0.4rem', zIndex: 40, position: 'relative' }}>
                         <button
-                          style={{ background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', backdropFilter: 'blur(4px)', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                          style={{ background: 'var(--t-surface2)', color: 'var(--t-text)', border: '1px solid var(--t-border)', borderRadius: '6px', padding: '5px 12px', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
                           onClick={() => setRightDrawer('cover')}
-                          title="Edit cover"
                         >↺ Edit Cover</button>
                         {onDeleteCover && (
                           <button
-                            style={{ background: 'rgba(180,20,20,0.7)', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 8px', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                            style={{ background: 'rgba(180,20,20,0.12)', color: '#b91c1c', border: '1px solid rgba(180,20,20,0.35)', borderRadius: '6px', padding: '5px 10px', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
                             onClick={() => setShowDeleteCoverConfirm(true)}
-                            title="Delete cover page"
-                          ><Trash2 size={11} /> Delete</button>
+                          ><Trash2 size={11} /> Delete Cover</button>
                         )}
+                      </div>
+                      <div className="es-doc-wrap">
+                        <CoverEditor
+                          bgUrl={coverBgUrl}
+                          blocks={coverBlocks}
+                          selId={coverSelId}
+                          onSelect={setCoverSelId}
+                          onMove={handleCoverMove}
+                          onTextChange={handleCoverTextChange}
+                        />
                       </div>
                     </div>
                   ) : (
@@ -842,6 +844,8 @@ export default function EditorShell({
             onSave={onSave}
             onShowLibrary={onShowLibrary}
             onDownloadPDF={onDownloadPDF}
+            onDownloadTxt={onDownloadTxt}
+            onDownloadDocx={onDownloadDocx}
             onImageQualityChange={onImageQualityChange}
             onCoverPage={() => changePage(0)}
           />
