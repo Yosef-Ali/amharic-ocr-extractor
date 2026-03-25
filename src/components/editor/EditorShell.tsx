@@ -691,6 +691,17 @@ export default function EditorShell({
                 </div>
               )}
 
+              {/* ── First-use banner: no extractions yet ── */}
+              {!hasAnyResults && totalPages > 0 && !isProcessing && (
+                <div className="es-first-use-banner">
+                  <Sparkles size={20} />
+                  <div>
+                    <strong>{totalPages} page{totalPages > 1 ? 's' : ''} loaded</strong>
+                    <span>Click <b>Extract</b> below to start Amharic OCR</span>
+                  </div>
+                </div>
+              )}
+
               {/* ── Document Pages (1..N) ── */}
               {pageImages.map((img, i) => {
                 const p = i + 1;
@@ -784,19 +795,27 @@ export default function EditorShell({
                             <span className="text-slate-400 font-medium">Loading high-res scan...</span>
                           </div>
                         )}
-                        {!pHasResult && !pIsRegen && (
-                          <div className="es-unextracted-bar" style={{ marginTop: '1rem' }}>
-                            <span>Page {p} — not yet extracted</span>
-                            {img ? (
+                        {!pHasResult && !pIsRegen && img && (
+                          <div className="es-extract-overlay">
+                            <div className="es-extract-overlay-card">
+                              <Sparkles size={24} className="es-extract-overlay-icon" />
+                              <p className="es-extract-overlay-title">Ready to extract</p>
+                              <p className="es-extract-overlay-desc">AI will read the Amharic text from this scan</p>
                               <button
-                                className="bt-btn bt-btn--primary"
+                                className="es-extract-overlay-btn"
                                 onClick={() => onRegenerate(p)}
-                                disabled={pIsRegen || isProcessing}
+                                disabled={isProcessing}
                               >
-                                {pIsRegen ? <Loader2 size={12} className="animate-spin" /> : <Layers size={12} />}
-                                <span>{pIsRegen ? 'Extracting…' : 'Extract this page'}</span>
+                                <Layers size={14} />
+                                Extract page {p}
                               </button>
-                            ) : null}
+                            </div>
+                          </div>
+                        )}
+                        {!pHasResult && !pIsRegen && !img && (
+                          <div className="es-empty" style={{ flexDirection: 'column', gap: '0.5rem', width: '100%', minHeight: '400px' }}>
+                            <Loader2 size={32} className="animate-spin" style={{ color: 'var(--t-primary, #6366f1)', marginBottom: 8 }} />
+                            <span style={{ color: 'var(--t-text3)', fontWeight: 500 }}>Loading scan...</span>
                           </div>
                         )}
                       </div>

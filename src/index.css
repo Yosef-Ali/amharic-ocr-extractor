@@ -1799,6 +1799,101 @@
   box-shadow: 0 4px 24px rgba(0,0,0,0.1);
 }
 
+/* ── Extract overlay on unprocessed scan pages ── */
+.es-extract-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.35);
+  backdrop-filter: blur(2px);
+  border-radius: 8px;
+  z-index: 5;
+}
+.es-extract-overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 36px;
+  background: var(--t-surface);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+  text-align: center;
+  max-width: 280px;
+}
+.es-extract-overlay-icon {
+  color: var(--t-primary, #6366f1);
+  opacity: 0.8;
+}
+.es-extract-overlay-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--t-text);
+  margin: 0;
+}
+.es-extract-overlay-desc {
+  font-size: 0.78rem;
+  color: var(--t-text3);
+  margin: 0;
+  line-height: 1.4;
+}
+.es-extract-overlay-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 8px 20px;
+  background: var(--t-primary, #6366f1);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.es-extract-overlay-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+.es-extract-overlay-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── First-use banner ── */
+.es-first-use-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  background: var(--t-primary, #6366f1);
+  color: #fff;
+  border-radius: 12px;
+  margin-bottom: 8px;
+  width: fit-content;
+  align-self: center;
+  box-shadow: 0 4px 16px rgba(99,102,241,0.3);
+  animation: es-banner-in 0.4s ease-out;
+}
+.es-first-use-banner div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.es-first-use-banner strong {
+  font-size: 0.88rem;
+}
+.es-first-use-banner span {
+  font-size: 0.75rem;
+  opacity: 0.9;
+}
+@keyframes es-banner-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* Document-only view */
 .es-doc-wrap {
   max-width: 816px;
