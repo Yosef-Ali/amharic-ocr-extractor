@@ -58,12 +58,10 @@ export function parseCover(html: string): { bgUrl: string; blocks: CoverBlock[] 
       };
     });
 
-  if (blocks.length === 0) {
-    blocks.push(
-      { id: 'title',  text: 'Book Title',  x: 10, y: 18, w: 80, color: '#ffffff', size: 2.2, weight: 900, italic: false, align: 'center', shadow: true },
-      { id: 'author', text: 'Author Name', x: 15, y: 80, w: 70, color: '#d4a574', size: 1.0, weight: 600, italic: false, align: 'center', shadow: true },
-    );
-  }
+  // Only add defaults when there are no editable blocks AND the HTML was
+  // explicitly built in background-only mode (has contenteditable hints).
+  // For full-design covers (image-only HTML) keep blocks empty — the AI
+  // already rendered typography into the image.
   return { bgUrl, blocks };
 }
 

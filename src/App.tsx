@@ -440,6 +440,14 @@ export default function App() {
     });
   }, []);
 
+  const handleDeleteCover = useCallback(() => {
+    setPageResults(prev => {
+      const next = { ...prev };
+      delete next[0];
+      return next;
+    });
+  }, []);
+
   // Reorder pages: move page at fromPage to toPage position (1-indexed)
   const handleReorderPages = useCallback((fromPage: number, toPage: number) => {
     if (fromPage === toPage) return;
@@ -703,6 +711,7 @@ export default function App() {
         onEdit={handleEdit}
         onRegenerate={regenerateSinglePage}
         onDeletePage={handleDeletePage}
+        onDeleteCover={handleDeleteCover}
         onReorderPages={handleReorderPages}
         onInsertPage={handleInsertPage}
         onExtract={() => processPages(false)}

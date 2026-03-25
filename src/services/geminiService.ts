@@ -515,7 +515,7 @@ MODE 4 — COVER PAGE
 ══════════════════════════════════════════════════
 When the user asks to generate, create, make, or design a cover page:
 1. Call generateCoverPage with the title and any details they provide.
-2. Use style "orthodox" for Ethiopian/religious texts, "modern" for contemporary, etc.
+2. Use style "classic" for traditional texts, "modern" for contemporary, etc.
 3. If the user wants to improve an existing cover, use mode "improve" with instructions.
 4. After success, respond briefly: "✅ Cover page generated." — do NOT echo any HTML or image data.
 
@@ -968,7 +968,7 @@ export async function chatWithAI(
 // Three modes: generate from scratch, improve existing, generate with reference
 // ---------------------------------------------------------------------------
 
-export type CoverStyle = 'orthodox' | 'modern' | 'classic' | 'minimalist' | 'ornate';
+export type CoverStyle = 'modern' | 'classic' | 'minimalist' | 'ornate';
 
 export type BindingType = 'saddle-stitch' | 'perfect-binding';
 
@@ -991,7 +991,6 @@ export interface CoverPageOptions {
 }
 
 const COVER_STYLE_DESCRIPTIONS: Record<CoverStyle, string> = {
-  orthodox:    'Ethiopian Orthodox style with traditional cross patterns, gold and burgundy colors, ornamental Ge\'ez borders, and ecclesiastical motifs',
   modern:      'Clean modern design with bold typography, geometric shapes, subtle gradients, and contemporary layout',
   classic:     'Traditional book cover with elegant serif typography, decorative frames, muted earth tones, and refined borders',
   minimalist:  'Ultra-minimal design with large whitespace, single accent color, simple typography, and restrained composition',
@@ -1000,32 +999,28 @@ const COVER_STYLE_DESCRIPTIONS: Record<CoverStyle, string> = {
 
 /** Prompt for background-only (text-free) mode */
 function buildCoverBackgroundPrompt(options: CoverPageOptions): string {
-  const { style = 'orthodox', binding = 'saddle-stitch' } = options;
+  const { style = 'classic', binding = 'saddle-stitch' } = options;
   const styleDesc = COVER_STYLE_DESCRIPTIONS[style];
 
   const sizeNote = binding === 'perfect-binding'
     ? 'The image is for a BOOK COVER SPREAD: back cover (left half) + front cover (right half), landscape orientation. Leave the right half more visually prominent with open areas for text overlay. The left half should be simpler with space for a description blurb.'
     : 'A4 book cover (210mm × 297mm, portrait 3:4). Leave a clear central area (upper third to middle) and a contrasting lower portion where title and author text will be overlaid.';
 
-  return `Generate a FLAT, SIMPLE background image for a book cover. Text will be overlaid separately — this is the background layer only.
+  return `Generate a beautiful background image for a book cover. Text will be overlaid separately — this is the background layer only.
 
 PAGE SIZE: ${sizeNote}
 DESIGN STYLE: ${styleDesc}
 
-CRITICAL REQUIREMENTS:
-- ZERO TEXT: Do NOT include ANY letters, words, numbers, titles, names, glyphs, or characters of ANY script (Latin, Amharic, or otherwise). Not even as subtle overlays or watermarks. The image must be 100% text-free.
-- FLAT design — no 3D objects, no depth illusions, no perspective geometry.
-- NO diagonal lines, NO sharp geometric shards, NO origami/polygon shapes.
-- NO technological elements — no circuit boards, microchips, wires, sci-fi motifs.
-- Use SIMPLE, CALM visual elements: soft gradients, watercolor washes, subtle organic patterns, or broad color fields.
-- Leave large open calm areas with good contrast for text overlay.
+REQUIREMENTS:
+- NO TEXT: Do not include any letters, words, numbers, or readable characters of any script. The image must be text-free.
+- Leave clear open areas with good contrast so text can be overlaid legibly.
 - Fill the entire canvas edge to edge. No white margins.
 - Output a single image — no mockup, no collage, no variants.`;
 }
 
 /** Prompt for full AI design mode — typography baked into the image */
 function buildFullAICoverPrompt(options: CoverPageOptions): string {
-  const { style = 'orthodox', binding = 'saddle-stitch', title, subtitle, author } = options;
+  const { style = 'classic', binding = 'saddle-stitch', title, subtitle, author } = options;
   const styleDesc = COVER_STYLE_DESCRIPTIONS[style];
 
   const textLines = [
@@ -1038,7 +1033,7 @@ function buildFullAICoverPrompt(options: CoverPageOptions): string {
     ? 'Landscape book cover spread (16:9). Left half = back cover (simpler, space for blurb). Right half = front cover (main design + title). Narrow center = spine with vertical title.'
     : 'A4 portrait book cover (3:4, 210mm × 297mm). Full front cover — title prominent in upper/central area, author name near bottom.';
 
-  return `Design a COMPLETE, professional book cover. The title and author name must be beautifully rendered as elegant typography directly in the image.
+  return `Design a complete, professional book cover.
 
 BOOK DETAILS:
 ${textLines}
@@ -1047,14 +1042,10 @@ COVER SIZE: ${sizeNote}
 DESIGN STYLE: ${styleDesc}
 
 REQUIREMENTS:
-- The title${author ? ' and author name' : ''} MUST appear in the image as artistic, legible typography — this is the final cover design.
-- For Amharic/Ethiopic text: use traditional Ethiopic calligraphic letterforms, graceful and ornate.
-- For Latin text: use elegant serif or display typeface appropriate to the style.
-- Typography should be an INTEGRAL part of the design, not an afterthought.
-- FLAT design — no 3D objects, no depth illusions, no perspective geometry.
-- NO technological elements — no circuit boards, microchips, wires, sci-fi motifs.
-- Use SIMPLE, CALM visual elements: soft gradients, watercolor washes, organic textures, subtle cultural patterns.
-- The design must feel ELEGANT and PRINT-READY.
+- The title${author ? ' and author name' : ''} must appear as beautiful, legible typography integrated into the design.
+- For Amharic/Ethiopic text: use elegant Ethiopic calligraphic letterforms.
+- For Latin text: use a typeface appropriate to the style.
+- The design must feel elegant and print-ready.
 - Fill the entire canvas edge to edge. No white margins.
 - Output a single final cover image — no mockups, no variants.`;
 }
@@ -1273,7 +1264,7 @@ ${textSection}
 REQUIREMENTS:
 - FLAT design — no 3D objects, no depth illusions
 - NO technological elements
-- Same style as the front: ${COVER_STYLE_DESCRIPTIONS[options.style ?? 'orthodox']}
+- Same style as the front: ${COVER_STYLE_DESCRIPTIONS[options.style ?? 'classic']}
 - Fill the entire canvas edge to edge
 - Output a single back cover image`;
 

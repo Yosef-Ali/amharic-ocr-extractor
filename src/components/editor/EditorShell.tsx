@@ -4,7 +4,7 @@ import {
   PanelLeftClose, PanelLeftOpen,
   X, FileText, FileImage, MousePointer2,
   Bot, SlidersHorizontal,
-  Maximize, Hand,
+  Maximize, Hand, Trash2,
   Minus, Plus, Undo2, Redo2, Sparkles, Home, Search,
 } from 'lucide-react';
 import { type Theme } from '../../hooks/useTheme';
@@ -31,6 +31,7 @@ import CoverEditorPanel       from './CoverEditorPanel';
 import { type CoverBlock, parseCover, serialiseCover } from './coverUtils';
 import FindReplaceBar         from './FindReplaceBar';
 import HomophonePanel         from './HomophonePanel';
+import DeleteConfirmModal     from '../DeleteConfirmModal';
 
 // ── Props ────────────────────────────────────────────────────────────────────
 interface Props {
@@ -48,6 +49,7 @@ interface Props {
   onEdit:             (pageNumber: number, html: string) => void;
   onRegenerate:       (pageNumber: number) => void;
   onDeletePage:       (pageNumber: number) => void;
+  onDeleteCover?:     () => void;
   onReorderPages?:    (fromPage: number, toPage: number) => void;
   onInsertPage?:      (afterPage: number) => void;
   onExtract:          () => void;
@@ -74,7 +76,7 @@ export default function EditorShell({
   fileName, pageImages, pageDimensions, pageResults, imageQuality,
   isProcessing, processingStatus, regeneratingPages,
   isPdfExporting, isSaving,
-  onEdit, onRegenerate, onDeletePage,
+  onEdit, onRegenerate, onDeletePage, onDeleteCover,
   onReorderPages, onInsertPage,
   onExtract, onForceExtract, onSave, onClear,
   onShowLibrary, onDownloadPDF,
@@ -88,6 +90,8 @@ export default function EditorShell({
   theme,
   onToggleTheme,
 }: Props) {
+
+  const [showDeleteCoverConfirm, setShowDeleteCoverConfirm] = useState(false);
 
   const totalPages    = pageImages.length;
   const hasCover      = !!pageResults[0];
@@ -644,6 +648,12 @@ export default function EditorShell({
                 <div data-page="0" className="page-wrapper w-full flex justify-center scroll-mt-6" id="page-0">
                   {hasCover ? (
                     <div className="es-doc-wrap" style={{ position: 'relative' }}>
+                      {showDeleteCoverConfirm && (
+                        <DeleteConfirmModal
+                          onConfirm={() => { setShowDeleteCoverConfirm(false); onDeleteCover?.(); }}
+                          onCancel={() => setShowDeleteCoverConfirm(false)}
+                        />
+                      )}
                       <CoverEditor
                         bgUrl={coverBgUrl}
                         blocks={coverBlocks}
@@ -652,11 +662,21 @@ export default function EditorShell({
                         onMove={handleCoverMove}
                         onTextChange={handleCoverTextChange}
                       />
-                      <button
-                        style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', zIndex: 30, background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', backdropFilter: 'blur(4px)', letterSpacing: '0.06em' }}
-                        onClick={() => { onEdit(0, ''); }}
-                        title="New cover background"
-                      >↺ New Cover</button>
+                      {/* Cover action buttons */}
+                      <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', zIndex: 30, display: 'flex', gap: '0.3rem' }}>
+                        <button
+                          style={{ background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', backdropFilter: 'blur(4px)', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                          onClick={() => setRightDrawer('cover')}
+                          title="Edit cover"
+                        >↺ Edit Cover</button>
+                        {onDeleteCover && (
+                          <button
+                            style={{ background: 'rgba(180,20,20,0.7)', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 8px', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                            onClick={() => setShowDeleteCoverConfirm(true)}
+                            title="Delete cover page"
+                          ><Trash2 size={11} /> Delete</button>
+                        )}
+                      </div>
                     </div>
                   ) : (
                     <div className="es-doc-wrap" style={{ position: 'relative' }}>
@@ -876,10 +896,12 @@ export default function EditorShell({
               activeCoverSide={activePage === -1 ? 'back' : 'front'}
               blocks={coverBlocks}
               selId={coverSelId}
+              firstPageScan={pageImages[0] ? `data:image/jpeg;base64,${pageImages[0]}` : undefined}
               onSelect={setCoverSelId}
               onUpdate={handleCoverUpdate}
               onAdd={handleCoverAdd}
               onDelete={handleCoverDelete}
+              onDeleteCover={onDeleteCover}
               onApply={handleApplyCover}
               onApplyBack={html => onEdit(-1, html)}
               onError={onError}

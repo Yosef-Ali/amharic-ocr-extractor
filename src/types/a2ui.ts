@@ -58,6 +58,15 @@ export interface A2UIErrorMessage {
   message: string;
 }
 
+/** Inline cover-page setup card — agent asks user to fill in cover details */
+export interface A2UICoverSetupMessage {
+  type:          'cover-setup';
+  id:            string;
+  suggestedTitle?: string;
+  status:        'pending' | 'generating' | 'done' | 'cancelled';
+  result?:       string;   // success / error text after generation
+}
+
 export type A2UIMessage =
   | A2UIUserMessage
   | A2UIThinkingMessage
@@ -65,7 +74,8 @@ export type A2UIMessage =
   | A2UIToolMessage
   | A2UIApprovalMessage
   | A2UITextMessage
-  | A2UIErrorMessage;
+  | A2UIErrorMessage
+  | A2UICoverSetupMessage;
 
 // ── Model definitions ──────────────────────────────────────────────────────
 

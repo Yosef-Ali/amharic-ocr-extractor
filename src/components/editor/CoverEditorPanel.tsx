@@ -13,6 +13,7 @@ import {
   Bold, Italic, AlignLeft, AlignCenter, AlignRight,
   Trash2, Plus, Minus, Type, Layers, BookOpen, BookMarked, RotateCcw,
 } from 'lucide-react';
+import DeleteConfirmModal from '../DeleteConfirmModal';
 import { type CoverBlock } from './coverUtils';
 import {
   generateCoverBackground,
@@ -29,7 +30,7 @@ import {
 const COLOR_PRESETS = ['#ffffff','#000000','#d4a574','#fbbf24','#f87171','#a3e635','#38bdf8','#c084fc','#f8fafc','#1e293b'];
 
 const STYLES: { value: CoverStyle; label: string; emoji: string }[] = [
-  { value: 'orthodox',   label: 'Orthodox',   emoji: '✝️' },
+
   { value: 'ornate',     label: 'Ornate',     emoji: '📜' },
   { value: 'classic',    label: 'Classic',    emoji: '📕' },
   { value: 'modern',     label: 'Modern',     emoji: '🎨' },
@@ -48,11 +49,13 @@ interface Props {
   activeCoverSide: 'front' | 'back';  // which side is currently on canvas
   blocks:    CoverBlock[];
   selId:     string | null;
+  firstPageScan?: string;   // data URL of first page scan — used as default reference
   // Callbacks
   onSelect:    (id: string | null) => void;
   onUpdate:    (id: string, patch: Partial<CoverBlock>) => void;
   onAdd:       () => void;
   onDelete:    (id: string) => void;
+  onDeleteCover?: () => void;
   onApply:     (html: string) => void;   // front cover HTML
   onApplyBack: (html: string) => void;   // back cover HTML (pageResults[-1])
   onError:     (msg: string) => void;
@@ -61,8 +64,8 @@ interface Props {
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function CoverEditorPanel({
   hasCover, hasBackCover, bgUrl, backBgUrl, activeCoverSide,
-  blocks, selId,
-  onSelect, onUpdate, onAdd, onDelete, onApply, onApplyBack, onError,
+  blocks, selId, firstPageScan,
+  onSelect, onUpdate, onAdd, onDelete, onDeleteCover, onApply, onApplyBack, onError,
 }: Props) {
   // Which cover side is being edited (synced to canvas via activeCoverSide)
   const [editSide, setEditSide] = useState<'front' | 'back'>(activeCoverSide);
@@ -77,11 +80,12 @@ export default function CoverEditorPanel({
   const [title,        setTitle]        = useState('');
   const [subtitle,     setSubtitle]     = useState('');
   const [author,       setAuthor]       = useState('');
-  const [style,        setStyle]        = useState<CoverStyle>('orthodox');
+  const [style,        setStyle]        = useState<CoverStyle>('classic');
   const [binding,      setBinding]      = useState<BindingType>('saddle-stitch');
   const [instruction,  setInstruction]  = useState('');
-  const [refImg,       setRefImg]       = useState<string | null>(null);
+  const [refImg,       setRefImg]       = useState<string | null>(firstPageScan ?? null);
   const [busy,         setBusy]         = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const cancelledRef  = useRef(false);
   const refInputRef   = useRef<HTMLInputElement>(null);
 
@@ -249,7 +253,10 @@ export default function CoverEditorPanel({
                 refImg ? (
                   <div style={{ position: 'relative', borderRadius: '6px', overflow: 'hidden' }}>
                     <img src={refImg} alt="ref" style={{ width: '100%', maxHeight: '90px', objectFit: 'cover' }} />
-                    <button onClick={() => setRefImg(null)} style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={11} /></button>
+                    <div style={{ position: 'absolute', bottom: 4, left: 6, fontSize: '0.6rem', color: 'rgba(255,255,255,0.75)', background: 'rgba(0,0,0,0.4)', borderRadius: 3, padding: '1px 5px' }}>
+                      {refImg === firstPageScan ? 'Page 1 (default)' : 'Custom reference'}
+                    </div>
+                    <button onClick={() => setRefImg(firstPageScan ?? null)} style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Reset to default"><X size={11} /></button>
                   </div>
                 ) : (
                   <button className="cov-ref-btn" onClick={() => refInputRef.current?.click()}>
@@ -343,8 +350,15 @@ export default function CoverEditorPanel({
   const EditView = (
     <div className="ce-panel" style={{ width: '100%', borderLeft: 'none', height: '100%' }}>
 
+      {showDeleteConfirm && (
+        <DeleteConfirmModal
+          onConfirm={() => { setShowDeleteConfirm(false); onDeleteCover?.(); }}
+          onCancel={() => setShowDeleteConfirm(false)}
+        />
+      )}
+
       {/* Regenerate background button */}
-      <div className="ce-section">
+      <div className="ce-section" style={{ gap: '0.4rem' }}>
         <button
           className="ce-add-btn"
           style={{ borderStyle: 'solid', color: '#818cf8', borderColor: 'rgba(129,140,248,0.4)' }}
@@ -352,6 +366,15 @@ export default function CoverEditorPanel({
         >
           <RotateCcw size={11} /> Regenerate Background
         </button>
+        {onDeleteCover && (
+          <button
+            className="ce-add-btn"
+            style={{ borderStyle: 'solid', color: '#ef4444', borderColor: 'rgba(239,68,68,0.35)' }}
+            onClick={() => setShowDeleteConfirm(true)}
+          >
+            <Trash2 size={11} /> Delete Cover Page
+          </button>
+        )}
       </div>
 
       {/* Layers */}

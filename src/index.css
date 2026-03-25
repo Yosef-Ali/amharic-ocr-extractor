@@ -7233,6 +7233,115 @@
 .ap-approval-result--ok { color: #4ade80; }
 .ap-approval-result--no { color: var(--t-text4); }
 
+/* ── Cover setup card (A2UI inline form) ─────────────────────────────────── */
+.ap-cover-card {
+  background: var(--t-surface2);
+  border: 1px solid var(--t-border);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0.25rem 0;
+}
+.ap-cover-card--done {
+  padding: 0.65rem 1rem;
+  font-size: 0.8rem;
+  color: var(--t-text3);
+}
+.ap-cover-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--t-text);
+}
+.ap-cover-card-hint {
+  font-size: 0.72rem;
+  color: var(--t-text3);
+  margin: 0;
+}
+.ap-cover-input {
+  width: 100%;
+  padding: 0.45rem 0.65rem;
+  border-radius: 7px;
+  border: 1px solid var(--t-border);
+  background: var(--t-surface);
+  color: var(--t-text);
+  font-size: 0.78rem;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+.ap-cover-input:focus { border-color: #818cf8; }
+.ap-cover-section-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--t-text3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 0.2rem;
+}
+.ap-cover-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.ap-cover-chip {
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--t-border);
+  background: var(--t-surface3);
+  color: var(--t-text3);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+.ap-cover-chip:hover { background: var(--t-surface2); color: var(--t-text); }
+.ap-cover-chip--on {
+  background: #818cf8;
+  color: #fff;
+  border-color: #818cf8;
+}
+.ap-cover-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+.ap-cover-cancel {
+  flex: 0;
+  padding: 0.45rem 0.9rem;
+  border-radius: 7px;
+  border: 1px solid var(--t-border);
+  background: var(--t-surface3);
+  color: var(--t-text3);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.ap-cover-cancel:hover { background: var(--t-surface2); color: var(--t-text); }
+.ap-cover-generate {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 7px;
+  border: none;
+  background: #818cf8;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.ap-cover-generate:hover:not(:disabled) { opacity: 0.88; }
+.ap-cover-generate:disabled { opacity: 0.45; cursor: default; }
+
 /* ── Markdown in agent messages ──────────────────────────────────────────── */
 .ap-md { display: flex; flex-direction: column; gap: 6px; }
 .ap-md-p { margin: 0; }

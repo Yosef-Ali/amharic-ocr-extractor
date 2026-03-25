@@ -24,7 +24,7 @@ interface Props {
 type Mode = 'generate' | 'improve' | 'reference';
 
 const STYLES: { value: CoverStyle; label: string; emoji: string }[] = [
-  { value: 'orthodox',   label: 'Orthodox',   emoji: '✝️' },
+
   { value: 'ornate',     label: 'Ornate',     emoji: '📜' },
   { value: 'classic',    label: 'Classic',    emoji: '📕' },
   { value: 'modern',     label: 'Modern',     emoji: '🎨' },
@@ -36,7 +36,7 @@ export default function CoverSetup({ existingBgUrl, onApply, onError, onClose }:
   const [title,    setTitle]    = useState('');
   const [subtitle, setSubtitle] = useState('');
   const [author,   setAuthor]   = useState('');
-  const [style,    setStyle]    = useState<CoverStyle>('orthodox');
+  const [style,    setStyle]    = useState<CoverStyle>('classic');
   const [binding,  setBinding]  = useState<BindingType>('saddle-stitch');
   const [instruction, setInstruction] = useState('');
   const [refImg,   setRefImg]   = useState<string | null>(null);

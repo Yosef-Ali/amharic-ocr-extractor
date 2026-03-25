@@ -73,15 +73,115 @@ function Shimmer({ lines = 3 }: { lines?: number }) {
 }
 
 
+// ── Inline Cover Setup Card ───────────────────────────────────────────────
+type CoverStyle = 'orthodox' | 'ornate' | 'classic' | 'modern' | 'minimalist';
+type CoverDesignMode = 'full-design' | 'background-only';
+
+const COVER_STYLES: { value: CoverStyle; label: string; emoji: string }[] = [
+  { value: 'orthodox',   label: 'Orthodox',  emoji: '✝️' },
+  { value: 'ornate',     label: 'Ornate',    emoji: '📜' },
+  { value: 'classic',    label: 'Classic',   emoji: '📕' },
+  { value: 'modern',     label: 'Modern',    emoji: '🎨' },
+  { value: 'minimalist', label: 'Minimal',   emoji: '◻️' },
+];
+
+function CoverSetupCard({ msg, onSubmit, onCancel }: {
+  msg: import('../../types/a2ui').A2UICoverSetupMessage;
+  onSubmit: (opts: { title: string; author: string; style: CoverStyle; designMode: CoverDesignMode }) => void;
+  onCancel: () => void;
+}) {
+  const [title,      setTitle]      = useState(msg.suggestedTitle ?? '');
+  const [author,     setAuthor]     = useState('');
+  const [style,      setStyle]      = useState<CoverStyle>('orthodox');
+  const [designMode, setDesignMode] = useState<CoverDesignMode>('full-design');
+
+  if (msg.status === 'generating') {
+    return (
+      <div className="ap-cover-card">
+        <div className="ap-cover-card-header"><Sparkles size={13} /> Generating cover…</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 0', color: 'var(--t-text3)', fontSize: '0.78rem' }}>
+          <Loader2 size={14} className="animate-spin" /> Creating your cover page…
+        </div>
+      </div>
+    );
+  }
+
+  if (msg.status === 'done' || msg.status === 'cancelled') {
+    return (
+      <div className="ap-cover-card ap-cover-card--done">
+        <span>{msg.status === 'done' ? `✅ ${msg.result ?? 'Cover generated.'}` : '✕ Cancelled'}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="ap-cover-card">
+      <div className="ap-cover-card-header"><Sparkles size={13} /> Cover Page Setup</div>
+      <p className="ap-cover-card-hint">Fill in the details and I'll generate your cover.</p>
+
+      <input
+        className="ap-cover-input"
+        placeholder="Title *"
+        value={title}
+        onChange={e => setTitle(e.target.value)}
+      />
+      <input
+        className="ap-cover-input"
+        placeholder="Author (optional)"
+        value={author}
+        onChange={e => setAuthor(e.target.value)}
+      />
+
+      <div className="ap-cover-section-label">Style</div>
+      <div className="ap-cover-chips">
+        {COVER_STYLES.map(s => (
+          <button
+            key={s.value}
+            className={`ap-cover-chip${style === s.value ? ' ap-cover-chip--on' : ''}`}
+            onClick={() => setStyle(s.value)}
+          >
+            {s.emoji} {s.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="ap-cover-section-label">Design mode</div>
+      <div className="ap-cover-chips">
+        <button className={`ap-cover-chip${designMode === 'full-design' ? ' ap-cover-chip--on' : ''}`} onClick={() => setDesignMode('full-design')}>
+          ✦ Full AI Design
+        </button>
+        <button className={`ap-cover-chip${designMode === 'background-only' ? ' ap-cover-chip--on' : ''}`} onClick={() => setDesignMode('background-only')}>
+          ◻ Background Only
+        </button>
+      </div>
+
+      <div className="ap-cover-actions">
+        <button className="ap-cover-cancel" onClick={onCancel}>Cancel</button>
+        <button
+          className="ap-cover-generate"
+          onClick={() => onSubmit({ title: title.trim() || 'Untitled', author: author.trim(), style, designMode })}
+          disabled={!title.trim()}
+        >
+          <Sparkles size={12} /> Generate Cover
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── A2UI message card renderer ────────────────────────────────────────────
 function MessageCard({
   msg,
   onApprove,
   onReject,
+  onCoverSetupSubmit,
+  onCoverSetupCancel,
 }: {
   msg: A2UIMessage;
   onApprove?: (id: string) => void;
   onReject?:  (id: string) => void;
+  onCoverSetupSubmit?: (id: string, opts: { title: string; author: string; style: CoverStyle; designMode: CoverDesignMode }) => void;
+  onCoverSetupCancel?: (id: string) => void;
 }) {
   if (msg.type === 'user') {
     return (
@@ -191,6 +291,16 @@ function MessageCard({
         <AlertTriangle size={13} />
         <span>{msg.message}</span>
       </div>
+    );
+  }
+
+  if (msg.type === 'cover-setup') {
+    return (
+      <CoverSetupCard
+        msg={msg}
+        onSubmit={opts => onCoverSetupSubmit?.(msg.id, opts)}
+        onCancel={() => onCoverSetupCancel?.(msg.id)}
+      />
     );
   }
 
@@ -509,6 +619,36 @@ export default function AgentPanel({
     pendingApprovalsRef.current.delete(id);
   };
 
+  const handleCoverSetupCancel = (id: string) => {
+    updateMsg(id, { status: 'cancelled' } as Partial<A2UIMessage>);
+  };
+
+  const handleCoverSetupSubmit = async (
+    id: string,
+    opts: { title: string; author: string; style: CoverStyle; designMode: CoverDesignMode },
+  ) => {
+    if (!executor) return;
+    updateMsg(id, { status: 'generating' } as Partial<A2UIMessage>);
+    try {
+      const result = JSON.parse(await executor.execute('generateCoverPage', {
+        mode: 'generate',
+        title: opts.title,
+        author: opts.author || undefined,
+        style: opts.style,
+        designMode: opts.designMode,
+      }) as string);
+      updateMsg(id, {
+        status: result.error ? 'done' : 'done',
+        result: result.error ?? '✅ Cover page generated and applied.',
+      } as Partial<A2UIMessage>);
+    } catch (err) {
+      updateMsg(id, {
+        status: 'done',
+        result: `❌ ${(err as Error).message ?? 'Cover generation failed.'}`,
+      } as Partial<A2UIMessage>);
+    }
+  };
+
   // ── Send ────────────────────────────────────────────────────────────────
   const canSend = (input.trim() || attachment) && !loading && (panelMode === 'chat' || !!executor);
 
@@ -648,36 +788,17 @@ export default function AgentPanel({
       return;
     }
 
-    // ── Cover page intent — generate or improve cover ─────────────────────
+    // ── Cover page intent — show A2UI setup card instead of auto-generating ──
     if (
       /\b(cover|cover.?page|book.?cover)\b/i.test(text) &&
       /\b(generate|create|make|design|build|improve|enhance|update)\b/i.test(text)
     ) {
-      const tId = uid();
-      const isImprove = /\b(improve|enhance|update|fix|better)\b/i.test(text);
-      setProcess(isImprove ? 'Improving cover page…' : 'Generating cover page…');
-      addMsg({ type: 'tool', id: tId, name: 'generateCoverPage', status: 'running', args: { mode: isImprove ? 'improve' : 'generate' } });
-      try {
-        const result = JSON.parse(await executor.execute('generateCoverPage', {
-          mode: isImprove ? 'improve' : 'generate',
-          title: text.replace(/\b(generate|create|make|design|build|improve|enhance|update|a|the|cover|page|book|for|me|please)\b/gi, '').trim() || 'Untitled',
-          style: /\b(orthodox|religious|church|bible)\b/i.test(text) ? 'orthodox'
-            : /\b(modern|contemporary)\b/i.test(text) ? 'modern'
-            : /\b(classic|traditional)\b/i.test(text) ? 'classic'
-            : /\b(minimal|minimalist|simple|clean)\b/i.test(text) ? 'minimalist'
-            : /\b(ornate|decorat|manuscrip|illuminat)\b/i.test(text) ? 'ornate'
-            : 'orthodox',
-          instruction: isImprove ? text : undefined,
-        }) as string);
-        updateMsg(tId, { status: result.error ? 'error' : 'done', summary: result.error ?? result.message });
-        addMsg({ type: 'text', id: uid(), content: result.error ? `❌ ${result.error}` : `✅ Cover page ${isImprove ? 'improved' : 'generated'} and applied.` });
-      } catch (err) {
-        updateMsg(tId, { status: 'error' });
-        addMsg({ type: 'error', id: uid(), message: (err as Error).message ?? 'Cover generation failed.' });
-      } finally {
-        setLoading(false);
-        setProcess('');
-      }
+      const suggestedTitle = text
+        .replace(/\b(generate|create|make|design|build|improve|enhance|update|a|an|the|cover|page|book|for|me|please|with|style|orthodox|ornate|classic|modern|minimalist)\b/gi, '')
+        .replace(/\s+/g, ' ').trim();
+      addMsg({ type: 'cover-setup', id: uid(), suggestedTitle: suggestedTitle || '', status: 'pending' });
+      setLoading(false);
+      setProcess('');
       return;
     }
 
@@ -1020,6 +1141,8 @@ export default function AgentPanel({
             msg={msg}
             onApprove={handleApprove}
             onReject={handleReject}
+            onCoverSetupSubmit={handleCoverSetupSubmit}
+            onCoverSetupCancel={handleCoverSetupCancel}
           />
         ))}
 
