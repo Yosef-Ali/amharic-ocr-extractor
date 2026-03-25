@@ -1,0 +1,100 @@
+{
+  "date": "2026-03-25T16:13:44",
+  "model": "gemini-3.1-flash-image-preview",
+  "pipeline": "image-based (PyMuPDF render → JPEG → Gemini)",
+  "total": 10,
+  "tested": 8,
+  "pass_rate": "88%",
+  "results": [
+    {
+      "label": "01_prayer_modern",
+      "type": "Catholic prayer (modern Amharic)",
+      "status": "GOOD",
+      "chars": 1174,
+      "ratio": "71.5%",
+      "elapsed": "11.9",
+      "reason": ""
+    },
+    {
+      "label": "02_bible_page5",
+      "type": "Amharic Bible (typeset)",
+      "status": "FAIR",
+      "chars": 7040,
+      "ratio": "29.7%",
+      "elapsed": "35.9",
+      "reason": ""
+    },
+    {
+      "label": "03_bible_page12",
+      "type": "Amharic Bible (mid)",
+      "status": "GOOD",
+      "chars": 5227,
+      "ratio": "72.5%",
+      "elapsed": "36.6",
+      "reason": ""
+    },
+    {
+      "label": "04_short_stories",
+      "type": "Short stories (prose)",
+      "status": "GOOD",
+      "chars": 1702,
+      "ratio": "68.8%",
+      "elapsed": "17.0",
+      "reason": ""
+    },
+    {
+      "label": "05_abichu_novel",
+      "type": "Novel (አቢቹ)",
+      "status": "GOOD",
+      "chars": 1543,
+      "ratio": "77.6%",
+      "elapsed": "14.0",
+      "reason": ""
+    },
+    {
+      "label": "06_geez_religious",
+      "type": "Ge'ez religious text",
+      "status": "ERROR",
+      "chars": 0,
+      "ratio": "",
+      "elapsed": "",
+      "reason": "HTTPSConnectionPool(host='generativelanguage.googleapis.com', port=443): Read timed out. (read timeout=120)"
+    },
+    {
+      "label": "07_church_page",
+      "type": "Church document",
+      "status": "GOOD",
+      "chars": 964,
+      "ratio": "56.2%",
+      "elapsed": "9.1",
+      "reason": ""
+    },
+    {
+      "label": "08_hune",
+      "type": "Hune document",
+      "status": "GOOD",
+      "chars": 43,
+      "ratio": "76.7%",
+      "elapsed": "3.8",
+      "reason": ""
+    },
+    {
+      "label": "09_yekatit_office",
+      "type": "Office/formal document",
+      "status": "FAIL",
+      "chars": 1727,
+      "ratio": "0.0%",
+      "elapsed": "12.4",
+      "reason": "no Amharic chars"
+    },
+    {
+      "label": "10_catholic_bible",
+      "type": "Catholic Bible (Emmaus)",
+      "status": "ERROR",
+      "chars": 0,
+      "ratio": "",
+      "elapsed": "",
+      "reason": "HTTPSConnectionPool(host='generativelanguage.googleapis.com', port=443): Read timed out. (read timeout=120)"
+    }
+  ]
+}

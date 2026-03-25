@@ -1,0 +1,120 @@
+{
+  "date": "2026-03-25T12:00:29.163Z",
+  "model": "gemini-3.1-flash-image-preview",
+  "totalSamples": 10,
+  "tested": 6,
+  "skipped": 2,
+  "passRate": "67%",
+  "results": [
+    {
+      "label": "01_spiritual_religious",
+      "type": "Religious/spiritual text",
+      "status": "FAIL",
+      "chars": 2153,
+      "amharicChars": 0,
+      "amharicRatio": "0.0",
+      "lineCount": 30,
+      "elapsed": "8.4",
+      "reason": ""
+    },
+    {
+      "label": "02_prayer_book_p1",
+      "type": "Prayer book (formatted)",
+      "status": "GOOD",
+      "chars": 26,
+      "amharicChars": 15,
+      "amharicRatio": "57.7",
+      "lineCount": 2,
+      "elapsed": "9.7",
+      "reason": ""
+    },
+    {
+      "label": "03_prayer_book_p3",
+      "type": "Prayer book (inner page)",
+      "status": "GOOD",
+      "chars": 1127,
+      "amharicChars": 835,
+      "amharicRatio": "74.1",
+      "lineCount": 73,
+      "elapsed": "12.1",
+      "reason": ""
+    },
+    {
+      "label": "04_novel_bilichta",
+      "type": "Amharic novel (prose)",
+      "status": "ERROR",
+      "chars": 0,
+      "amharicChars": 0,
+      "amharicRatio": 0,
+      "lineCount": 0,
+      "elapsed": 0,
+      "reason": "{\"error\":{\"code\":400,\"message\":\"The input token count exceeds the maximum number of tokens allowed 131072.\",\"status\":\"INVALID_ARGUMENT\"}}"
+    },
+    {
+      "label": "05_novel_bilichta_mid",
+      "type": "Novel (mid-section)",
+      "status": "ERROR",
+      "chars": 0,
+      "amharicChars": 0,
+      "amharicRatio": 0,
+      "lineCount": 0,
+      "elapsed": 0,
+      "reason": "{\"error\":{\"code\":400,\"message\":\"The input token count exceeds the maximum number of tokens allowed 131072.\",\"status\":\"INVALID_ARGUMENT\"}}"
+    },
+    {
+      "label": "06_fikare_iyesus",
+      "type": "Religious/Geez text",
+      "status": "GOOD",
+      "chars": 521,
+      "amharicChars": 317,
+      "amharicRatio": "60.8",
+      "lineCount": 26,
+      "elapsed": "38.5",
+      "reason": ""
+    },
+    {
+      "label": "07_mahlet_adam_reta",
+      "type": "Literature (Adam Reta)",
+      "status": "SKIPPED",
+      "chars": 0,
+      "amharicChars": 0,
+      "amharicRatio": 0,
+      "lineCount": 0,
+      "elapsed": 0,
+      "reason": "File too large"
+    },
+    {
+      "label": "08_translated_book",
+      "type": "Translated book (mixed)",
+      "status": "SKIPPED",
+      "chars": 0,
+      "amharicChars": 0,
+      "amharicRatio": 0,
+      "lineCount": 0,
+      "elapsed": 0,
+      "reason": "File too large"
+    },
+    {
+      "label": "09_spiritual_p3",
+      "type": "Religious text (page 3)",
+      "status": "FAIL",
+      "chars": 2668,
+      "amharicChars": 0,
+      "amharicRatio": "0.0",
+      "lineCount": 34,
+      "elapsed": "10.1",
+      "reason": ""
+    },
+    {
+      "label": "10_fikare_mid",
+      "type": "Religious (mid-section)",
+      "status": "FAIR",
+      "chars": 233,
+      "amharicChars": 54,
+      "amharicRatio": "23.2",
+      "lineCount": 14,
+      "elapsed": "45.4",
+      "reason": ""
+    }
+  ]
+}

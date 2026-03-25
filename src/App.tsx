@@ -10,7 +10,7 @@ import AuthScreen    from './components/AuthScreen';
 import { pdfToImages, imageFileToBase64, detectFileType, docxToHtmlPages, textToHtmlPages, type PageDimension } from './services/pdfService';
 import { extractPageHTML, autoFillImagePlaceholders, type ImageQuality } from './services/geminiService';
 import { saveDocument, initStorage, initializeSchema, loadDocumentContent, loadDocumentPageImage, QuotaExceededError, type SavedDocument } from './services/storageService';
-import { buildDocumentExport, saveDocumentExport } from './services/exportService';
+import { buildDocumentExport, saveDocumentExport, downloadAsText, downloadAsDocx } from './services/exportService';
 import { AI_DATA_EXPORT_KEY } from './components/editor/SettingsPanel';
 import { Loader2 } from 'lucide-react';
 import { CanvasExecutor } from './services/canvasExecutor';
@@ -721,6 +721,8 @@ export default function App() {
         onClear={handleClear}
         onShowLibrary={handleShowLibrary}
         onDownloadPDF={handleDownloadPDF}
+        onDownloadTxt={() => downloadAsText(pageResults, fileName)}
+        onDownloadDocx={() => downloadAsDocx(pageResults, fileName)}
         onImageQualityChange={setImageQuality}
         onActivePageChange={setActivePage}
         canvasExecutor={executorRef.current ?? undefined}

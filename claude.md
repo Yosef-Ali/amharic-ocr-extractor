@@ -1,296 +1,140 @@
-# Amharic PDF OCR & Layout Extractor — Claude Build Spec
+# Amharic OCR Extractor — AI Coding Context
+
+> **Last updated:** 2026-03-25
+> **Update this file** at the start and end of every coding session.
 
 ---
 
-## CRITICAL: Gemini Model Rules
+## What This App Does
 
-**DO NOT change OCR or image generation model names** — they are specific preview models needed for fast execution and image capabilities.
+A web app that extracts Amharic (Ethiopic/ፊደል) text from scanned PDFs and images
+using Google Gemini AI. Two-pass OCR pipeline (raw text extraction → HTML layout
+reconstruction). Full editor with InDesign-style canvas, AI chat assistant, document
+library with Neon PostgreSQL + Vercel Blob storage, admin panel, and auth.
 
-| Role | Model | File | Rule |
-|---|---|---|---|
-| **Agent chat / function calling** | `gemini-3-flash-preview` | `geminiService.ts` (MODEL) | Tools go in `config.tools` (NOT top-level). Use `gemini-3-flash-preview` or `gemini-3.1-pro-preview` |
-| **AgentPanel flash** | `gemini-3-flash-preview` | `AgentPanel.tsx` (MODEL_API) | Fast agent model |
-| **AgentPanel pro** | `gemini-3.1-pro-preview` | `AgentPanel.tsx` (MODEL_API) | Pro agent model |
-| **OCR extraction** | `gemini-3.1-flash-image-preview` | `geminiService.ts` (OCR_FAST) | **DO NOT CHANGE** — fast preview model for batch OCR |
-| **Image generation** | `gemini-3-pro-image-preview` | `geminiService.ts` (IMAGE_MODEL) | **DO NOT CHANGE** — needed for image gen responseModalities |
+## Current Priority (YC Workflow — Wedge First)
 
-**IMPORTANT**: `gemini-2.5-*` models are **LEGACY/DEPRECATED** — never use them.
-Tools/function declarations MUST go inside `config.tools`, not as a top-level `tools` parameter.
-If function calling breaks, only update MODEL / MODEL_API. Never touch OCR_FAST or IMAGE_MODEL.
+**WEDGE = Upload scanned Amharic page → Get accurate editable text → Export.**
 
----
+Completed:
+1. ✅ OCR accuracy tested on 10 real Amharic documents (88% pass rate)
+2. ✅ Fidel preservation verified (ሀ/ሐ/ኀ, ሰ/ሠ, ጸ/ፀ all distinguished)
+3. ✅ .txt and .doc export wired to BottomToolbar overflow menu
 
-## Project Location
-`~/amharic-ocr-extractor/` — standalone directory at Mac home root
+Next:
+4. Get ONE real user (publisher, scholar, church) to try the OCR flow
+5. Ask: "Would you pay for this?"
+6. Deploy to Vercel
+
+See `WORKFLOW.md` for the full 5-phase YC development plan.
 
 ## Tech Stack
-- **React 18** + **Vite** + **TypeScript**
-- **Tailwind CSS v4** (via `@tailwindcss/vite`)
-- **Lucide React** (icons)
-- `pdfjs-dist` — PDF page → canvas → base64 JPEG
-- `@google/genai` — Gemini AI (OCR + image generation)
-- `html2pdf.js` — client-side PDF export
-- `localforage` + `uuid` — IndexedDB document library
 
----
-
-## Folder Structure
-
-```
-amharic-ocr-extractor/
-├── .env                          # VITE_GEMINI_API_KEY
-├── .gitignore
-├── claude.md                     # This file
-├── vite.config.ts
-├── tsconfig.json / tsconfig.app.json / tsconfig.node.json
-├── package.json
-└── src/
-    ├── main.tsx
-    ├── App.tsx                   # Root — all state & orchestration
-    ├── index.css                 # Tailwind + fonts + placeholder styles
-    ├── html2pdf.d.ts             # Type shim for html2pdf.js
-    ├── services/
-    │   ├── pdfService.ts         # pdfjs-dist → base64 images
-    │   ├── geminiService.ts      # OCR + image generation
-    │   └── storageService.ts     # localforage CRUD
-    └── components/
-        ├── UploadZone.tsx        # Drag-and-drop upload
-        ├── DocumentPage.tsx      # A4 contentEditable page
-        ├── ActionBar.tsx         # Control buttons
-        ├── LibraryModal.tsx      # Saved documents browser
-        └── ProKeyButton.tsx      # AI Studio Pro Key connector
-```
-
----
-
-## 1. File Upload & Processing — `pdfService.ts`
-
-- Use `pdfjs-dist` with CDN worker:
-  ```ts
-  pdfjsLib.GlobalWorkerOptions.workerSrc =
-    `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-  ```
-- Render each page at **scale 2.0** → canvas → `toDataURL('image/jpeg', 0.92)`.
-- Strip the `data:image/jpeg;base64,` prefix — store raw base64 only.
-- For image files: use `FileReader` → `readAsDataURL` → strip prefix.
-
----
-
-## 2. AI OCR — `geminiService.ts`
-
-### Model
-`gemini-2.5-flash`
-
-### Function
-```ts
-extractPageHTML(base64Image: string, previousPageHTML?: string): Promise<string>
-```
-
-### CRITICAL Prompt Rules
-Output **raw HTML only** — no markdown, no code fences, no `<html>/<head>/<body>` tags.
-
-**Layout — use these inline styles exactly:**
-
-```html
-<!-- Two-column layout -->
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; width: 100%;">
-
-<!-- Main header -->
-<h2 style="text-align: center; font-weight: 900; color: #000000; font-size: 1.25rem; margin-bottom: 2rem;">
-
-<!-- Subheader -->
-<h3 style="text-align: center; font-weight: bold; color: #b91c1c; font-size: 1.1rem; margin-bottom: 1rem; letter-spacing: 0.1em;">
-
-<!-- Body paragraph -->
-<p style="line-height: 1.8; color: #1c1917; margin-bottom: 2rem; text-align: justify; font-size: 1rem;">
-```
-
-**Image placeholder — insert this EXACT HTML for any photo/graphic:**
-```html
-<div class="ai-image-placeholder" data-description="[brief English description]">
-  <button class="generate-image-btn print:hidden">Generate Image</button>
-</div>
-```
-
-Pass previous page HTML as context (first 2500 chars) to maintain consistent styling.
-
----
-
-## 3. AI Image Generation — `geminiService.ts`
-
-### Model
-`gemini-2.0-flash-preview-image-generation`
-
-### Function
-```ts
-generateImage(description: string): Promise<string> // data URL
-```
-
-- Pass `generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }`.
-- Extract `part.inlineData.data` → return `data:${mimeType};base64,${data}`.
-- Replace `.ai-image-placeholder` div with `<img src="..." />`.
-
-### Global "Generate All Images"
-- Iterate all `pageResults`.
-- Parse HTML with `DOMParser`.
-- Find all `.ai-image-placeholder` elements.
-- Call `generateImage()` for each, replace with `<img>`.
-- Update `pageResults` state.
-
----
-
-## 4. State Management — `App.tsx`
-
-### State Shape
-```ts
-fileName: string
-pageImages: string[]            // raw base64 per page (0-indexed)
-pageResults: Record<number, string>  // generated HTML, keyed by page number (1-indexed)
-fromPage: number
-toPage: number
-isProcessing: boolean
-processingStatus: string
-isPdfExporting: boolean
-showLibrary: boolean
-```
-
-### Smart Caching
-`pageResults` is never wiped on page range change. Only pages not in cache (or when `force=true`) are re-processed.
-
-### Rate Limiting
-- 5-second countdown delay between each page API call.
-- On `429` / `RESOURCE_EXHAUSTED`: insert styled error HTML into that page, break loop.
-- Error HTML:
-  ```html
-  <div style="border:2px solid #ef4444;border-radius:8px;padding:1.5rem;text-align:center;background:#fef2f2;margin:2rem 0;">
-    <p style="color:#dc2626;font-weight:700;">⚠️ Rate Limit Reached (429)</p>
-    <p style="color:#991b1b;font-size:0.875rem;">Wait 60 seconds then click Regenerate.</p>
-  </div>
-  ```
-
----
-
-## 5. Document Page — `DocumentPage.tsx`
-
-- `contentEditable` div — sync HTML via `useEffect` + direct `innerHTML` assignment.
-- `onBlur` → call `onEdit(pageNumber, ref.current.innerHTML)`.
-- Event delegation for `.generate-image-btn` clicks.
-- A4 styling:
-  ```css
-  width: 210mm;
-  min-height: 297mm;
-  padding: 20mm 22mm;
-  font-family: 'Noto Serif Ethiopic', serif;
-  box-sizing: border-box;
-  ```
-
----
-
-## 6. Action Bar — `ActionBar.tsx`
-
-| Button | Condition | Action |
+| Layer | Technology | Notes |
 |---|---|---|
-| Clear | always | Reset all state |
-| Extract | `hasFile` | `processPages(false)` — skip cached |
-| Regenerate | `hasResults` | `processPages(true)` — force all |
-| All Images | `hasResults` | `handleGenerateAllImages()` |
-| Save | `hasResults` | `saveDocument()` to localforage |
-| Library | always | Open `LibraryModal` |
-| Print | `hasResults` | `window.print()` |
-| Download PDF | `hasResults` | `html2pdf.js` export with spinner |
+| Framework | React 19 + TypeScript + Vite 7 | Single-page app |
+| Styling | Tailwind CSS v4 + CSS custom properties | `@tailwindcss/vite` plugin |
+| AI — OCR | Gemini 3.1 Flash Image Preview (`gemini-3.1-flash-image-preview`) | **DO NOT CHANGE** |
+| AI — Agent/Chat | Gemini 3 Flash Preview (`gemini-3-flash-preview`) | Function calling model |
+| AI — Images | Gemini 3 Pro Image Preview (`gemini-3-pro-image-preview`) | **DO NOT CHANGE** |
+| Database | Neon PostgreSQL (serverless) | `@neondatabase/serverless` |
+| File Storage | Vercel Blob | Page images uploaded via `/api/blob-upload` |
+| Auth | Neon Auth | Email-based sign in/up |
+| PDF Rendering | pdfjs-dist | PDF pages → base64 JPEG |
+| PDF Export | jsPDF + html2canvas | Client-side |
+| Icons | Lucide React | |
+| Fonts | Noto Serif Ethiopic, Noto Sans Ethiopic | Google Fonts |
 
-All buttons disabled while `isProcessing === true`.
+## CRITICAL — Gemini Model Rules
 
----
+**NEVER change OCR or image generation model names.**
+`gemini-2.5-*` models are **LEGACY/DEPRECATED** — never use them.
+Tools/function declarations MUST go inside `config.tools`, not as top-level `tools` param.
 
-## 7. PDF Export
+| Role | Constant | Model String |
+|---|---|---|
+| Agent chat / function calling | `MODEL` | `gemini-3-flash-preview` |
+| OCR extraction (Pass 1 & 2) | `OCR_FAST` | `gemini-3.1-flash-image-preview` |
+| Image generation | `IMAGE_MODEL` | `gemini-3-pro-image-preview` |
+| Cover page generation | `NANOBANANA2` | `gemini-3.1-flash-image-preview` |
 
-```ts
-const html2pdf = (await import('html2pdf.js')).default; // lazy import
-html2pdf().set({
-  margin: 0,
-  filename: `${name}.pdf`,
-  image: { type: 'jpeg', quality: 0.98 },
-  html2canvas: { scale: 2, useCORS: true },
-  jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-}).from(document.getElementById('document-output')).save();
+## Architecture Overview
+
+```
+User uploads PDF/Image
+       ↓
+pdfService.ts — converts to base64 JPEG pages
+       ↓
+geminiService.ts — Pass 1: OCR raw text extraction (OCR_FAST model)
+       ↓
+geminiService.ts — Pass 2: HTML layout reconstruction (OCR_FAST model)
+       ↓
+App.tsx state — pageResults[pageNumber] = HTML string
+       ↓
+EditorShell.tsx → DocumentPage.tsx — renders as contentEditable A4 pages
+       ↓
+storageService.ts — save to Neon DB + Vercel Blob
+       ↓
+exportService.ts / downloadPDF.ts — export as PDF
 ```
 
----
+## Key Files & Sizes
 
-## 8. Document Library — `storageService.ts`
+| File | Lines | Role |
+|---|---|---|
+| `src/services/geminiService.ts` | 1301 | All AI: OCR prompts, chat, image gen, function calling |
+| `src/components/editor/EditorShell.tsx` | 925 | Full editor layout, toolbar, panels, zoom |
+| `src/App.tsx` | 800 | Root state, auth, processing pipeline |
+| `src/services/storageService.ts` | 329 | Neon DB + Vercel Blob CRUD |
+| `src/services/canvasExecutor.ts` | — | DOM manipulation for AI tool calls |
+| `src/services/canvasTools.ts` | — | Gemini FunctionDeclarations for canvas |
+| `src/services/exportService.ts` | — | Document export (PDF, data) |
+| `src/components/editor/AgentPanel.tsx` | — | AI agent chat panel |
+| `src/components/editor/InspectorPanel.tsx` | — | Properties panel (layout, styles) |
+| `src/components/DocumentPage.tsx` | — | A4 contentEditable page component |
 
-```ts
-interface SavedDocument {
-  id: string        // uuid v4
-  name: string
-  savedAt: string   // ISO datetime
-  pageCount: number
-  pageImages: string[]
-  pageResults: Record<number, string>
-}
-```
+## OCR Pipeline Details
 
-Functions: `saveDocument()`, `loadAllDocuments()`, `deleteDocument(id)`.
+Two-pass extraction in `geminiService.ts`:
 
-`localforage.createInstance({ name: 'amharic-ocr-extractor', storeName: 'documents' })`.
+1. **Pass 1 (OCR):** `extractPageHTML()` → sends page image to Gemini with Amharic-specific
+   prompt. Returns raw text with column breaks, image markers, header markers.
+2. **Pass 2 (Layout):** Takes Pass 1 text + page image → reconstructs styled HTML with
+   inline styles (required for html2pdf.js export). Two-column grid, headers, body text.
 
----
+**Amharic fidel preservation is critical:** The prompt explicitly forbids character
+substitution (ሀ≠ሐ≠ኀ, ሰ≠ሠ, ጸ≠ፀ). Never modify these prompts without testing.
 
-## 9. Pro Key — `ProKeyButton.tsx`
+## Known Issues
 
-```ts
-if (window.aistudio?.openSelectKey) {
-  await window.aistudio.openSelectKey();
-  reinitializeClient(); // re-creates GoogleGenAI with new credentials
-}
-```
+- `contentEditable` + React: always set `innerHTML` via `useEffect` + direct DOM, read
+  back via `onBlur`. Never use React VDOM diffing for this.
+- `html2pdf.js` has no types — use the `html2pdf.d.ts` shim.
+- Rate limiting: 5-second delay between Gemini API calls. On 429 error, shows error HTML
+  in page with retry guidance.
+- Gemini image gen `responseModalities` not in SDK types — use `// @ts-expect-error`.
 
----
+## DO NOT
 
-## 10. Styling
+- Change OCR_FAST or IMAGE_MODEL constants without testing on 10+ Amharic samples
+- Remove Amharic fidel preservation logic from prompts
+- Add new npm dependencies without justification
+- Use px units for print layout (use mm)
+- Modify auth/admin code without understanding Neon Auth flow
+- Build new features before validating the OCR wedge with real users
 
-- `index.css` imports Noto Serif Ethiopic + Noto Sans Ethiopic from Google Fonts.
-- `.ai-image-placeholder` — dashed red border, light pink background.
-- `.generate-image-btn` — solid red button.
-- Print: `@media print` hides `.print:hidden`, removes shadows, adds page breaks.
-
----
-
-## 11. Environment
+## Environment Variables
 
 ```env
-# .env
-VITE_GEMINI_API_KEY=your_key_here
+VITE_GEMINI_API_KEY=...       # Google Gemini API key
+VITE_DATABASE_URL=...         # Neon PostgreSQL connection string
+VITE_NEON_AUTH_URL=...        # Neon Auth URL
+VITE_ADMIN_EMAIL=...          # Admin panel access email
 ```
 
-Initialize in `geminiService.ts`:
-```ts
-let client = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || '' });
-```
+## Related Documents
 
----
-
-## Run
-
-```bash
-cd ~/amharic-ocr-extractor
-# Edit .env with your Gemini API key
-npm run dev
-```
-
-## Build
-
-```bash
-npm run build
-```
-
----
-
-## Known Gotchas
-
-- `contentEditable` + React state: always set `innerHTML` via `useEffect` + direct DOM, read back via `onBlur`. Never use `value` or React's VDOM diffing for this.
-- `html2pdf.js` has no official types — use the `html2pdf.d.ts` shim in `src/`.
-- `pdfjs-dist` worker: use CDN URL matching the installed version (`pdfjsLib.version`).
-- Amharic text: requires Noto Serif Ethiopic / Noto Sans Ethiopic — loaded via Google Fonts.
-- Gemini image generation: `responseModalities` is not yet in official SDK types — use `// @ts-expect-error`.
+- `ARCHITECTURE.md` — System design, data flow, component boundaries
+- `DESIGN_SYSTEM.md` — Colors, typography, component patterns
+- `WORKFLOW.md` — YC 5-phase development plan & action items
+- `PLAN.md` — (Legacy) InDesign-style expansion plan
