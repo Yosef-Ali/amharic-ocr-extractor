@@ -1,5 +1,19 @@
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from '../lib/neon';
+import localforage from 'localforage';
+import { getUserQuota } from './adminService';
+
+/** Typed error thrown when a user has reached their document quota. */
+export class QuotaExceededError extends Error {
+  used:  number;
+  limit: number;
+  constructor(used: number, limit: number) {
+    super(`QUOTA_EXCEEDED`);
+    this.name  = 'QuotaExceededError';
+    this.used  = used;
+    this.limit = limit;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Vercel Blob helpers
@@ -91,21 +105,54 @@ function extractThumbnailBase64(
 }
 
 export async function saveDocument(
+  docId: string | null,
   name: string,
   pageImages: string[],
   pageResults: Record<number, string>,
-): Promise<string> {   // returns the new document UUID
+): Promise<string> {   // returns the document UUID
   const userId = requireUserId();
-  const id     = uuidv4();
+  const id     = docId || uuidv4();
+
+  // ── Quota check — only for brand-new documents ──────────────────────────
+  if (!docId) {
+    const { used, limit } = await getUserQuota(userId);
+    if (used >= limit) throw new QuotaExceededError(used, limit);
+  }
+
+  // If we have a docId, fetch the existing images to fill in any empty slots
+  let origImages: string[] = [];
+  if (docId) {
+    const rows = await sql`
+      SELECT c.page_images 
+      FROM document_content c 
+      JOIN documents d ON d.id = c.document_id
+      WHERE d.id = ${docId} AND d.user_id = ${userId}
+      LIMIT 1
+    `;
+    if (rows.length) {
+      origImages = rows[0].page_images as string[];
+    }
+  }
 
   // Upload page images and thumbnail in parallel
   const thumbBase64 = extractThumbnailBase64(pageImages, pageResults);
   const [storedImages, thumbnailUrl] = await Promise.all([
     Promise.all(
       pageImages.map(async (img, i) => {
-        if (isUrl(img)) return img;
-        const url = await uploadToBlob(img, `${id}/page-${i + 1}.jpg`);
-        return url ?? img;
+        // If image is lazy-loaded placeholder (empty string), use original from database
+        let resolveImg = img;
+        if (img === '') {
+           resolveImg = origImages[i] ?? '';
+        }
+
+        // Cache base64 locally on-save to guarantee fast retrieval
+        if (resolveImg && !isUrl(resolveImg)) {
+           localforage.setItem(`aoe_img_${id}_${i}`, resolveImg).catch(console.warn);
+        }
+
+        if (isUrl(resolveImg)) return resolveImg;
+        const url = await uploadToBlob(resolveImg, `${id}/page-${i + 1}.jpg`);
+        return url ?? resolveImg;
       }),
     ),
     thumbBase64
@@ -114,18 +161,50 @@ export async function saveDocument(
       : Promise.resolve(null),
   ]);
 
-  await sql`
-    INSERT INTO documents (id, user_id, name, page_count, thumbnail_url, saved_at, updated_at)
-    VALUES (${id}, ${userId}, ${name}, ${pageImages.length}, ${thumbnailUrl}, NOW(), NOW())
-  `;
-  await sql`
-    INSERT INTO document_content (document_id, page_images, page_results)
-    VALUES (
-      ${id},
-      ${JSON.stringify(storedImages)}::jsonb,
-      ${JSON.stringify(pageResults)}::jsonb
-    )
-  `;
+  if (docId && origImages.length > 0) {
+    // Update existing document instead of duplicating
+    await sql`
+      UPDATE documents 
+      SET name = ${name}, 
+          page_count = ${pageImages.length}, 
+          thumbnail_url = ${thumbnailUrl}, 
+          updated_at = NOW()
+      WHERE id = ${id} AND user_id = ${userId}
+    `;
+    await sql`
+      UPDATE document_content
+      SET page_images = ${JSON.stringify(storedImages)}::jsonb,
+          page_results = ${JSON.stringify(pageResults)}::jsonb
+      WHERE document_id = ${id}
+    `;
+  } else {
+    // Insert new document
+    await sql`
+      INSERT INTO documents (id, user_id, name, page_count, thumbnail_url, saved_at, updated_at)
+      VALUES (${id}, ${userId}, ${name}, ${pageImages.length}, ${thumbnailUrl}, NOW(), NOW())
+    `;
+    await sql`
+      INSERT INTO document_content (document_id, page_images, page_results)
+      VALUES (
+        ${id},
+        ${JSON.stringify(storedImages)}::jsonb,
+        ${JSON.stringify(pageResults)}::jsonb
+      )
+    `;
+  }
+  
+  // Update local IndexedDB cache with the newest document state for instant local loading
+  const docToCache: SavedDocument = {
+    id,
+    name,
+    savedAt: new Date().toISOString(),
+    pageCount: pageImages.length,
+    pageImages: new Array(pageImages.length).fill(''),
+    pageResults,
+    thumbnailUrl: thumbnailUrl ?? undefined
+  };
+  localforage.setItem(`aoe_doc_${id}`, docToCache).catch(console.warn);
+
   return id;
 }
 
@@ -136,21 +215,19 @@ export async function loadAllDocuments(): Promise<SavedDocument[]> {
   const userId = requireUserId();
   await ensureSchema();
   const rows = await sql`
-    SELECT d.id, d.name, d.saved_at, d.page_count,
-           COALESCE(d.thumbnail_url, c.page_images->>0) AS thumbnail_url
+    SELECT d.id, d.name, d.saved_at, d.page_count, d.thumbnail_url
     FROM   documents d
-    LEFT JOIN document_content c ON c.document_id = d.id
     WHERE  d.user_id = ${userId}
     ORDER  BY d.saved_at DESC
   `;
-  return rows.map(r => ({
-    id:           r.id as string,
-    name:         r.name as string,
-    savedAt:      r.saved_at as string,
-    pageCount:    r.page_count as number,
-    thumbnailUrl: (r.thumbnail_url as string | null) ?? undefined,
-    pageImages:   [],
-    pageResults:  {},
+  return rows.map((r: any) => ({
+    id: r.id,
+    name: r.name,
+    savedAt: r.saved_at,
+    pageCount: r.page_count,
+    thumbnailUrl: r.thumbnail_url ?? undefined,
+    pageImages: [],
+    pageResults: {},
   }));
 }
 
@@ -158,10 +235,18 @@ export async function loadAllDocuments(): Promise<SavedDocument[]> {
 // Load full document content (called when user opens a project)
 // ---------------------------------------------------------------------------
 export async function loadDocumentContent(id: string): Promise<SavedDocument> {
+  const cacheKey = `aoe_doc_${id}`;
+  try {
+    const cached = await localforage.getItem<SavedDocument>(cacheKey);
+    if (cached) return cached; // Serve from IndexedDB for zero-latency load
+  } catch (err) {
+    console.warn('Local cache read failed:', err);
+  }
+
   const userId = requireUserId();
   const rows = await sql`
     SELECT d.id, d.name, d.saved_at, d.page_count,
-           c.page_images, c.page_results
+           c.page_results
     FROM   documents d
     JOIN   document_content c ON c.document_id = d.id
     WHERE  d.id = ${id}
@@ -170,14 +255,55 @@ export async function loadDocumentContent(id: string): Promise<SavedDocument> {
   `;
   if (!rows.length) throw new Error('Document not found');
   const r = rows[0];
-  return {
+  
+  const doc: SavedDocument = {
     id:          r.id as string,
     name:        r.name as string,
     savedAt:     r.saved_at as string,
     pageCount:   r.page_count as number,
-    pageImages:  r.page_images as string[],
+    pageImages:  new Array(r.page_count as number).fill(''),
     pageResults: r.page_results as Record<number, string>,
   };
+
+  try {
+    await localforage.setItem(cacheKey, doc);
+  } catch (err) { }
+
+  return doc;
+}
+
+// ---------------------------------------------------------------------------
+// Load specific document page image
+// ---------------------------------------------------------------------------
+export async function loadDocumentPageImage(docId: string, pageIndex: number): Promise<string | null> {
+  const cacheKey = `aoe_img_${docId}_${pageIndex}`;
+  try {
+    const cached = await localforage.getItem<string>(cacheKey);
+    // If the image is locally cached and valid, skip remote SQL fetch entirely
+    if (cached && typeof cached === 'string') return cached;
+  } catch (err) {
+    console.warn('Local cache read failed:', err);
+  }
+
+  const userId = requireUserId();
+  const rows = await sql`
+    SELECT c.page_images->>(${pageIndex}::int) AS img
+    FROM   document_content c
+    JOIN   documents d ON d.id = c.document_id
+    WHERE  c.document_id = ${docId}
+    AND    d.user_id = ${userId}
+    LIMIT  1
+  `;
+  if (!rows.length) return null;
+  const imgStr = rows[0].img as string;
+  
+  if (imgStr) {
+    try {
+      await localforage.setItem(cacheKey, imgStr);
+    } catch (err) { }
+  }
+
+  return imgStr;
 }
 
 // ---------------------------------------------------------------------------
@@ -189,4 +315,15 @@ export async function deleteDocument(id: string): Promise<void> {
     DELETE FROM documents
     WHERE id = ${id} AND user_id = ${userId}
   `;
+  
+  // Wipe associated data from the local IndexedDB cache safely
+  try {
+    await localforage.removeItem(`aoe_doc_${id}`);
+    const keys = await localforage.keys();
+    for (const key of keys) {
+      if (key.startsWith(`aoe_img_${id}_`)) {
+        await localforage.removeItem(key);
+      }
+    }
+  } catch (err) { }
 }

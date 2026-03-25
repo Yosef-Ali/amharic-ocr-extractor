@@ -77,7 +77,13 @@ GENERAL RULES:
 - If the page has two or more columns, extract each column left-to-right, separated by "---COLUMN BREAK---".
 - Mark headers and titles with "### " prefix.
 - Mark a text line with "[BOXED] " ONLY when it sits inside a clearly drawn rectangle whose lines are visible on ALL FOUR sides. Do NOT mark colored or styled text that simply has no surrounding box.
-- IGNORE actual photographs, illustrations, logos, and non-text graphics — extract text only.
+- For photographs, illustrations, drawings, charts, or any non-text graphic region: insert a marker IN PLACE (at the exact reading position where it appears in the page flow):
+    [IMAGE: <brief English description> | pos:<top|upper|middle|lower|bottom> | h:<approximate % of page height the image occupies>]
+  Examples:
+    [IMAGE: black-and-white woodcut of people gathered around a fire | pos:top | h:38]
+    [IMAGE: portrait photograph of a man in traditional dress | pos:upper | h:22]
+    [IMAGE: decorative horizontal divider line | pos:middle | h:2]
+  Do NOT skip the marker — missing it means the image will be lost from the output.
 - Do NOT translate, interpret, or add commentary.
 
 Extract now:`;
@@ -132,26 +138,34 @@ DESIGN PRINCIPLES (follow these — act as a senior document designer):
 - Prefer semantic HTML (h2, h3, p) over generic divs for text content.
 - Every element must carry its own inline styles — no class dependencies.
 
-IMAGE PLACEHOLDERS — strict rules:
+IMAGE PLACEHOLDERS — converting [IMAGE: ...] markers:
 
-  ✅ Insert placeholder ONLY for genuine photographs, illustrations, drawings, charts, or non-text graphics.
+  The extracted text contains [IMAGE: description | pos:X | h:N] markers.
+  Each marker represents a real graphic region in the scan. You MUST:
+  1. Replace the marker with a placeholder div AT THAT EXACT POSITION in the HTML flow.
+  2. Set data-bbox using the scan image as visual reference — look at where the image actually is.
 
-  ❌ NEVER insert a placeholder for:
-     - [BOXED] text areas (render with CSS border instead)
-     - Section headers, captions, or labels — even decoratively styled ones
-     - Any area where you can read the text content
-     - Blank space, page borders, or backgrounds
+  data-bbox format: "x1,y1,x2,y2" — percentages of full page (0–100).
+  x1,y1 = top-left corner of the image; x2,y2 = bottom-right corner.
 
-  When in doubt: if you can read text there → it's HTML, not a placeholder.
+  Use the pos/h hints as a starting estimate, then refine by looking at the scan:
+  - pos:top    → y1 ≈ 0–5
+  - pos:upper  → y1 ≈ 5–25
+  - pos:middle → y1 ≈ 35–55
+  - pos:lower  → y1 ≈ 55–75
+  - pos:bottom → y1 ≈ 75–95
+  - h:38 means the image occupies ~38% of the page height, so y2 ≈ y1 + 38
+  - For x1/x2: a full-width image is 0,100; a left-column image is 0,48; right-column is 52,100.
 
-  Use this exact HTML for true image regions only:
-
-<div class="ai-image-placeholder" data-description="[specific English description of what the image shows]">
+  Use this exact HTML:
+<div class="ai-image-placeholder" data-description="[description from marker]" data-bbox="[x1],[y1],[x2],[y2]">
   <span class="ai-ph-icon">📷</span>
-  <p class="ai-ph-label">[same description]</p>
+  <p class="ai-ph-label">[description from marker]</p>
 </div>
 
-  Make data-description as specific as possible (e.g. "religious illustration: Jesus blessing a kneeling person, black-and-white engraving, located in right column middle"). This description is used to locate the image in the original scan.
+  ❌ NEVER insert a placeholder for:
+     - [BOXED] text areas — render those with a CSS border div
+     - Any area where you can read the actual text content
 
 ${prevHTML
     ? `PREVIOUS PAGE HTML (use for style consistency — do NOT repeat its content):\n${prevHTML.slice(0, 2500)}`
@@ -260,7 +274,44 @@ export async function extractPageHTML(
     contents: [{ role: 'user', parts: [imagePart, { text: buildLayoutPrompt(extractedText, previousPageHTML) }] }],
   });
 
-  return verifyLayout(layoutResponse.text ?? '');
+  const layoutHtml = verifyLayout(layoutResponse.text ?? '');
+
+  // ── Pass 3: resolve image placeholders by cropping directly from the scan ──
+  return resolvePlaceholders(layoutHtml, base64Image);
+}
+
+// ---------------------------------------------------------------------------
+// Resolve image placeholders — crop each bbox region from the original scan
+// and replace the placeholder div with a real <img> tag.
+// Falls back to keeping the placeholder when crop fails.
+// ---------------------------------------------------------------------------
+async function resolvePlaceholders(html: string, base64Image: string): Promise<string> {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const placeholders = Array.from(
+    doc.querySelectorAll<HTMLElement>('.ai-image-placeholder[data-bbox]'),
+  );
+
+  for (const ph of placeholders) {
+    const bboxStr = ph.dataset.bbox ?? '';
+    const parts = bboxStr.split(',').map(Number);
+    if (parts.length !== 4 || parts.some(isNaN)) continue;
+    const [x1, y1, x2, y2] = parts;
+    if (x2 <= x1 || y2 <= y1) continue;
+
+    try {
+      const dataUrl = await cropPageRegion(base64Image, { x1, y1, x2, y2 }, 0.5);
+      const img = doc.createElement('img');
+      img.src = dataUrl;
+      img.alt = ph.dataset.description ?? 'image';
+      img.style.cssText =
+        'max-width:100%;height:auto;display:block;margin:0.75rem auto;border-radius:2px;';
+      ph.replaceWith(img);
+    } catch {
+      // keep placeholder as-is if crop fails
+    }
+  }
+
+  return doc.body.innerHTML;
 }
 
 // ---------------------------------------------------------------------------

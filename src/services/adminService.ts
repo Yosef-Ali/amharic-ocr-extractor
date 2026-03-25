@@ -9,6 +9,7 @@ export interface AdminUser {
   name:      string | null;
   createdAt: string;
   docCount:  number;
+  docLimit:  number;
   blocked:   boolean;
 }
 
@@ -41,10 +42,9 @@ export async function ensureUsersTable(): Promise<void> {
       last_seen  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
-  // Add blocked column if table already existed without it
-  await sql`
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT FALSE
-  `;
+  // Add columns if table already existed without them
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked   BOOLEAN NOT NULL DEFAULT FALSE`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS doc_limit INT     NOT NULL DEFAULT 3`;
 }
 
 // ---------------------------------------------------------------------------
@@ -86,11 +86,12 @@ export async function getAdminUsers(): Promise<AdminUser[]> {
       u.email,
       u.name,
       u.blocked,
+      u.doc_limit,
       u.created_at,
       COUNT(d.id)::int AS doc_count
     FROM users u
     LEFT JOIN documents d ON d.user_id = u.id
-    GROUP BY u.id, u.email, u.name, u.blocked, u.created_at
+    GROUP BY u.id, u.email, u.name, u.blocked, u.doc_limit, u.created_at
     ORDER BY u.created_at DESC
   `;
   return rows.map(r => ({
@@ -99,8 +100,31 @@ export async function getAdminUsers(): Promise<AdminUser[]> {
     name:      r.name       as string | null,
     createdAt: r.created_at as string,
     docCount:  r.doc_count  as number,
+    docLimit:  r.doc_limit  as number,
     blocked:   r.blocked    as boolean,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Per-user quota — returns used / limit (called from storageService)
+// ---------------------------------------------------------------------------
+export async function getUserQuota(userId: string): Promise<{ used: number; limit: number }> {
+  const rows = await sql`
+    SELECT u.doc_limit, COUNT(d.id)::int AS used
+    FROM users u
+    LEFT JOIN documents d ON d.user_id = u.id
+    WHERE u.id = ${userId}
+    GROUP BY u.doc_limit
+  `;
+  if (!rows[0]) return { used: 0, limit: 3 };
+  return { used: rows[0].used as number, limit: rows[0].doc_limit as number };
+}
+
+// ---------------------------------------------------------------------------
+// Set per-user document limit (admin only)
+// ---------------------------------------------------------------------------
+export async function setUserDocLimit(userId: string, limit: number): Promise<void> {
+  await sql`UPDATE users SET doc_limit = ${limit} WHERE id = ${userId}`;
 }
 
 // ---------------------------------------------------------------------------

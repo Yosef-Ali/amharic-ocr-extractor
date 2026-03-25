@@ -6,6 +6,7 @@ import {
   deleteDocument,
   type SavedDocument,
 } from '../services/storageService';
+import DeleteConfirmModal from './DeleteConfirmModal';
 
 interface Props {
   onLoad: (doc: SavedDocument) => void;
@@ -13,22 +14,32 @@ interface Props {
 }
 
 export default function LibraryModal({ onLoad, onClose }: Props) {
-  const [docs, setDocs] = useState<SavedDocument[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
+  const [docs,          setDocs]          = useState<SavedDocument[]>([]);
+  const [loading,       setLoading]       = useState(true);
+  const [loadingId,     setLoadingId]     = useState<string | null>(null);
+  const [query,         setQuery]         = useState('');
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   useEffect(() => {
     loadAllDocuments().then((d) => { setDocs(d); setLoading(false); });
   }, []);
 
-  const handleDelete = async (id: string) => {
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirmId) return;
+    const id = deleteConfirmId;
+    setDeleteConfirmId(null);
     await deleteDocument(id);
     setDocs((prev) => prev.filter((d) => d.id !== id));
   };
 
   return (
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-all">
+      {deleteConfirmId && (
+        <DeleteConfirmModal
+          onConfirm={handleConfirmDelete}
+          onCancel={() => setDeleteConfirmId(null)}
+        />
+      )}
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden animate-slide-up ring-1 ring-gray-900/5">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-gray-50/50">
@@ -125,7 +136,7 @@ export default function LibraryModal({ onLoad, onClose }: Props) {
                     : <FolderOpen size={18} />}
                 </button>
                 <button
-                  onClick={() => handleDelete(doc.id)}
+                  onClick={() => setDeleteConfirmId(doc.id)}
                   disabled={loadingId !== null}
                   title="Delete document"
                   className="flex items-center justify-center p-2 bg-gray-50 text-gray-400 rounded-lg hover:bg-red-50 hover:text-red-500 transition-colors disabled:opacity-50"

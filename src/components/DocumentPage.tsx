@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Trash2, X, Copy } from 'lucide-react';
 import ImageEditModal, { type ImageEditTarget } from './ImageEditModal';
 import { editImage, type ImageGenOptions } from '../services/geminiService';
+import FloatingToolbar from './FloatingToolbar';
 
 // ── Undo / Redo history stack ────────────────────────────────────────────────
 const MAX_HISTORY = 80;
@@ -112,6 +113,7 @@ const SELECTABLE_TAGS = new Set([
   'P','BLOCKQUOTE','PRE',
   'TABLE','FIGURE','UL','OL','LI',
   'DIV','SECTION','ARTICLE','HR',
+  'IMG',
 ]);
 
 /** Find the most-specific selectable block ancestor within editorEl */
@@ -148,20 +150,31 @@ export default function DocumentPage({
   const hoveredElRef         = useRef<HTMLElement | null>(null);
   const selectedElRef        = useRef<HTMLElement | null>(null);
 
+  // ── Multi-select state ─────────────────────────────────────
+  const multiSelRef   = useRef<Set<HTMLElement>>(new Set());
+  const [multiCount,  setMultiCount]   = useState(0);
+  const [rubberBand,  setRubberBand]   = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const rbStartRef         = useRef<{ cx: number; cy: number } | null>(null);
+  const rbActiveRef        = useRef(false);
+  const rbJustFinishedRef  = useRef(false);
+  const [dropSlot,    setDropSlot]     = useState<{ parent: HTMLElement; before: HTMLElement | null; rect: DOMRect } | null>(null);
+
   // InDesign-style: store click position so we can place the caret after exiting selection mode
   const pendingCursorRef = useRef<{ x: number; y: number } | null>(null);
 
   // ── Drag-to-move & resize state ──
   const dragStateRef = useRef<{
-    mode: 'move' | 'resize';
-    handle?: string; // nw, n, ne, e, se, s, sw, w
+    mode: 'move' | 'resize' | 'grid-reorder';
+    handle?: string;
     startX: number;
     startY: number;
     origLeft: number;
     origTop: number;
     origWidth: number;
     origHeight: number;
-    origScreenRect?: DOMRect; // for snap calculations
+    origScreenRect?: DOMRect;
+    origPositions?: Map<HTMLElement, { left: number; top: number }>;
+    gridParent?: HTMLElement;
   } | null>(null);
   const [handleRects, setHandleRects] = useState<DOMRect | null>(null);
   const [dimTip, setDimTip] = useState<{ x: number; y: number; text: string } | null>(null);
@@ -169,6 +182,9 @@ export default function DocumentPage({
 
   // Track active paragraph at cursor position (text editing mode)
   const activeParaRef = useRef<HTMLElement | null>(null);
+
+  // Floating format toolbar position (shown on text selection)
+  const [toolbar, setToolbar] = useState<{ x: number; y: number } | null>(null);
 
   const onElementSelectRef = useRef(onElementSelect);
   useEffect(() => { onElementSelectRef.current = onElementSelect; }, [onElementSelect]);
@@ -328,26 +344,41 @@ export default function DocumentPage({
       hoveredElRef.current = null;
       selectedElRef.current?.classList.remove('sel-active');
       selectedElRef.current = null;
+      multiSelRef.current.forEach(e => e.classList.remove('sel-active', 'sel-multi'));
+      multiSelRef.current.clear();
+      setMultiCount(0);
       setActionBar(null);
       setHandleRects(null);
+      setRubberBand(null);
+      setDropSlot(null);
       return;
     }
+
+    const clearMulti = () => {
+      multiSelRef.current.forEach(e => e.classList.remove('sel-active', 'sel-multi'));
+      multiSelRef.current.clear();
+      setMultiCount(0);
+    };
 
     const deselect = () => {
       selectedElRef.current?.classList.remove('sel-active');
       selectedElRef.current = null;
+      clearMulti();
       setActionBar(null);
       setHandleRects(null);
       onElementSelectRef.current?.(null);
     };
 
     const onMove = (e: MouseEvent) => {
-      // Skip hover highlight while dragging/resizing
       if (dragStateRef.current) return;
+      if (rbActiveRef.current) return;
       const found = findSelectableEl(e.target as HTMLElement, el);
       if (hoveredElRef.current !== found) {
         hoveredElRef.current?.classList.remove('sel-hover');
-        if (found && found !== selectedElRef.current) found.classList.add('sel-hover');
+        const isSelected = found
+          ? (found === selectedElRef.current || multiSelRef.current.has(found))
+          : false;
+        if (found && !isSelected) found.classList.add('sel-hover');
         hoveredElRef.current = found;
       }
     };
@@ -358,8 +389,36 @@ export default function DocumentPage({
     };
 
     const onClick = (e: MouseEvent) => {
+      // Ignore if rubber-band just finished (flag survives until after mouseup→click)
+      if (rbJustFinishedRef.current) { rbJustFinishedRef.current = false; return; }
+      if (rbActiveRef.current) return;
       e.preventDefault();
       const found = findSelectableEl(e.target as HTMLElement, el);
+
+      if (e.shiftKey && found) {
+        // ── Shift+click: toggle element in multi-selection ──
+        hoveredElRef.current = null;
+        // Promote single-selected into multi-set first
+        if (selectedElRef.current && !multiSelRef.current.has(selectedElRef.current)) {
+          selectedElRef.current.classList.add('sel-multi');
+          multiSelRef.current.add(selectedElRef.current);
+        }
+        if (multiSelRef.current.has(found)) {
+          found.classList.remove('sel-active', 'sel-multi');
+          multiSelRef.current.delete(found);
+        } else {
+          found.classList.remove('sel-hover');
+          found.classList.add('sel-active', 'sel-multi');
+          multiSelRef.current.add(found);
+          selectedElRef.current = found;
+        }
+        setMultiCount(multiSelRef.current.size);
+        refreshActionBar();
+        return;
+      }
+
+      // Normal click — clear multi, single-select
+      clearMulti();
       if (!found) { deselect(); return; }
       if (found === selectedElRef.current) { deselect(); return; }
 
@@ -372,6 +431,73 @@ export default function DocumentPage({
       refreshActionBar();
       refreshHandles();
       onElementSelectRef.current?.(readElementStyles(found));
+    };
+
+    // ── Rubber-band: only starts on empty-space mousedown ──────────────────
+    const onMouseDownRb = (e: MouseEvent) => {
+      const found = findSelectableEl(e.target as HTMLElement, el);
+      // Only start rubber-band when clicking on the editor background itself
+      if (found) return;
+      if (!e.shiftKey) clearMulti();
+      rbStartRef.current = { cx: e.clientX, cy: e.clientY };
+      rbActiveRef.current = false; // not active until mouse moves enough
+    };
+
+    // Move/up are on document so dragging outside the editor still works
+    const onMouseMoveRbDoc = (e: MouseEvent) => {
+      if (!rbStartRef.current) return;
+      const dx = e.clientX - rbStartRef.current.cx;
+      const dy = e.clientY - rbStartRef.current.cy;
+      // Activate only after 5px of movement to avoid accidental triggers
+      if (!rbActiveRef.current && Math.hypot(dx, dy) < 5) return;
+      rbActiveRef.current = true;
+      const pr = el.getBoundingClientRect();
+      const sx = rbStartRef.current.cx - pr.left;
+      const sy = rbStartRef.current.cy - pr.top;
+      const cx = e.clientX - pr.left;
+      const cy = e.clientY - pr.top;
+      setRubberBand({
+        x: Math.min(sx, cx), y: Math.min(sy, cy),
+        w: Math.abs(cx - sx), h: Math.abs(cy - sy),
+      });
+    };
+
+    const onMouseUpRbDoc = (e: MouseEvent) => {
+      const wasActive = rbActiveRef.current;
+      const start     = rbStartRef.current;
+      rbActiveRef.current = false;
+      rbStartRef.current  = null;
+      setRubberBand(null);
+      if (!wasActive || !start) return;
+
+      const pr = el.getBoundingClientRect();
+      const sx = start.cx - pr.left;
+      const sy = start.cy - pr.top;
+      const cx = e.clientX - pr.left;
+      const cy = e.clientY - pr.top;
+      const rb = {
+        x: Math.min(sx, cx), y: Math.min(sy, cy),
+        w: Math.abs(cx - sx), h: Math.abs(cy - sy),
+      };
+      if (rb.w < 5 || rb.h < 5) return;
+
+      const seen = new Set<HTMLElement>();
+      el.querySelectorAll('h1,h2,h3,h4,h5,h6,p,div,img,figure,blockquote,ul,ol,li,table').forEach(child => {
+        const r  = child.getBoundingClientRect();
+        const rx = r.left - pr.left;
+        const ry = r.top  - pr.top;
+        // Select if element overlaps the band at all (not just fully contained)
+        if (rx < rb.x + rb.w && rx + r.width > rb.x && ry < rb.y + rb.h && ry + r.height > rb.y) {
+          const resolved = findSelectableEl(child as HTMLElement, el) ?? (child as HTMLElement);
+          if (!seen.has(resolved) && el.contains(resolved) && resolved !== el) {
+            seen.add(resolved);
+            resolved.classList.add('sel-active', 'sel-multi');
+            multiSelRef.current.add(resolved);
+          }
+        }
+      });
+      setMultiCount(multiSelRef.current.size);
+      if (multiSelRef.current.size > 0) rbJustFinishedRef.current = true;
     };
 
     const onDblClick = (e: MouseEvent) => {
@@ -388,11 +514,17 @@ export default function DocumentPage({
     el.addEventListener('mousemove', onMove);
     el.addEventListener('mouseleave', onLeave);
     el.addEventListener('click', onClick);
+    el.addEventListener('mousedown', onMouseDownRb);
+    document.addEventListener('mousemove', onMouseMoveRbDoc);
+    document.addEventListener('mouseup', onMouseUpRbDoc);
     el.addEventListener('dblclick', onDblClick);
     return () => {
       el.removeEventListener('mousemove', onMove);
       el.removeEventListener('mouseleave', onLeave);
       el.removeEventListener('click', onClick);
+      el.removeEventListener('mousedown', onMouseDownRb);
+      document.removeEventListener('mousemove', onMouseMoveRbDoc);
+      document.removeEventListener('mouseup', onMouseUpRbDoc);
       el.removeEventListener('dblclick', onDblClick);
     };
   }, [selectionMode, refreshActionBar, onExitSelectionMode]);
@@ -422,20 +554,26 @@ export default function DocumentPage({
   useEffect(() => {
     if (selectionMode) {
       activeParaRef.current = null;
+      setToolbar(null);
       return;
     }
     const update = () => {
       const sel = window.getSelection();
       const el  = editorRef.current;
-      if (!sel || !el || !sel.rangeCount) return;
+      if (!sel || !el || !sel.rangeCount) { setToolbar(null); return; }
       const anchor = sel.anchorNode;
       if (!anchor || !el.contains(anchor)) {
         if (activeParaRef.current) {
           activeParaRef.current = null;
           onElementSelectRef.current?.(null);
         }
+        setToolbar(null);
         return;
       }
+
+        // On selectionchange just collapse-hide — never show during active drag
+      if (sel.isCollapsed) setToolbar(null);
+
       const target = anchor.nodeType === Node.TEXT_NODE
         ? anchor.parentElement!
         : anchor as HTMLElement;
@@ -447,6 +585,43 @@ export default function DocumentPage({
     };
     document.addEventListener('selectionchange', update);
     return () => document.removeEventListener('selectionchange', update);
+  }, [selectionMode]);
+
+  // ── Show toolbar only after mouseup / keyup (never mid-drag) ──────────────
+  useEffect(() => {
+    if (selectionMode) return;
+    const el = editorRef.current;
+    if (!el) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const tryShow = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+        if (!el.contains(sel.anchorNode)) return;
+        const range = sel.getRangeAt(0);
+        const rect  = range.getBoundingClientRect();
+        if (rect.width > 0) setToolbar({ x: rect.left + rect.width / 2, y: rect.top });
+      }, 80);
+    };
+
+    const hide = (e: MouseEvent) => {
+      // Keep toolbar alive when user clicks its own buttons
+      if ((e.target as Element)?.closest?.('[data-ft]')) return;
+      if (timer) clearTimeout(timer);
+      setToolbar(null);
+    };
+
+    el.addEventListener('mouseup', tryShow);
+    el.addEventListener('keyup',   tryShow);
+    document.addEventListener('mousedown', hide);
+    return () => {
+      if (timer) clearTimeout(timer);
+      el.removeEventListener('mouseup', tryShow);
+      el.removeEventListener('keyup',   tryShow);
+      document.removeEventListener('mousedown', hide);
+    };
   }, [selectionMode]);
 
   // Keep action bar + handles in sync on scroll, zoom, pan
@@ -483,37 +658,80 @@ export default function DocumentPage({
 
     const onMouseDown = (e: MouseEvent) => {
       const sel = selectedElRef.current;
-      if (!sel || !sel.contains(e.target as Node)) return;
-      // Don't start drag on action bar buttons
+      // Only start drag if clicking on a currently-selected element
+      const isOnSelected = sel?.contains(e.target as Node)
+        || Array.from(multiSelRef.current).some(m => m.contains(e.target as Node));
+      if (!isOnSelected) return;
       if ((e.target as HTMLElement).closest('.sel-action-bar')) return;
 
       e.preventDefault();
       e.stopPropagation();
 
-      // Ensure element has position: relative for offset movement
-      if (!sel.style.position || sel.style.position === 'static') {
-        sel.style.position = 'relative';
-      }
-      const left = parseFloat(sel.style.left || '0');
-      const top  = parseFloat(sel.style.top  || '0');
+      const dragEl = sel ?? Array.from(multiSelRef.current)[0]!;
+      const parent = dragEl.parentElement;
+      const parentDisplay = parent ? window.getComputedStyle(parent).display : '';
+      const isGridFlow = parentDisplay === 'grid' || parentDisplay === 'flex';
 
-      dragStateRef.current = {
-        mode: 'move',
-        startX: e.clientX,
-        startY: e.clientY,
-        origLeft: left,
-        origTop: top,
-        origWidth: sel.offsetWidth,
-        origHeight: sel.offsetHeight,
-        origScreenRect: sel.getBoundingClientRect(),
-      };
-      sel.classList.add('sel-dragging');
+      if (isGridFlow && multiSelRef.current.size <= 1) {
+        // ── Grid/flex reorder mode ──
+        dragStateRef.current = {
+          mode: 'grid-reorder',
+          startX: e.clientX,
+          startY: e.clientY,
+          origLeft: 0, origTop: 0,
+          origWidth: dragEl.offsetWidth, origHeight: dragEl.offsetHeight,
+          gridParent: parent!,
+        };
+        dragEl.classList.add('sel-dragging');
+      } else {
+        // ── Free-move mode ──
+        // Collect original positions for all selected elements
+        const origPositions = new Map<HTMLElement, { left: number; top: number }>();
+        const allSel = multiSelRef.current.size > 1
+          ? Array.from(multiSelRef.current)
+          : [dragEl];
+        for (const m of allSel) {
+          if (!m.style.position || m.style.position === 'static') m.style.position = 'relative';
+          origPositions.set(m, {
+            left: parseFloat(m.style.left || '0'),
+            top:  parseFloat(m.style.top  || '0'),
+          });
+          m.classList.add('sel-dragging');
+        }
+        const left = parseFloat(dragEl.style.left || '0');
+        const top  = parseFloat(dragEl.style.top  || '0');
+        dragStateRef.current = {
+          mode: 'move',
+          startX: e.clientX,
+          startY: e.clientY,
+          origLeft: left,
+          origTop: top,
+          origWidth: dragEl.offsetWidth,
+          origHeight: dragEl.offsetHeight,
+          origScreenRect: dragEl.getBoundingClientRect(),
+          origPositions,
+        };
+      }
     };
 
     const onMouseMove = (e: MouseEvent) => {
       const drag = dragStateRef.current;
-      const sel = selectedElRef.current;
+      const sel = selectedElRef.current ?? Array.from(multiSelRef.current)[0] ?? null;
       if (!drag || !sel) return;
+
+      if (drag.mode === 'grid-reorder') {
+        const parent = drag.gridParent!;
+        const target = document.elementFromPoint(e.clientX, e.clientY);
+        const hovered = target
+          ? Array.from(parent.children).find(c => c.contains(target) || c === target) as HTMLElement | undefined
+          : undefined;
+        if (hovered && hovered !== sel) {
+          setDropSlot({ parent, before: hovered, rect: hovered.getBoundingClientRect() });
+        } else {
+          setDropSlot(null);
+        }
+        return;
+      }
 
       const scale = zoom / 100;
       const dx = (e.clientX - drag.startX) / scale;
@@ -547,7 +765,7 @@ export default function DocumentPage({
           // Add sibling element edges as snap targets
           const siblings = pageEl.querySelectorAll(':scope > *');
           siblings.forEach(sib => {
-            if (sib === sel || !(sib instanceof HTMLElement)) return;
+            if (multiSelRef.current.has(sib as HTMLElement) || sib === sel || !(sib instanceof HTMLElement)) return;
             const sr = sib.getBoundingClientRect();
             if (sr.width === 0 && sr.height === 0) return;
             snapXTargets.push(sr.left, sr.right, sr.left + sr.width / 2);
@@ -593,8 +811,16 @@ export default function DocumentPage({
           }
         }
 
-        sel.style.left = `${drag.origLeft + dx + snapDx}px`;
-        sel.style.top  = `${drag.origTop  + dy + snapDy}px`;
+        // Move all selected elements (group move)
+        if (drag.origPositions && drag.origPositions.size > 1) {
+          drag.origPositions.forEach((orig, el) => {
+            el.style.left = `${orig.left + dx + snapDx}px`;
+            el.style.top  = `${orig.top  + dy + snapDy}px`;
+          });
+        } else {
+          sel.style.left = `${drag.origLeft + dx + snapDx}px`;
+          sel.style.top  = `${drag.origTop  + dy + snapDy}px`;
+        }
         setSnapGuides(guides);
         refreshActionBar();
         refreshHandles();
@@ -694,17 +920,34 @@ export default function DocumentPage({
     };
 
     const onMouseUp = () => {
-      const sel = selectedElRef.current;
-      if (dragStateRef.current && sel) {
+      const drag = dragStateRef.current;
+      const sel = selectedElRef.current ?? Array.from(multiSelRef.current)[0] ?? null;
+      if (!drag || !sel) return;
+
+      if (drag.mode === 'grid-reorder') {
         sel.classList.remove('sel-dragging');
+        if (dropSlot) {
+          dropSlot.parent.insertBefore(sel, dropSlot.before);
+          setDropSlot(null);
+        }
         dragStateRef.current = null;
-        setDimTip(null);
-        setSnapGuides([]);
-        // Commit the position/size change
         if (editorRef.current) onEdit(pageNumber, editorRef.current.innerHTML);
         refreshActionBar();
         refreshHandles();
-        onElementSelectRef.current?.(readElementStyles(sel));
+      } else {
+        // Remove dragging class from all selected
+        if (drag.origPositions) {
+          drag.origPositions.forEach((_, el) => el.classList.remove('sel-dragging'));
+        } else {
+          sel.classList.remove('sel-dragging');
+        }
+        dragStateRef.current = null;
+        setDimTip(null);
+        setSnapGuides([]);
+        if (editorRef.current) onEdit(pageNumber, editorRef.current.innerHTML);
+        refreshActionBar();
+        refreshHandles();
+        if (selectedElRef.current) onElementSelectRef.current?.(readElementStyles(selectedElRef.current));
       }
     };
 
@@ -724,29 +967,56 @@ export default function DocumentPage({
     if (!selectionMode) return;
     const onKey = (e: KeyboardEvent) => {
       const sel = selectedElRef.current;
-      if (!sel) return;
+      const hasMulti = multiSelRef.current.size > 1;
+      if (!sel && !hasMulti) return;
+
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (editorRef.current?.contains(sel)) {
-          e.preventDefault();
+        e.preventDefault();
+        if (hasMulti) {
+          multiSelRef.current.forEach(m => { if (editorRef.current?.contains(m)) m.remove(); });
+          multiSelRef.current.clear();
+          setMultiCount(0);
+          selectedElRef.current = null;
+          setActionBar(null);
+        } else if (sel && editorRef.current?.contains(sel)) {
           sel.remove();
           selectedElRef.current = null;
           setActionBar(null);
-          if (editorRef.current) onEdit(pageNumber, editorRef.current.innerHTML);
         }
+        if (editorRef.current) onEdit(pageNumber, editorRef.current.innerHTML);
       }
+
       if (e.key === 'Escape') {
-        sel.classList.remove('sel-active');
+        multiSelRef.current.forEach(m => m.classList.remove('sel-active', 'sel-multi'));
+        multiSelRef.current.clear();
+        setMultiCount(0);
+        if (sel) sel.classList.remove('sel-active');
         selectedElRef.current = null;
         setActionBar(null);
         onElementSelectRef.current?.(null);
       }
+
       // Ctrl/Cmd+D → duplicate
       if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
         e.preventDefault();
-        duplicateSelected();
+        if (hasMulti) {
+          const clones: HTMLElement[] = [];
+          multiSelRef.current.forEach(m => {
+            const clone = m.cloneNode(true) as HTMLElement;
+            m.after(clone);
+            clones.push(clone);
+          });
+          multiSelRef.current.forEach(m => m.classList.remove('sel-active', 'sel-multi'));
+          multiSelRef.current.clear();
+          clones.forEach(c => { c.classList.add('sel-active', 'sel-multi'); multiSelRef.current.add(c); });
+          setMultiCount(clones.length);
+          if (editorRef.current) onEdit(pageNumber, editorRef.current.innerHTML);
+        } else {
+          duplicateSelected();
+        }
       }
       // ── Arrow key nudge: 1px default, 10px with Shift ──
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+      if (sel && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault();
         if (!sel.style.position || sel.style.position === 'static') {
           sel.style.position = 'relative';
@@ -927,6 +1197,46 @@ export default function DocumentPage({
     }
   };
 
+  // ── Floating toolbar: format selected text ───────────────────────────────
+  const handleFormat = useCallback((cmd: string, value?: string) => {
+    const el = editorRef.current;
+    if (!el) return;
+    el.focus();
+    document.execCommand(cmd, false, value ?? '');
+    snapshotForUndo();
+    onEdit(pageNumber, el.innerHTML);
+  }, [pageNumber, onEdit, snapshotForUndo]);
+
+  // Apply pixel font size to selected text via Range/span wrapping
+  useEffect(() => {
+    if (!toolbar) return;
+    const onFontSizePx = (e: Event) => {
+      const { px } = (e as CustomEvent).detail as { px: number };
+      const sel = window.getSelection();
+      const el  = editorRef.current;
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed || !el) return;
+      const range = sel.getRangeAt(0);
+      if (!el.contains(range.commonAncestorContainer)) return;
+      const span = document.createElement('span');
+      span.style.fontSize = `${px}px`;
+      try {
+        range.surroundContents(span);
+      } catch {
+        const frag = range.extractContents();
+        span.appendChild(frag);
+        range.insertNode(span);
+      }
+      sel.removeAllRanges();
+      const nr = document.createRange();
+      nr.selectNodeContents(span);
+      sel.addRange(nr);
+      snapshotForUndo();
+      onEdit(pageNumber, el.innerHTML);
+    };
+    window.addEventListener('ft-font-size-px', onFontSizePx);
+    return () => window.removeEventListener('ft-font-size-px', onFontSizePx);
+  }, [toolbar, pageNumber, onEdit, snapshotForUndo]);
+
   // ── AI image edit ─────────────────────────────────────────────────────────
   const handleEditConfirm = async (
     prompt: string,
@@ -981,6 +1291,59 @@ export default function DocumentPage({
     setHandleRects(null);
     onElementSelectRef.current?.(null);
   };
+
+  // ── Align multiple selected elements ──────────────────────────────────────
+  const alignSelected = useCallback((mode: string) => {
+    const els = Array.from(multiSelRef.current);
+    if (els.length < 2) return;
+    const rects = els.map(e => ({ el: e, r: e.getBoundingClientRect() }));
+    const minL = Math.min(...rects.map(x => x.r.left));
+    const maxR = Math.max(...rects.map(x => x.r.right));
+    const minT = Math.min(...rects.map(x => x.r.top));
+    const maxB = Math.max(...rects.map(x => x.r.bottom));
+    const cx   = (minL + maxR) / 2;
+    const cy   = (minT + maxB) / 2;
+    const sc   = zoom / 100;
+
+    for (const { el: e, r } of rects) {
+      if (!e.style.position || e.style.position === 'static') e.style.position = 'relative';
+      const origLeft = parseFloat(e.style.left || '0');
+      const origTop  = parseFloat(e.style.top  || '0');
+      switch (mode) {
+        case 'left':        e.style.left = `${origLeft + (minL - r.left) / sc}px`; break;
+        case 'right':       e.style.left = `${origLeft + (maxR - r.right) / sc}px`; break;
+        case 'center-h':    e.style.left = `${origLeft + (cx - (r.left + r.width / 2)) / sc}px`; break;
+        case 'top':         e.style.top  = `${origTop  + (minT - r.top) / sc}px`; break;
+        case 'bottom':      e.style.top  = `${origTop  + (maxB - r.bottom) / sc}px`; break;
+        case 'center-v':    e.style.top  = `${origTop  + (cy - (r.top + r.height / 2)) / sc}px`; break;
+      }
+    }
+    // Distribute horizontally
+    if (mode === 'dist-h') {
+      const sorted = [...rects].sort((a, b) => a.r.left - b.r.left);
+      const totalW = sorted.reduce((s, x) => s + x.r.width, 0);
+      const gap = (maxR - minL - totalW) / (sorted.length - 1);
+      let cursor = minL;
+      for (const { el: e, r } of sorted) {
+        const origLeft = parseFloat(e.style.left || '0');
+        e.style.left = `${origLeft + (cursor - r.left) / sc}px`;
+        cursor += r.width + gap;
+      }
+    }
+    // Distribute vertically
+    if (mode === 'dist-v') {
+      const sorted = [...rects].sort((a, b) => a.r.top - b.r.top);
+      const totalH = sorted.reduce((s, x) => s + x.r.height, 0);
+      const gap = (maxB - minT - totalH) / (sorted.length - 1);
+      let cursor = minT;
+      for (const { el: e, r } of sorted) {
+        const origTop = parseFloat(e.style.top || '0');
+        e.style.top = `${origTop + (cursor - r.top) / sc}px`;
+        cursor += r.height + gap;
+      }
+    }
+    if (editorRef.current) onEdit(pageNumber, editorRef.current.innerHTML);
+  }, [zoom, pageNumber, onEdit]);
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -1159,6 +1522,101 @@ export default function DocumentPage({
           )}
         </>,
         document.body
+      )}
+
+      {/* ── Multi-select group toolbar ── */}
+      {selectionMode && multiCount >= 2 && createPortal(
+        <div
+          className="multi-sel-bar"
+          style={{ position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)', zIndex: 9998 }}
+        >
+          <span className="multi-sel-ct">{multiCount} selected</span>
+          <div className="multi-sel-sep" />
+          {/* Align */}
+          <button className="multi-sel-btn" title="Align left edges"   onMouseDown={e=>{e.preventDefault();alignSelected('left');}}>⇤</button>
+          <button className="multi-sel-btn" title="Center horizontally" onMouseDown={e=>{e.preventDefault();alignSelected('center-h');}}>↔</button>
+          <button className="multi-sel-btn" title="Align right edges"  onMouseDown={e=>{e.preventDefault();alignSelected('right');}}>⇥</button>
+          <button className="multi-sel-btn" title="Align top edges"    onMouseDown={e=>{e.preventDefault();alignSelected('top');}}>⇡</button>
+          <button className="multi-sel-btn" title="Center vertically"  onMouseDown={e=>{e.preventDefault();alignSelected('center-v');}}>↕</button>
+          <button className="multi-sel-btn" title="Align bottom edges" onMouseDown={e=>{e.preventDefault();alignSelected('bottom');}}>⇣</button>
+          <div className="multi-sel-sep" />
+          <button className="multi-sel-btn" title="Distribute horizontally" onMouseDown={e=>{e.preventDefault();alignSelected('dist-h');}}>|||</button>
+          <button className="multi-sel-btn" title="Distribute vertically"   onMouseDown={e=>{e.preventDefault();alignSelected('dist-v');}}>≡</button>
+          <div className="multi-sel-sep" />
+          <button className="multi-sel-btn" title="Duplicate all (Ctrl+D)" onMouseDown={e=>{
+            e.preventDefault();
+            const clones: HTMLElement[] = [];
+            multiSelRef.current.forEach(m => { const c = m.cloneNode(true) as HTMLElement; m.after(c); clones.push(c); });
+            multiSelRef.current.forEach(m => m.classList.remove('sel-active','sel-multi'));
+            multiSelRef.current.clear();
+            clones.forEach(c => { c.classList.add('sel-active','sel-multi'); multiSelRef.current.add(c); });
+            setMultiCount(clones.length);
+            if (editorRef.current) onEdit(pageNumber, editorRef.current.innerHTML);
+          }}>⧉ Dup</button>
+          <button className="multi-sel-btn multi-sel-btn--del" title="Delete all (Del)" onMouseDown={e=>{
+            e.preventDefault();
+            multiSelRef.current.forEach(m => { if (editorRef.current?.contains(m)) m.remove(); });
+            multiSelRef.current.clear();
+            setMultiCount(0);
+            selectedElRef.current = null;
+            setActionBar(null);
+            if (editorRef.current) onEdit(pageNumber, editorRef.current.innerHTML);
+          }}>✕ Del</button>
+          <button className="multi-sel-btn" title="Deselect all (Esc)" onMouseDown={e=>{
+            e.preventDefault();
+            multiSelRef.current.forEach(m => m.classList.remove('sel-active','sel-multi'));
+            multiSelRef.current.clear();
+            setMultiCount(0);
+            selectedElRef.current?.classList.remove('sel-active');
+            selectedElRef.current = null;
+            setActionBar(null);
+            onElementSelectRef.current?.(null);
+          }}>✕</button>
+        </div>,
+        document.body
+      )}
+
+      {/* ── Rubber-band selection rect ── */}
+      {selectionMode && rubberBand && editorRef.current && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left:   editorRef.current.getBoundingClientRect().left + rubberBand.x,
+            top:    editorRef.current.getBoundingClientRect().top  + rubberBand.y,
+            width:  rubberBand.w,
+            height: rubberBand.h,
+            border: '1.5px dashed #6366f1',
+            background: 'rgba(99,102,241,0.07)',
+            borderRadius: 3,
+            pointerEvents: 'none',
+            zIndex: 9997,
+          }}
+        />,
+        document.body
+      )}
+
+      {/* ── Grid drop-slot indicator ── */}
+      {selectionMode && dropSlot && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left:   dropSlot.rect.left - 3,
+            top:    dropSlot.rect.top,
+            width:  dropSlot.rect.width + 6,
+            height: dropSlot.rect.height,
+            border: '2px dashed #22d3ee',
+            background: 'rgba(34,211,238,0.08)',
+            borderRadius: 4,
+            pointerEvents: 'none',
+            zIndex: 9997,
+          }}
+        />,
+        document.body
+      )}
+
+      {/* ── Floating format toolbar — shown on text selection ── */}
+      {!selectionMode && toolbar && (
+        <FloatingToolbar x={toolbar.x} y={toolbar.y} onFormat={handleFormat} />
       )}
 
       {editTarget && (

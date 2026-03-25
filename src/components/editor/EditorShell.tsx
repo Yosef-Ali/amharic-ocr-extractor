@@ -5,7 +5,7 @@ import {
   X, FileText, FileImage, MousePointer2,
   Bot, SlidersHorizontal,
   Maximize, Hand,
-  Minus, Plus, Undo2, Redo2, Sparkles, Home,
+  Minus, Plus, Undo2, Redo2, Sparkles, Home, Search,
 } from 'lucide-react';
 import { type Theme } from '../../hooks/useTheme';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
@@ -29,6 +29,8 @@ import UserMenu               from '../UserMenu';
 import CoverEditor            from './CoverEditor';
 import CoverEditorPanel       from './CoverEditorPanel';
 import { type CoverBlock, parseCover, serialiseCover } from './coverUtils';
+import FindReplaceBar         from './FindReplaceBar';
+import HomophonePanel         from './HomophonePanel';
 
 // ── Props ────────────────────────────────────────────────────────────────────
 interface Props {
@@ -65,7 +67,7 @@ interface Props {
   onToggleTheme: () => void;
 }
 
-type DrawerPanel = 'agent' | 'inspector' | 'cover' | null;
+type DrawerPanel = 'agent' | 'inspector' | 'cover' | 'homophone' | null;
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function EditorShell({
@@ -100,8 +102,9 @@ export default function EditorShell({
     const pages = Object.keys(pageResults).map(Number).sort((a, b) => a - b);
     return pages[0] ?? 1;
   });
-  const [thumbsOpen,    setThumbsOpen]    = useState(!isTablet);
-  const [rightDrawer,   setRightDrawer]   = useState<DrawerPanel>(null);
+  const [thumbsOpen,      setThumbsOpen]      = useState(false);
+  const [rightDrawer,     setRightDrawer]     = useState<DrawerPanel>(null);
+  const [showFindReplace, setShowFindReplace] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [pageLayout,    setPageLayout]    = useState<PageLayout>(DEFAULT_LAYOUT);
   const [elementStyles, setElementStyles] = useState<ElementStyles | null>(null);
@@ -206,13 +209,10 @@ export default function EditorShell({
     }
   }, [pageResults, activePage]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Collapse sidebar on tablet
-  useEffect(() => { setThumbsOpen(!isTablet); }, [isTablet]);
+  // Auto-collapse logic removed to prevent unwanted sidebar auto-opening
 
   const hasResult    = !!pageResults[activePage];
   const isRegen      = activePage > 0 && regeneratingPages.has(activePage);
-  const currentHtml  = pageResults[activePage] ?? '';
-  const currentImage = activePage > 0 ? (pageImages[activePage - 1] ?? '') : '';
   const isPdf        = fileName.toLowerCase().endsWith('.pdf');
 
   // ── Dynamic page dimensions ──────────────────────────────────────────
@@ -226,6 +226,50 @@ export default function EditorShell({
     onActivePageChange?.(p);
     setElementStyles(null);
     setStyleApplySignal(null);
+    setTimeout(() => {
+      document.getElementById(`page-${p}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 50);
+  }, [onActivePageChange]);
+
+  // ── Intersection Observer Sync ─────────────────────────────────────────
+  useEffect(() => {
+    const elContainer = contentRef.current;
+    if (!elContainer) return;
+
+    let timeoutId: any;
+    const handleScroll = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        const wrappers = elContainer.querySelectorAll('.page-wrapper');
+        let mostVisible = activePageRef.current;
+        let maxArea = 0;
+        const containerRect = elContainer.getBoundingClientRect();
+        
+        wrappers.forEach(w => {
+          const r = w.getBoundingClientRect();
+          const top = Math.max(r.top, containerRect.top);
+          const bottom = Math.min(r.bottom, containerRect.bottom);
+          if (bottom > top) {
+             const area = bottom - top;
+             if (area > maxArea) {
+               maxArea = area;
+               mostVisible = parseInt(w.getAttribute('data-page') || '1', 10);
+             }
+          }
+        });
+        
+        if (mostVisible !== activePageRef.current) {
+          setActivePage(mostVisible);
+          onActivePageChange?.(mostVisible);
+        }
+      }, 50); // debounce scroll
+    };
+
+    elContainer.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      elContainer.removeEventListener('scroll', handleScroll);
+      clearTimeout(timeoutId);
+    };
   }, [onActivePageChange]);
 
   // During bulk extraction, auto-advance to the latest extracted page
@@ -240,8 +284,17 @@ export default function EditorShell({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
+      // Ctrl+F: open find bar (intercept even inside editable)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        setShowFindReplace(true);
+        return;
+      }
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return;
       if (e.key === 'Escape') {
+        // Never interrupt an active extraction with Escape
+        if (isProcessing) return;
+        if (showFindReplace) { setShowFindReplace(false); return; }
         setSelectionMode(false); setRightDrawer(null); setHandTool(false);
         // Escape from blank cover page → go to page 1
         if (activePage === 0 && !pageResults[0] && totalPages > 0) changePage(1);
@@ -259,12 +312,11 @@ export default function EditorShell({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [totalPages, activePage, selectionMode, changePage]);
+  }, [totalPages, activePage, selectionMode, changePage, isProcessing, showFindReplace]);
 
   // ── Element selection (inspector) ──────────────────────────────────────
   const handleElementSelect = (styles: ElementStyles | null) => {
     setElementStyles(styles);
-    if (styles) setRightDrawer('inspector');  // auto-open on element click
   };
   const handleElementStyleChange = (p: Record<string, string>) => {
     setStyleApplySignal({ patch: p, nonce: Date.now() });
@@ -273,14 +325,13 @@ export default function EditorShell({
     window.dispatchEvent(new CustomEvent('insp-tag-change', { detail: { newTag, nonce: Date.now() } }));
   }, []);
 
-  // ── Auto-open inspector when a crop selection is drawn ───────────────
+  // ── Preserve crop state without auto-opening inspector ───────────────
   const pendingCropRef = useRef<CustomEventInit | null>(null);
   useEffect(() => {
     const onCropState = (e: Event) => {
       const detail = (e as CustomEvent).detail as { active: boolean };
       if (detail.active) {
         pendingCropRef.current = { detail };   // stash so we can re-fire after mount
-        setRightDrawer('inspector');
       } else {
         pendingCropRef.current = null;
       }
@@ -321,11 +372,12 @@ export default function EditorShell({
     setCoverBlocks(blocks);
   }, [pageResults[0]]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-open/close 'cover' drawer when on cover or back cover page
+  // Auto-close 'cover' drawer when leaving cover or back cover page
   useEffect(() => {
-    if (activePage === 0 || activePage === -1) setRightDrawer('cover');
-    else if (rightDrawer === 'cover') setRightDrawer(null);
-  }, [activePage]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (activePage !== 0 && activePage !== -1 && rightDrawer === 'cover') {
+      setRightDrawer(null);
+    }
+  }, [activePage, rightDrawer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // saveCover — serialise and persist cover HTML
   const saveCover = useCallback((newBlocks: CoverBlock[]) => {
@@ -378,9 +430,10 @@ export default function EditorShell({
   }, [saveCover]);
 
   // ── Drawer title ──────────────────────────────────────────────────────
-  const drawerTitle = rightDrawer === 'agent' ? 'AI Agent'
-    : rightDrawer === 'inspector' ? 'Inspector'
-    : rightDrawer === 'cover' ? 'Cover Editor'
+  const drawerTitle = rightDrawer === 'agent'      ? 'AI Agent'
+    : rightDrawer === 'inspector'  ? 'Inspector'
+    : rightDrawer === 'cover'      ? 'Cover Editor'
+    : rightDrawer === 'homophone'  ? 'Amharic OCR Corrections'
     : '';
 
   // ── Render ────────────────────────────────────────────────────────────
@@ -454,7 +507,24 @@ export default function EditorShell({
           >
             <SlidersHorizontal size={14} />
           </button>
+          <button
+            className={`es-icon-btn${rightDrawer === 'homophone' ? ' es-icon-btn--active' : ''}`}
+            onClick={() => toggleDrawer('homophone')}
+            title="Amharic OCR corrections"
+            style={{ fontFamily: "'Noto Serif Ethiopic', serif", fontSize: 13, fontWeight: 700, letterSpacing: 0 }}
+          >
+            ሀ
+          </button>
           <div className="es-header-sep es-hide-mobile" />
+
+          {/* ── Find & Replace ───────────────────────── */}
+          <button
+            className={`es-icon-btn es-hide-mobile${showFindReplace ? ' es-icon-btn--active' : ''}`}
+            onClick={() => setShowFindReplace(f => !f)}
+            title="Find & Replace (Ctrl+F)"
+          >
+            <Search size={14} />
+          </button>
 
           {/* ── Undo / Redo — hide on mobile ────────────── */}
           <button className="es-icon-btn es-hide-mobile" onClick={handleUndo} title="Undo (Ctrl+Z)">
@@ -507,6 +577,17 @@ export default function EditorShell({
         </div>
       )}
 
+      {/* ── Find & Replace bar ────────────────────────────────────────── */}
+      {showFindReplace && (
+        <FindReplaceBar
+          pageResults={pageResults}
+          activePage={activePage}
+          onEdit={onEdit}
+          onChangePage={changePage}
+          onClose={() => setShowFindReplace(false)}
+        />
+      )}
+
       {/* ══ Body ══════════════════════════════════════════════════════════ */}
       <div className="es-body">
 
@@ -555,138 +636,167 @@ export default function EditorShell({
                 transformOrigin: 'top center',
               }}
             >
-            {viewMode === 'compare' && hasResult && activePage > 0 ? (
-              <SplitPageView
-                key={activePage}
-                pageNumber={activePage}
-                pageImage={currentImage}
-                html={currentHtml}
-                imageQuality={imageQuality}
-                isRegenerating={isRegen}
-                styleOverride={layoutToStyle(pageLayout)}
-                selectionMode={selectionMode}
-                onElementSelect={handleElementSelect}
-                onExitSelectionMode={() => setSelectionMode(false)}
-                styleApply={styleApplySignal}
-                onEdit={onEdit}
-                onError={onError}
-                docHandle={docHandleRef}
-                zoom={zoom}
-              />
-            ) : activePage === -1 ? (
-              /* ── Back cover ── */
-              <div className="es-doc-wrap" style={{ position: 'relative' }}>
-                {pageResults[-1] ? (
-                  <>
-                    <div className="ce-canvas" style={{ backgroundImage: `url('${(() => { const m = pageResults[-1].match(/<img[^>]+src="(data:image\/[^"]+)"/); return m?.[1] ?? ''; })()}')` }} />
+            {/* ── 🚧 CONTINUOUS SCROLL VIEW 🚧 ── */}
+            <div className="flex flex-col gap-12 pb-32 items-center w-full min-h-screen">
+              
+              {/* ── Cover Page (0) ── */}
+              {((activePage === 0 && !hasResult) || hasCover) && (
+                <div data-page="0" className="page-wrapper w-full flex justify-center scroll-mt-6" id="page-0">
+                  {hasCover ? (
+                    <div className="es-doc-wrap" style={{ position: 'relative' }}>
+                      <CoverEditor
+                        bgUrl={coverBgUrl}
+                        blocks={coverBlocks}
+                        selId={coverSelId}
+                        onSelect={setCoverSelId}
+                        onMove={handleCoverMove}
+                        onTextChange={handleCoverTextChange}
+                      />
+                      <button
+                        style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', zIndex: 30, background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', backdropFilter: 'blur(4px)', letterSpacing: '0.06em' }}
+                        onClick={() => { onEdit(0, ''); }}
+                        title="New cover background"
+                      >↺ New Cover</button>
+                    </div>
+                  ) : (
+                    <div className="es-doc-wrap" style={{ position: 'relative' }}>
+                      <div style={{ width: `${activePageDim.widthMm}mm`, minHeight: `${activePageDim.heightMm}mm`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', background: 'var(--t-surface)', borderRadius: '2px', boxShadow: '0 2px 12px rgba(0,0,0,.15)', color: 'var(--t-text3)', fontSize: '0.85rem' }}>
+                        <Sparkles size={28} style={{ opacity: 0.35 }} />
+                        <span>Use the panel on the right to generate your cover</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Document Pages (1..N) ── */}
+              {pageImages.map((img, i) => {
+                const p = i + 1;
+                const pHasResult = !!pageResults[p];
+                const pIsRegen = regeneratingPages.has(p);
+                const currentHtml = pageResults[p] ?? '';
+                const dim = pageDimensions[i] ?? { widthMm: 210, heightMm: 297 };
+
+                // Virtualisation: only mount heavy components for pages near the viewport.
+                // Pages outside the ±3 window get a lightweight height-preserving skeleton
+                // so the scroll position and spy calculations stay accurate.
+                const isNear = Math.abs(p - activePage) <= 3;
+
+                return (
+                  <div data-page={p.toString()} key={p} className="page-wrapper w-full flex justify-center scroll-mt-6" id={`page-${p}`}>
+                    {!isNear ? (
+                      // ── Skeleton placeholder keeps correct page height in the scroll column ──
+                      <div
+                        style={{
+                          width: `${dim.widthMm}mm`,
+                          height: `${dim.heightMm}mm`,
+                          background: 'var(--t-surface)',
+                          borderRadius: 2,
+                          boxShadow: '0 1px 4px rgba(0,0,0,.12)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: 'var(--t-text3)',
+                          fontSize: '0.75rem',
+                        }}
+                      >
+                        {p}
+                      </div>
+                    ) : viewMode === 'compare' && pHasResult ? (
+                      <SplitPageView
+                        pageNumber={p}
+                        pageImage={img}
+                        html={currentHtml}
+                        imageQuality={imageQuality}
+                        isRegenerating={pIsRegen}
+                        styleOverride={layoutToStyle(pageLayout)}
+                        selectionMode={selectionMode}
+                        onElementSelect={handleElementSelect}
+                        onExitSelectionMode={() => setSelectionMode(false)}
+                        styleApply={activePage === p ? styleApplySignal : null}
+                        onEdit={onEdit}
+                        onError={onError}
+                        docHandle={activePage === p ? docHandleRef : undefined}
+                        zoom={zoom}
+                      />
+                    ) : viewMode === 'document' && pHasResult ? (
+                      <div
+                        className="es-doc-wrap"
+                        onDoubleClick={e => {
+                          if (e.target === e.currentTarget) { setSelectionMode(true); setRightDrawer('inspector'); }
+                        }}
+                      >
+                        <DocumentPage
+                          pageNumber={p}
+                          html={currentHtml}
+                          pageWidth={`${dim.widthMm}mm`}
+                          pageHeight={`${dim.heightMm}mm`}
+                          styleOverride={layoutToStyle(pageLayout)}
+                          selectionMode={selectionMode}
+                          onElementSelect={handleElementSelect}
+                          onExitSelectionMode={() => setSelectionMode(false)}
+                          styleApply={activePage === p ? styleApplySignal : null}
+                          onEdit={onEdit}
+                          docHandle={activePage === p ? docHandleRef : undefined}
+                          zoom={zoom}
+                          margins={{ t: pageLayout.marginT, r: pageLayout.marginR, b: pageLayout.marginB, l: pageLayout.marginL }}
+                        />
+                      </div>
+                    ) : (viewMode === 'scan' || !pHasResult) ? (
+                      <div className="es-scan-wrap">
+                        {img ? (
+                          <>
+                            <img
+                              src={img.startsWith('http') ? img : `data:image/jpeg;base64,${img}`}
+                              alt={`Page ${p} scan`}
+                              className="es-scan-img"
+                              loading="lazy"
+                            />
+                            {pIsRegen && (
+                              <div className="scan-overlay"><span className="scan-overlay-label">Extracting page {p}…</span></div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="es-empty" style={{ flexDirection: 'column', gap: '0.5rem', width: '100%', minHeight: '800px' }}>
+                            <Loader2 size={32} className="animate-spin text-indigo-500 mb-2" />
+                            <span className="text-slate-400 font-medium">Loading high-res scan...</span>
+                          </div>
+                        )}
+                        {!pHasResult && !pIsRegen && (
+                          <div className="es-unextracted-bar" style={{ marginTop: '1rem' }}>
+                            <span>Page {p} — not yet extracted</span>
+                            {img ? (
+                              <button
+                                className="bt-btn bt-btn--primary"
+                                onClick={() => onRegenerate(p)}
+                                disabled={pIsRegen || isProcessing}
+                              >
+                                {pIsRegen ? <Loader2 size={12} className="animate-spin" /> : <Layers size={12} />}
+                                <span>{pIsRegen ? 'Extracting…' : 'Extract this page'}</span>
+                              </button>
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+
+              {/* ── Back Cover (-1) ── */}
+              {hasBackCover && (
+                <div data-page="-1" className="page-wrapper w-full flex justify-center scroll-mt-6" id="page--1">
+                  <div className="es-doc-wrap" style={{ position: 'relative' }}>
+                    <div className="ce-canvas" style={{ backgroundImage: `url('${backBgUrl}')` }} />
                     <button
                       style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', zIndex: 30, background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', backdropFilter: 'blur(4px)', letterSpacing: '0.06em' }}
                       onClick={() => { onEdit(-1, ''); }}
                       title="Remove back cover"
                     >✕ Remove</button>
-                  </>
-                ) : (
-                  <div style={{ width: `${activePageDim.widthMm}mm`, minHeight: `${activePageDim.heightMm}mm`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', background: 'var(--t-surface)', borderRadius: '2px', boxShadow: '0 2px 12px rgba(0,0,0,.15)', color: 'var(--t-text3)', fontSize: '0.85rem' }}>
-                    <Sparkles size={28} style={{ opacity: 0.35 }} />
-                    <span>Generate back cover in the panel →</span>
                   </div>
-                )}
-              </div>
-            ) : activePage === 0 && !hasResult ? (
-              /* ── Cover page — no cover yet: blank placeholder (controls in right drawer) ── */
-              <div className="es-doc-wrap" style={{ position: 'relative' }}>
-                <div style={{ width: `${activePageDim.widthMm}mm`, minHeight: `${activePageDim.heightMm}mm`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', background: 'var(--t-surface)', borderRadius: '2px', boxShadow: '0 2px 12px rgba(0,0,0,.15)', color: 'var(--t-text3)', fontSize: '0.85rem' }}>
-                  <Sparkles size={28} style={{ opacity: 0.35 }} />
-                  <span>Use the panel on the right to generate your cover</span>
                 </div>
-              </div>
-            ) : activePage === 0 && hasResult ? (
-              /* ── Cover page — pure canvas (controls in right drawer) ── */
-              <div className="es-doc-wrap" style={{ position: 'relative' }}>
-                <CoverEditor
-                  bgUrl={coverBgUrl}
-                  blocks={coverBlocks}
-                  selId={coverSelId}
-                  onSelect={setCoverSelId}
-                  onMove={handleCoverMove}
-                  onTextChange={handleCoverTextChange}
-                />
-                <button
-                  style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', zIndex: 30, background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', backdropFilter: 'blur(4px)', letterSpacing: '0.06em' }}
-                  onClick={() => { onEdit(0, ''); }}
-                  title="New cover background"
-                >↺ New Cover</button>
-              </div>
-            ) : viewMode === 'document' && hasResult ? (
-              <div
-                className="es-doc-wrap"
-                onDoubleClick={e => {
-                  // Double-click on page margin/border area (not inside page content) → open inspector
-                  if (e.target === e.currentTarget) { setSelectionMode(true); setRightDrawer('inspector'); }
-                }}
-              >
-                <DocumentPage
-                  pageNumber={activePage}
-                  html={currentHtml}
-                  pageWidth={`${activePageDim.widthMm}mm`}
-                  pageHeight={`${activePageDim.heightMm}mm`}
-                  styleOverride={layoutToStyle(pageLayout)}
-                  selectionMode={selectionMode}
-                  onElementSelect={handleElementSelect}
-                  onExitSelectionMode={() => setSelectionMode(false)}
-                  styleApply={styleApplySignal}
-                  onEdit={onEdit}
-                  docHandle={docHandleRef}
-                  zoom={zoom}
-                  margins={{ t: pageLayout.marginT, r: pageLayout.marginR, b: pageLayout.marginB, l: pageLayout.marginL }}
-                />
-              </div>
-            ) : (viewMode === 'scan' || !hasResult) && activePage > 0 ? (
-              <div className="es-scan-wrap">
-                {currentImage ? (
-                  <>
-                    <img
-                      src={`data:image/jpeg;base64,${currentImage}`}
-                      alt={`Page ${activePage} scan`}
-                      className="es-scan-img"
-                    />
-                    {isRegen && (
-                      <div className="scan-overlay">
-                        <span className="scan-overlay-label">Extracting page {activePage}…</span>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="es-empty" style={{ flexDirection: 'column', gap: '0.5rem' }}>
-                    <FileText size={28} style={{ color: '#94a3b8' }} />
-                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Text page — no scan available</span>
-                  </div>
-                )}
-                {!hasResult && !isRegen && (
-                  <div className="es-unextracted-bar">
-                    <span>Page {activePage} — not yet extracted</span>
-                    {currentImage ? (
-                      <button
-                        className="bt-btn bt-btn--primary"
-                        onClick={() => onRegenerate(activePage)}
-                        disabled={isRegen || isProcessing}
-                      >
-                        {isRegen ? <Loader2 size={12} className="animate-spin" /> : <Layers size={12} />}
-                        <span>{isRegen ? 'Extracting…' : 'Extract this page'}</span>
-                      </button>
-                    ) : (
-                      <button
-                        className="bt-btn bt-btn--primary"
-                        onClick={() => setViewMode('document')}
-                      >
-                        <FileText size={12} />
-                        <span>Edit in document view →</span>
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            ) : null}
+              )}
+            </div>
             </div>{/* /es-zoom-layer */}
           </div>{/* /es-content */}
 
@@ -702,7 +812,7 @@ export default function EditorShell({
             isSaving={isSaving}
             imageQuality={imageQuality}
             processingStatus={processingStatus}
-            hasImage={!!currentImage}
+            hasImage={activePage > 0 ? !!pageImages[activePage - 1] : false}
             onPrev={() => changePage(Math.max(navMin, activePage - 1))}
             onNext={() => changePage(Math.min(totalPages, activePage + 1))}
             onExtract={onExtract}
@@ -773,6 +883,13 @@ export default function EditorShell({
               onApply={handleApplyCover}
               onApplyBack={html => onEdit(-1, html)}
               onError={onError}
+            />
+          )}
+          {rightDrawer === 'homophone' && (
+            <HomophonePanel
+              pageResults={pageResults}
+              activePage={activePage}
+              onEdit={onEdit}
             />
           )}
         </RightDrawer>

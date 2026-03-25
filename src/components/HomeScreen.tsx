@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   FileText, Upload, FolderOpen, Trash2, Clock, BookOpen,
-  Sparkles, ChevronRight, Plus, Search, Loader2, ScanSearch, ShieldCheck, Download,
+  Sparkles, ChevronRight, Plus, Search, Loader2, ScanSearch,
+  ShieldCheck, Download, Layers, ImageIcon, AlignLeft,
 } from 'lucide-react';
 import { type Theme } from '../hooks/useTheme';
 import ThemeToggleButton from './ThemeToggleButton';
@@ -10,6 +11,7 @@ import {
   loadAllDocuments, loadDocumentContent, deleteDocument, type SavedDocument,
 } from '../services/storageService';
 import { downloadDocumentAsPDF } from '../utils/downloadPDF';
+import DeleteConfirmModal from './DeleteConfirmModal';
 
 interface Props {
   onFile:           (file: File) => void;
@@ -27,32 +29,57 @@ interface Props {
 function formatDate(iso: string) {
   const d = new Date(iso);
   const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffDays = Math.floor(diffMs / 86_400_000);
+  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86_400_000);
   if (diffDays === 0) return 'Today';
   if (diffDays === 1) return 'Yesterday';
   if (diffDays < 7) return `${diffDays} days ago`;
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processingStatus, theme, onToggleTheme, user, onSignOut, isAdmin, onOpenAdmin }: Props) {
-  const [docs, setDocs] = useState<SavedDocument[]>([]);
-  const [loadingDocs, setLoadingDocs] = useState(true);
-  const [search, setSearch] = useState('');
-  const [isDragging, setIsDragging] = useState(false);
-  const [loadingDocId,  setLoadingDocId]  = useState<string | null>(null);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+function toThumbSrc(val: string | undefined | null): string | null {
+  if (!val) return null;
+  if (val.startsWith('http') || val.startsWith('data:')) return val;
+  return `data:image/jpeg;base64,${val}`;
+}
+
+const FEATURES = [
+  { icon: <ScanSearch size={20} />, label: 'Amharic OCR', desc: 'Accurate Ethiopic text extraction from any scan' },
+  { icon: <Layers      size={20} />, label: 'Layout Preserve', desc: 'Multi-column, two-page & complex document layouts' },
+  { icon: <ImageIcon   size={20} />, label: 'Image Embed', desc: 'Illustrations cropped and placed at exact position' },
+  { icon: <AlignLeft   size={20} />, label: 'Live Editor', desc: 'Edit, find-replace & correct homophones in-place' },
+];
+
+export default function HomeScreen({
+  onFile, onLoadDoc, isProcessing, processingStatus,
+  theme, onToggleTheme, user, onSignOut, isAdmin, onOpenAdmin,
+}: Props) {
+  const [docs,           setDocs]           = useState<SavedDocument[]>([]);
+  const [loadingDocs,    setLoadingDocs]    = useState(true);
+  const [search,         setSearch]         = useState('');
+  const [isDragging,     setIsDragging]     = useState(false);
+  const [loadingDocId,   setLoadingDocId]   = useState<string | null>(null);
+  const [downloadingId,  setDownloadingId]  = useState<string | null>(null);
+  const [deleteConfirmId,setDeleteConfirmId]= useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadAllDocuments().then(d => { setDocs(d); setLoadingDocs(false); });
   }, []);
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
+  const handleDeleteRequest = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    setDeleteConfirmId(id);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirmId) return;
+    const id = deleteConfirmId;
+    setDeleteConfirmId(null);
     await deleteDocument(id);
     setDocs(d => d.filter(x => x.id !== id));
   };
+
+  const handleCancelDelete = () => setDeleteConfirmId(null);
 
   const handleFilePick = (files: FileList | null) => {
     if (!files?.length) return;
@@ -63,9 +90,7 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
       file.type.startsWith('image/') ||
       file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
       file.type === 'text/plain' ||
-      name.endsWith('.docx') ||
-      name.endsWith('.txt') ||
-      name.endsWith('.md')
+      name.endsWith('.docx') || name.endsWith('.txt') || name.endsWith('.md')
     ) onFile(file);
   };
 
@@ -78,7 +103,6 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
       console.error('Failed to load document:', err);
       setLoadingDocId(null);
     }
-    // don't reset loadingDocId — component unmounts when editor opens
   };
 
   const handleDownload = async (e: React.MouseEvent, doc: SavedDocument) => {
@@ -104,27 +128,30 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
     handleFilePick(e.dataTransfer.files);
   };
 
-  const filtered = docs.filter(d =>
-    d.name.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const recent = filtered.slice(0, 3);
-  const older  = filtered.slice(3);
+  const filtered = docs.filter(d => d.name.toLowerCase().includes(search.toLowerCase()));
+  const recent   = filtered.slice(0, 3);
+  const older    = filtered.slice(3);
+  const hasAny   = !loadingDocs && docs.length > 0;
 
   return (
     <div className="home-screen">
 
-      {/* ── Top navbar ─────────────────────────────────────────────── */}
+      {/* ── Delete confirmation modal ── */}
+      {deleteConfirmId && (
+        <DeleteConfirmModal onConfirm={handleConfirmDelete} onCancel={handleCancelDelete} />
+      )}
+
+      {/* ── Navbar ── */}
       <header className="home-nav">
         <div className="home-nav-inner">
           <div className="home-brand">
             <div className="home-brand-icon">
-              <ScanSearch size={20} className="text-white" />
+              <ScanSearch size={18} className="text-white" />
               <Sparkles className="home-brand-sparkle" />
             </div>
             <div>
               <p className="home-brand-name">
-                Amharic <span className="home-brand-accent">OCR</span> Extractor
+                Amharic <span className="home-brand-accent">OCR</span>
               </p>
               <p className="home-brand-sub">PDF · Layout · Amharic</p>
             </div>
@@ -132,14 +159,8 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <ThemeToggleButton theme={theme} onClick={onToggleTheme} />
             {isAdmin && (
-              <button
-                className="home-admin-btn"
-                onClick={onOpenAdmin}
-                title="Admin Panel"
-                aria-label="Open Admin Panel"
-              >
-                <ShieldCheck size={15} />
-                <span>Admin</span>
+              <button className="home-admin-btn" onClick={onOpenAdmin} title="Admin Panel">
+                <ShieldCheck size={15} /><span>Admin</span>
               </button>
             )}
             {user && <UserMenu user={user} onSignOut={onSignOut} />}
@@ -147,19 +168,29 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
         </div>
       </header>
 
-      {/* ── Main content ────────────────────────────────────────────── */}
-      <main className="home-main">
-
-        {/* ── Hero / New Project strip ─────────────────────────────── */}
-        <div className="home-hero">
+      {/* ── Hero ── */}
+      <section className="home-hero">
+        <div className="home-hero-inner">
           <div className="home-hero-text">
-            <h1 className="home-hero-title">Your Projects</h1>
-            <p className="home-hero-sub">Open an existing project or extract a new document</p>
+            <h1 className="home-hero-title">
+              Extract & Edit<br />
+              <span className="home-hero-accent">Amharic Documents</span>
+            </h1>
+            <p className="home-hero-sub">
+              AI-powered OCR that preserves layout, images, and Ethiopic text — with a full live editor.
+            </p>
+            <div className="home-feat-pills">
+              {FEATURES.map(f => (
+                <div key={f.label} className="home-feat-pill">
+                  {f.icon}<span>{f.label}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
-          {/* New project upload button */}
+          {/* Upload zone */}
           <label
-            className={`home-upload-drop${isDragging ? ' home-upload-drop--drag' : ''}`}
+            className={`home-upload-zone${isDragging ? ' home-upload-zone--drag' : ''}${isProcessing ? ' home-upload-zone--busy' : ''}`}
             onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={onDrop}
@@ -173,24 +204,31 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
               disabled={isProcessing}
             />
             {isProcessing ? (
-              <>
-                <Loader2 size={22} className="animate-spin text-red-400" />
+              <div className="home-upload-busy">
+                <Loader2 size={28} className="animate-spin" />
                 <span>{processingStatus || 'Loading…'}</span>
-              </>
+              </div>
             ) : (
               <>
-                <div className="home-upload-icon">
-                  <Plus size={20} />
+                <div className="home-upload-ring">
+                  <Plus size={24} />
                 </div>
-                <span className="home-upload-label">New Project</span>
-                <span className="home-upload-hint">Drop PDF, Word, text, or image</span>
+                <p className="home-upload-label">New Project</p>
+                <p className="home-upload-hint">Drop PDF, image, Word or text</p>
+                <p className="home-upload-hint" style={{ marginTop: '0.25rem', opacity: 0.5 }}>
+                  or click to browse
+                </p>
               </>
             )}
           </label>
         </div>
+      </section>
 
-        {/* ── Search ──────────────────────────────────────────────── */}
-        {docs.length > 0 && (
+      {/* ── Main content ── */}
+      <main className="home-main">
+
+        {/* Search */}
+        {hasAny && (
           <div className="home-search-row">
             <Search size={14} className="home-search-icon" />
             <input
@@ -203,34 +241,54 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
           </div>
         )}
 
-        {/* ── Loading ─────────────────────────────────────────────── */}
+        {/* Skeleton loading */}
         {loadingDocs && (
-          <div className="home-loading">
-            <Loader2 size={20} className="animate-spin text-red-400" />
-            <span>Loading library…</span>
+          <div className="home-section">
+            <div className="home-section-header">
+              <Clock size={13} /><span>Recent</span>
+            </div>
+            <div className="home-card-grid">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="proj-card-skeleton">
+                  <div className="skel skel-thumb" />
+                  <div className="skel-body">
+                    <div className="skel skel-line skel-line--title" />
+                    <div className="skel skel-line skel-line--meta" />
+                  </div>
+                  <div className="skel-footer">
+                    <div className="skel skel-btn" />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* ── Empty state ──────────────────────────────────────────── */}
+        {/* Empty state — features grid */}
         {!loadingDocs && docs.length === 0 && (
           <div className="home-empty">
-            <div className="home-empty-icon">
-              <BookOpen size={32} />
-            </div>
+            <div className="home-empty-icon"><BookOpen size={30} /></div>
             <p className="home-empty-title">No projects yet</p>
             <p className="home-empty-sub">
-              Drop a PDF or image above to extract your first Amharic document.
-              Saved projects will appear here for quick access.
+              Drop a PDF, image, or Word document above to get started.
             </p>
+            <div className="home-feat-grid">
+              {FEATURES.map(f => (
+                <div key={f.label} className="home-feat-card">
+                  <div className="home-feat-card-icon">{f.icon}</div>
+                  <p className="home-feat-card-label">{f.label}</p>
+                  <p className="home-feat-card-desc">{f.desc}</p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* ── Recent projects ──────────────────────────────────────── */}
+        {/* Recent */}
         {!loadingDocs && recent.length > 0 && (
           <section className="home-section">
             <div className="home-section-header">
-              <Clock size={13} />
-              <span>Recent</span>
+              <Clock size={13} /><span>Recent</span>
             </div>
             <div className="home-card-grid">
               {recent.map(doc => (
@@ -239,7 +297,7 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
                   doc={doc}
                   thumbSrc={toThumbSrc(doc.thumbnailUrl) ?? toThumbSrc(doc.pageImages?.[0])}
                   onOpen={() => handleOpenDoc(doc)}
-                  onDelete={e => handleDelete(e, doc.id)}
+                  onDeleteRequest={e => handleDeleteRequest(e, doc.id)}
                   onDownload={e => handleDownload(e, doc)}
                   isLoading={loadingDocId === doc.id}
                   isDownloading={downloadingId === doc.id}
@@ -249,12 +307,11 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
           </section>
         )}
 
-        {/* ── Older projects ───────────────────────────────────────── */}
+        {/* All projects (list) */}
         {!loadingDocs && older.length > 0 && (
           <section className="home-section">
             <div className="home-section-header">
-              <FolderOpen size={13} />
-              <span>All Projects</span>
+              <FolderOpen size={13} /><span>All Projects</span>
             </div>
             <div className="home-list">
               {older.map(doc => (
@@ -263,7 +320,7 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
                   doc={doc}
                   thumbSrc={toThumbSrc(doc.thumbnailUrl) ?? toThumbSrc(doc.pageImages?.[0])}
                   onOpen={() => handleOpenDoc(doc)}
-                  onDelete={e => handleDelete(e, doc.id)}
+                  onDeleteRequest={e => handleDeleteRequest(e, doc.id)}
                   onDownload={e => handleDownload(e, doc)}
                   isDownloading={downloadingId === doc.id}
                 />
@@ -273,7 +330,7 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
         )}
 
         {/* No search results */}
-        {!loadingDocs && docs.length > 0 && filtered.length === 0 && (
+        {hasAny && filtered.length === 0 && (
           <div className="home-empty">
             <p className="home-empty-title">No results for "{search}"</p>
           </div>
@@ -284,30 +341,32 @@ export default function HomeScreen({ onFile, onLoadDoc, isProcessing, processing
   );
 }
 
-/** Normalize a thumbnail value (Blob URL, data: URL, or raw base64) to an img src. */
-function toThumbSrc(val: string | undefined | null): string | null {
-  if (!val) return null;
-  if (val.startsWith('http') || val.startsWith('data:')) return val;
-  return `data:image/jpeg;base64,${val}`;
-}
-
-// ── Project Card (recent, large) ───────────────────────────────────────────
-function ProjectCard({ doc, thumbSrc, onOpen, onDelete, onDownload, isLoading, isDownloading }: {
-  doc: SavedDocument;
-  thumbSrc: string | null;
+// ── Project Card (recent, large) ──────────────────────────────────────────
+function ProjectCard({ doc, thumbSrc, onOpen, onDeleteRequest, onDownload, isLoading, isDownloading }: {
+  doc: SavedDocument; thumbSrc: string | null;
   onOpen: () => void;
-  onDelete: (e: React.MouseEvent) => void;
+  onDeleteRequest: (e: React.MouseEvent) => void;
   onDownload: (e: React.MouseEvent) => void;
-  isLoading?: boolean;
-  isDownloading?: boolean;
+  isLoading?: boolean; isDownloading?: boolean;
 }) {
+  const busy = isLoading || isDownloading;
   return (
-    <button className="proj-card" onClick={onOpen} disabled={isLoading || isDownloading}>
+    <div
+      className={`proj-card${busy ? ' proj-card--busy' : ''}`}
+      onClick={busy ? undefined : onOpen}
+      role="button" tabIndex={0}
+      onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && !busy) { e.preventDefault(); onOpen(); } }}
+    >
       <div className="proj-card-thumb">
         {thumbSrc
           ? <img src={thumbSrc} alt="" className="proj-card-thumb-img" />
-          : <FileText size={28} className="text-gray-300" />
+          : <FileText size={32} className="proj-card-thumb-icon" />
         }
+        {isLoading && (
+          <div className="proj-card-overlay">
+            <Loader2 size={22} className="animate-spin" />
+          </div>
+        )}
       </div>
       <div className="proj-card-body">
         <p className="proj-card-name">{doc.name}</p>
@@ -316,61 +375,51 @@ function ProjectCard({ doc, thumbSrc, onOpen, onDelete, onDownload, isLoading, i
         </p>
       </div>
       <div className="proj-card-footer">
-        <button className="proj-card-del" onClick={onDelete} title="Delete project">
+        <button className="proj-card-icon-btn" onClick={onDeleteRequest} title="Delete">
           <Trash2 size={13} />
         </button>
-        <button
-          className="proj-card-dl"
-          onClick={onDownload}
-          title="Download PDF"
-          disabled={isDownloading}
-        >
+        <button className="proj-card-icon-btn" onClick={onDownload} title="Download PDF" disabled={!!isDownloading}>
           {isDownloading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
         </button>
-        <span className="proj-card-open">
-          Open <ChevronRight size={13} />
-        </span>
+        <span className="proj-card-open">Open <ChevronRight size={12} /></span>
       </div>
-    </button>
+    </div>
   );
 }
 
-// ── Project Row (older, compact list) ─────────────────────────────────────
-function ProjectRow({ doc, thumbSrc, onOpen, onDelete, onDownload, isLoading, isDownloading }: {
-  doc: SavedDocument;
-  thumbSrc: string | null;
+// ── Project Row (older, compact) ──────────────────────────────────────────
+function ProjectRow({ doc, thumbSrc, onOpen, onDeleteRequest, onDownload, isLoading, isDownloading }: {
+  doc: SavedDocument; thumbSrc: string | null;
   onOpen: () => void;
-  onDelete: (e: React.MouseEvent) => void;
+  onDeleteRequest: (e: React.MouseEvent) => void;
   onDownload: (e: React.MouseEvent) => void;
-  isLoading?: boolean;
-  isDownloading?: boolean;
+  isLoading?: boolean; isDownloading?: boolean;
 }) {
+  const busy = isLoading || isDownloading;
   return (
-    <button className="proj-row" onClick={onOpen} disabled={isLoading || isDownloading}>
-      <div className="proj-row-icon">
+    <div
+      className={`proj-row${busy ? ' proj-row--busy' : ''}`}
+      onClick={busy ? undefined : onOpen}
+      role="button" tabIndex={0}
+      onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && !busy) { e.preventDefault(); onOpen(); } }}
+    >
+      <div className="proj-row-thumb-wrap">
         {thumbSrc
           ? <img src={thumbSrc} alt="" className="proj-row-thumb" />
-          : <Upload size={14} />
+          : <Upload size={14} className="proj-row-thumb-icon" />
         }
       </div>
       <div className="proj-row-text">
         <span className="proj-row-name">{doc.name}</span>
-        <span className="proj-row-meta">
-          {doc.pageCount} pages · {formatDate(doc.savedAt)}
-        </span>
+        <span className="proj-row-meta">{doc.pageCount} pages · {formatDate(doc.savedAt)}</span>
       </div>
-      <button
-        className="proj-row-dl"
-        onClick={onDownload}
-        title="Download PDF"
-        disabled={isDownloading}
-      >
+      <button className="proj-row-btn" onClick={onDownload} title="Download PDF" disabled={!!isDownloading}>
         {isDownloading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
       </button>
-      <button className="proj-row-del" onClick={onDelete} title="Delete">
+      <button className="proj-row-btn" onClick={onDeleteRequest} title="Delete">
         <Trash2 size={13} />
       </button>
       <ChevronRight size={14} className="proj-row-arrow" />
-    </button>
+    </div>
   );
 }

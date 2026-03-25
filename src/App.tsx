@@ -9,9 +9,10 @@ import AuthScreen    from './components/AuthScreen';
 
 import { pdfToImages, imageFileToBase64, detectFileType, docxToHtmlPages, textToHtmlPages, type PageDimension } from './services/pdfService';
 import { extractPageHTML, autoFillImagePlaceholders, type ImageQuality } from './services/geminiService';
-import { saveDocument, initStorage, initializeSchema, type SavedDocument } from './services/storageService';
+import { saveDocument, initStorage, initializeSchema, loadDocumentContent, loadDocumentPageImage, QuotaExceededError, type SavedDocument } from './services/storageService';
 import { buildDocumentExport, saveDocumentExport } from './services/exportService';
 import { AI_DATA_EXPORT_KEY } from './components/editor/SettingsPanel';
+import { Loader2 } from 'lucide-react';
 import { CanvasExecutor } from './services/canvasExecutor';
 import { WsBridge }      from './services/wsBridge';
 import { ensureUsersTable, upsertUser, checkUserBlocked } from './services/adminService';
@@ -56,6 +57,7 @@ export default function App() {
   const [neonUser,     setNeonUser]     = useState<NeonUser | null>(null);
   const [authLoading,  setAuthLoading]  = useState(true);
   const [isBlocked,    setIsBlocked]    = useState(false);
+  const [isRestoringSession, setIsRestoringSession] = useState(() => !!localStorage.getItem('aoe_active_doc'));
 
   const syncAuthState = useCallback(async () => {
     const result = await (authClient as any).getSession();
@@ -80,6 +82,40 @@ export default function App() {
     syncAuthState().then(() => setAuthLoading(false));
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Session Restore ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (authLoading) return;
+
+    const activeDocId = localStorage.getItem('aoe_active_doc');
+    if (!activeDocId || !neonUser) {
+      if (isRestoringSession) setIsRestoringSession(false);
+      return;
+    }
+    
+    let isCancelled = false;
+    const restoreSession = async () => {
+      try {
+        const fullDoc = await loadDocumentContent(activeDocId);
+        if (isCancelled) return;
+        setActiveDocId(activeDocId);
+        setFileName(fullDoc.name);
+        setPageImages(fullDoc.pageImages);
+        setPageResults(fullDoc.pageResults);
+        setPageDimensions(fullDoc.pageImages.map(() => ({ widthMm: 210, heightMm: 297 })));
+        setFromPage(1);
+        setToPage(fullDoc.pageCount);
+      } catch (err) {
+        console.warn('Failed to restore document session:', err);
+        localStorage.removeItem('aoe_active_doc');
+      } finally {
+        if (!isCancelled) setIsRestoringSession(false);
+      }
+    };
+    
+    restoreSession();
+    return () => { isCancelled = true; };
+  }, [authLoading, neonUser]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSignOut = useCallback(async () => {
     await (authClient as any).signOut();
     setNeonUser(null);
@@ -91,6 +127,7 @@ export default function App() {
   }, [syncAuthState]);
 
   // ── Document state ──────────────────────────────────────────────────────
+  const [activeDocId,      setActiveDocId]      = useState<string | null>(null);
   const [fileName,         setFileName]         = useState('');
   const [pageImages,       setPageImages]       = useState<string[]>([]);
   const [pageDimensions,   setPageDimensions]   = useState<PageDimension[]>([]);
@@ -107,6 +144,32 @@ export default function App() {
   const [regeneratingPages, setRegeneratingPages] = useState<Set<number>>(new Set());
   const [activePage,       setActivePage]       = useState(1);
   const [showAdmin,        setShowAdmin]        = useState(false);
+
+  // ── Lazy load active page image ──────────────────────────────────────────
+  useEffect(() => {
+    if (!activeDocId || activePage < 1) return;
+    const currentImg = pageImages[activePage - 1];
+    
+    if (currentImg === '') {
+      let isCancelled = false;
+      const fetchImage = async () => {
+        try {
+          const img = await loadDocumentPageImage(activeDocId, activePage - 1);
+          if (isCancelled || !img) return;
+          setPageImages(prev => {
+            const next = [...prev];
+            next[activePage - 1] = img;
+            return next;
+          });
+        } catch (err) {
+          console.warn('Failed to lazy-load image:', err);
+        }
+      };
+      
+      fetchImage();
+      return () => { isCancelled = true; };
+    }
+  }, [activeDocId, activePage, pageImages]);
 
   // ── Canvas executor — stable ref so FloatingChat doesn't re-mount ──────
   const pageResultsRef = useRef(pageResults);
@@ -141,7 +204,17 @@ export default function App() {
         if (existing && !force) {
           return JSON.stringify({ success: true, pageNumber: n, cached: true });
         }
-        const img = pageImagesRef.current[n - 1];
+        let img = pageImagesRef.current[n - 1];
+        if (img === '' && activeDocId) {
+          img = await loadDocumentPageImage(activeDocId, n - 1) ?? '';
+          if (img) {
+            setPageImages(prev => {
+              const next = [...prev];
+              next[n - 1] = img;
+              return next;
+            });
+          }
+        }
         if (!img) return JSON.stringify({ error: `No image for page ${n}. Upload a document first.` });
         const prevHTML = pageResultsRef.current[n - 1];
 
@@ -415,7 +488,9 @@ export default function App() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const docId = await saveDocument(fileName, pageImages, pageResults);
+      const docId = await saveDocument(activeDocId, fileName, pageImages, pageResults);
+      setActiveDocId(docId);
+      localStorage.setItem('aoe_active_doc', docId);
       setToast({ id: Date.now().toString(), message: `"${fileName}" saved to library.`, variant: 'success' });
       // Persist AI-data export in the background when the user has opted in
       if (neonUser && docId && localStorage.getItem(AI_DATA_EXPORT_KEY) === 'true') {
@@ -423,7 +498,15 @@ export default function App() {
           .catch(() => { /* non-critical */ });
       }
     } catch (err) {
-      setToast({ id: Date.now().toString(), message: `Save failed: ${(err as Error).message}`, variant: 'error' });
+      if (err instanceof QuotaExceededError) {
+        setToast({
+          id: Date.now().toString(),
+          message: `Document limit reached (${err.used}/${err.limit}). Contact an admin to increase your quota.`,
+          variant: 'error',
+        });
+      } else {
+        setToast({ id: Date.now().toString(), message: `Save failed: ${(err as Error).message}`, variant: 'error' });
+      }
     } finally {
       setIsSaving(false);
     }
@@ -433,6 +516,7 @@ export default function App() {
   // Load from library
   // -------------------------------------------------------------------------
   const handleLoad = (doc: SavedDocument) => {
+    setActiveDocId(doc.id);
     setFileName(doc.name);
     setPageImages(doc.pageImages);
     setPageResults(doc.pageResults);
@@ -440,6 +524,7 @@ export default function App() {
     setPageDimensions(doc.pageImages.map(() => ({ widthMm: 210, heightMm: 297 })));
     setFromPage(1);
     setToPage(doc.pageCount);
+    localStorage.setItem('aoe_active_doc', doc.id);
   };
 
   // -------------------------------------------------------------------------
@@ -515,6 +600,7 @@ export default function App() {
   // Clear everything — back to upload screen
   // -------------------------------------------------------------------------
   const handleClear = useCallback(() => {
+    setActiveDocId(null);
     setFileName('');
     setPageImages([]);
     setPageDimensions([]);
@@ -522,6 +608,7 @@ export default function App() {
     setFromPage(1);
     setToPage(1);
     setProcessingStatus('');
+    localStorage.removeItem('aoe_active_doc');
   }, []);
 
   const handleShowAdmin   = useCallback(() => setShowAdmin(true), []);
@@ -558,6 +645,17 @@ export default function App() {
         >
           Sign out
         </button>
+      </div>
+    );
+  }
+
+  // ── Session restore loading screen ───────────────────────────────────────
+  if (isRestoringSession) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', alignItems: 'center', justifyContent: 'center', background: 'var(--t-bg)', color: 'var(--t-text)' }}>
+        <Loader2 size={32} className="animate-spin mb-4" style={{ color: '#ef4444' }} />
+        <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Restoring session...</h2>
+        <p style={{ color: 'var(--t-text3)' }}>Loading your active document</p>
       </div>
     );
   }

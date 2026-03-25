@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, Plus, Trash2, GripVertical } from 'lucide-react';
+import { Loader2, Plus, Trash2, GripVertical, ScanLine, FileText } from 'lucide-react';
+import DeleteConfirmModal from '../DeleteConfirmModal';
+
+type ThumbMode = 'scan' | 'doc';
 
 interface Props {
   pageImages:       string[];
@@ -13,15 +16,36 @@ interface Props {
   onDelete?:        (pageNumber: number) => void;
 }
 
+// A4 at 96 dpi = 794px wide
+const A4_PX = 794;
+
 export default function PageThumbnailSidebar({
   pageImages, pageResults, regeneratingPages,
   activePage, onSelect, onDoubleClick,
   onReorder, onInsert, onDelete,
 }: Props) {
   const activeRef  = useRef<HTMLButtonElement>(null);
-  const [dragFrom, setDragFrom] = useState<number | null>(null);   // page number
-  const [dropAt,   setDropAt]   = useState<number | null>(null);   // insert-before page number (1-indexed), or totalPages+1 = append at end
+  const innerRef   = useRef<HTMLDivElement>(null);
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [dropAt,   setDropAt]   = useState<number | null>(null);
   const [hoverId,  setHoverId]  = useState<number | null>(null);
+  const [thumbMode, setThumbMode] = useState<ThumbMode>('scan');
+  const [deleteConfirmPage, setDeleteConfirmPage] = useState<number | null>(null);
+  const [thumbW,    setThumbW]    = useState(120); // measured pixel width of thumbnail img area
+
+  // Measure once (and on resize) so the doc-preview scale stays accurate
+  useEffect(() => {
+    const el = innerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      // subtract horizontal padding (8px each side from .thumb-sidebar-inner)
+      setThumbW(Math.max(60, el.offsetWidth - 16));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const docScale = thumbW / A4_PX;
 
   const hasCover     = !!pageResults[0];
   const hasBackCover = !!pageResults[-1];
@@ -100,7 +124,32 @@ export default function PageThumbnailSidebar({
 
   return (
     <aside className="thumb-sidebar">
-      <div className="thumb-sidebar-inner">
+      {deleteConfirmPage !== null && (
+        <DeleteConfirmModal
+          onConfirm={() => { onDelete?.(deleteConfirmPage!); setDeleteConfirmPage(null); }}
+          onCancel={() => setDeleteConfirmPage(null)}
+        />
+      )}
+
+      {/* ── Scan / Doc toggle ── */}
+      <div className="pts-mode-bar">
+        <button
+          className={`pts-mode-btn${thumbMode === 'scan' ? ' pts-mode-btn--active' : ''}`}
+          onClick={() => setThumbMode('scan')}
+          title="Show original scan"
+        >
+          <ScanLine size={11} /> Scan
+        </button>
+        <button
+          className={`pts-mode-btn${thumbMode === 'doc' ? ' pts-mode-btn--active' : ''}`}
+          onClick={() => setThumbMode('doc')}
+          title="Show extracted document"
+        >
+          <FileText size={11} /> Doc
+        </button>
+      </div>
+
+      <div className="thumb-sidebar-inner" ref={innerRef}>
 
         {/* ── Cover thumbnail (page 0) — not draggable ── */}
         {hasCover && (
@@ -159,10 +208,21 @@ export default function PageThumbnailSidebar({
                 </div>
 
                 <div className="page-thumb-img-wrap">
-                  {img
-                    ? <img src={`data:image/jpeg;base64,${img}`} alt="" className="page-thumb-img" loading="lazy" />
-                    : <div className="page-thumb-blank" />
-                  }
+                  {/* ── Doc preview mode: scale-down the extracted HTML ── */}
+                  {thumbMode === 'doc' && hasResult && !isRegen ? (
+                    <div className="pts-doc-preview-clip">
+                      <div
+                        className="pts-doc-preview-inner"
+                        style={{ transform: `scale(${docScale})`, width: A4_PX }}
+                        dangerouslySetInnerHTML={{ __html: pageResults[pageNum] }}
+                      />
+                    </div>
+                  ) : img ? (
+                    <img src={`data:image/jpeg;base64,${img}`} alt="" className="page-thumb-img" loading="lazy" />
+                  ) : (
+                    <div className="page-thumb-blank" />
+                  )}
+
                   {isRegen && (
                     <div className="page-thumb-overlay">
                       <Loader2 size={14} className="animate-spin" style={{ color: '#22d3ee' }} />
@@ -174,7 +234,7 @@ export default function PageThumbnailSidebar({
                   {(isHovered || isActive) && onDelete && !isRegen && (
                     <button
                       className="pts-delete-btn"
-                      onClick={e => { e.stopPropagation(); onDelete(pageNum); }}
+                      onClick={e => { e.stopPropagation(); setDeleteConfirmPage(pageNum); }}
                       title={`Delete page ${pageNum}`}
                     >
                       <Trash2 size={10} />

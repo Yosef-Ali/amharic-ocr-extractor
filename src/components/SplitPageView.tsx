@@ -1,7 +1,7 @@
 import {
   useRef, useState, useEffect, useLayoutEffect, useCallback,
 } from 'react';
-import { CropIcon } from 'lucide-react';
+import { CropIcon, Loader2 } from 'lucide-react';
 
 import DocumentPage, { type DocumentPageHandle, type ElementStyles } from './DocumentPage';
 import { cropPageRegion, restoreImage, type ImageQuality } from '../services/geminiService';
@@ -336,25 +336,32 @@ export default function SplitPageView({
 
           {/* Image + Canvas overlay */}
           <div className="scan-body">
-            <div className="relative select-none">
-              <img
-                ref={imgRef}
-                src={pageImage.startsWith('http') ? pageImage : `data:image/jpeg;base64,${pageImage}`}
-                crossOrigin="anonymous"
-                alt={`Page ${pageNumber} original`}
-                className="w-full h-auto block"
-                draggable={false}
-              />
-              <canvas
-                ref={canvasRef}
-                className="absolute inset-0 w-full h-full"
-                style={{ cursor: 'crosshair' }}
-                onMouseDown={onMouseDown}
-                onMouseMove={onMouseMove}
-                onMouseUp={onMouseUp}
-                onMouseLeave={onMouseLeave}
-              />
-            </div>
+            {pageImage === '' ? (
+              <div className="flex flex-col items-center justify-center p-12 h-full w-full bg-slate-50 border border-slate-200 text-slate-400">
+                <Loader2 size={32} className="animate-spin mb-2 text-indigo-500" />
+                <span className="text-sm font-medium">Loading high-res scan...</span>
+              </div>
+            ) : (
+              <div className="relative select-none">
+                <img
+                  ref={imgRef}
+                  src={pageImage.startsWith('http') ? pageImage : `data:image/jpeg;base64,${pageImage}`}
+                  crossOrigin="anonymous"
+                  alt={`Page ${pageNumber} original`}
+                  className="w-full h-auto block"
+                  draggable={false}
+                />
+                <canvas
+                  ref={canvasRef}
+                  className="absolute inset-0 w-full h-full"
+                  style={{ cursor: 'crosshair' }}
+                  onMouseDown={onMouseDown}
+                  onMouseMove={onMouseMove}
+                  onMouseUp={onMouseUp}
+                  onMouseLeave={onMouseLeave}
+                />
+              </div>
+            )}
           </div>
 
         </div>
@@ -362,6 +369,16 @@ export default function SplitPageView({
 
         {/* ═══ RIGHT — Extracted Document ══════════════════════════════════ */}
         <div className="doc-panel relative">
+
+          {/* Unextracted empty state */}
+          {!html && !isRegenerating && (
+            <div className="absolute inset-x-8 top-32 bottom-8 z-20 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-xl text-slate-400 pointer-events-none">
+              <span className="text-sm font-medium">Page not extracted yet</span>
+              <span className="text-xs mt-2 max-w-[220px] text-center opacity-80 leading-relaxed">
+                Click "Extract Page" in the sidebar to analyze this scan and generate the document.
+              </span>
+            </div>
+          )}
 
           {/* Re-extracting overlay — scanning beam */}
           {isRegenerating && (
