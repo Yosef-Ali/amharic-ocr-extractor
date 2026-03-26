@@ -207,16 +207,18 @@ export default function EditorShell({
   const activePageRef = useRef(activePage);
   useEffect(() => { activePageRef.current = activePage; }, [activePage]);
 
-  // Auto-switch to document view when results arrive or when on cover page (page 0)
+  // Auto-switch view when results arrive
   useEffect(() => {
     if (activePage === 0) { setViewMode('document'); return; }
     if (pageResults[activePage]) {
       const hasScanImage = !!(pageImages[activePage - 1]);
-      // Always force document view when there's a result but no scan image (text-based pages)
       if (!hasScanImage) { setViewMode('document'); return; }
-      if (viewMode === 'scan') setViewMode('compare');
+      // If extraction just finished (not processing) and we have results, show extracted
+      if (!isProcessing && viewMode === 'scan') setViewMode('document');
+      // During processing, show compare so user can see progress
+      if (isProcessing && viewMode === 'scan') setViewMode('compare');
     }
-  }, [pageResults, activePage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pageResults, activePage, isProcessing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-collapse logic removed to prevent unwanted sidebar auto-opening
 

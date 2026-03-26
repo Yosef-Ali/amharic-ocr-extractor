@@ -176,6 +176,13 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [isDirty]);
 
+  // ── Browser tab title ──
+  useEffect(() => {
+    document.title = fileName
+      ? `${fileName}${isDirty ? ' •' : ''} — Amharic OCR`
+      : 'Amharic OCR Extractor';
+  }, [fileName, isDirty]);
+
   // ── Lazy load active page image ──────────────────────────────────────────
   useEffect(() => {
     if (!activeDocId || activePage < 1) return;
@@ -209,6 +216,7 @@ export default function App() {
   useEffect(() => { pageResultsRef.current = pageResults; }, [pageResults]);
   useEffect(() => { pageImagesRef.current  = pageImages;  }, [pageImages]);
   useEffect(() => { activePageRef.current  = activePage;  }, [activePage]);
+  const cancelRef = useRef(false);
 
   const executorRef  = useRef<CanvasExecutor | null>(null);
   const wsBridgeRef  = useRef<WsBridge | null>(null);
@@ -356,11 +364,16 @@ export default function App() {
   const processPages = useCallback(
     async (force = false) => {
       setIsProcessing(true);
+      cancelRef.current = false;
       let prevHTML: string | undefined;
       let extractedCount = 0;
       let errorCount = 0;
 
       for (let p = fromPage; p <= toPage; p++) {
+        if (cancelRef.current) {
+          setProcessingStatus('Cancelled.');
+          break;
+        }
         if (!force && pageResults[p]) {
           prevHTML = pageResults[p];
           continue;
@@ -399,8 +412,9 @@ export default function App() {
           if (is429Error(err)) { setProcessingStatus('Rate limit hit — paused.'); break; }
         }
 
-        if (p < toPage) {
+        if (p < toPage && !cancelRef.current) {
           for (let s = 5; s > 0; s--) {
+            if (cancelRef.current) break;
             setProcessingStatus(`Page ${p} done. Waiting ${s}s before next page…`);
             await sleep(1000);
           }
@@ -667,6 +681,7 @@ export default function App() {
 
   const handleShowAdmin   = useCallback(() => setShowAdmin(true), []);
   const handleShowLibrary = useCallback(() => setShowLibrary(true), []);
+  const handleCancel      = useCallback(() => { cancelRef.current = true; }, []);
   const handleError       = useCallback((msg: string) => setToast({ id: Date.now().toString(), message: msg, variant: 'error' }), []);
   const handleDismissToast = useCallback(() => setToast(null), []);
 
