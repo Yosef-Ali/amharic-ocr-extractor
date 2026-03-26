@@ -296,6 +296,12 @@ export default function EditorShell({
         setShowFindReplace(true);
         return;
       }
+      // Ctrl+S: save to library (intercept even inside editable)
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        onSave();
+        return;
+      }
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return;
       if (e.key === 'Escape') {
         // Never interrupt an active extraction with Escape

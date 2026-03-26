@@ -119,7 +119,7 @@ export default function BottomToolbar({
         <div className="bt-group">
           {hasAnyResults && (
             <>
-              <button className="bt-btn bt-btn--save" onClick={onSave} disabled={isProcessing || isSaving} title="Save to library">
+              <button className="bt-btn bt-btn--save" onClick={onSave} disabled={isProcessing || isSaving} title="Save to library (Ctrl+S)">
                 {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                 <span className="bt-label-desktop">{isSaving ? 'Saving…' : 'Save'}</span>
               </button>

@@ -141,11 +141,11 @@ function SectionStart() {
       </Step>
 
       <Step n={4} title="Review results">
-        Extracted pages appear on the canvas. Use the <strong>Scan / Split / Edit</strong> tabs at the top to switch between:
+        Extracted pages appear on the canvas. Use the <strong>Original / Side by Side / Extracted</strong> tabs at the top to switch between:
         <ul className="help-list">
-          <li><strong>Scan</strong> — original scanned image</li>
-          <li><strong>Split</strong> — side-by-side scan + extracted text</li>
-          <li><strong>Edit</strong> — extracted HTML only (fully editable)</li>
+          <li><strong>Original</strong> — original scanned image</li>
+          <li><strong>Side by Side</strong> — scan + extracted text together</li>
+          <li><strong>Extracted</strong> — extracted HTML only (fully editable)</li>
         </ul>
       </Step>
 
@@ -256,7 +256,7 @@ function SectionEdit() {
       </p>
 
       <Step n={1} title="Direct text editing">
-        Switch to <strong>Edit</strong> tab (top toolbar). The page becomes a live <code>contentEditable</code> area.
+        Switch to <strong>Extracted</strong> view (top toolbar). The page becomes a live <code>contentEditable</code> area.
         Click anywhere and type to edit text directly. Changes are saved to state on blur.
       </Step>
 
@@ -350,12 +350,15 @@ function SectionTips() {
       <div className="help-shortcut-grid">
         {[
           ['⌘ S',       'Save document to library'],
+          ['⌘ F',       'Find & Replace'],
           ['⌘ Z',       'Undo last edit'],
           ['⌘ ⇧ Z',    'Redo'],
-          ['⌘ scroll',  'Zoom in / out on canvas'],
-          ['⌘ ←',      'Previous page'],
-          ['⌘ →',      'Next page'],
-          ['⌘ P',      'Print current view'],
+          ['⌘ +',       'Zoom in'],
+          ['⌘ −',       'Zoom out'],
+          ['⌘ 0',       'Reset zoom to fit'],
+          ['← →',       'Previous / next page'],
+          ['H',          'Toggle hand tool (pan)'],
+          ['Esc',        'Close panel / exit selection'],
         ].map(([key, desc]) => (
           <div key={key} className="help-shortcut-row">
             <Kbd>{key}</Kbd>
@@ -384,7 +387,7 @@ function SectionTips() {
         <Tip>Run <strong>Fast</strong> extraction first to get a quick preview, then use <strong>Re-extract all</strong> in Pro mode for the final result.</Tip>
         <Tip>For Amharic religious texts, include the book title and chapter structure in your Style description when generating a cover — the AI produces much better results with context.</Tip>
         <Tip>The <strong>Improve</strong> tab in the Cover editor accepts iterative instructions — you can refine the same cover multiple times without starting over.</Tip>
-        <Tip>Use the <strong>Split</strong> view to compare the original scan with the extracted text side-by-side to spot any OCR errors.</Tip>
+        <Tip>Use the <strong>Side by Side</strong> view to compare the original scan with the extracted text to spot any OCR errors.</Tip>
         <Tip>Save frequently — each Save creates an independent snapshot, so you can always re-open a previous version from the Library.</Tip>
         <Tip>The <SlidersHorizontal size={11} style={{ display:'inline', verticalAlign:'middle' }} /> <strong>Inspector</strong> works on any element: click to select, then adjust font, spacing, and colours in the right panel.</Tip>
         <Tip>The <Hand size={11} style={{ display:'inline', verticalAlign:'middle' }} /> <strong>hand tool</strong> is useful on tablets and touch screens for panning large pages without accidentally selecting text.</Tip>

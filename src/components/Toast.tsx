@@ -15,12 +15,14 @@ interface ToastProps {
 }
 
 export default function Toast({ toast, onDismiss }: ToastProps) {
+  const duration = toast.variant === 'error' ? 8000 : 4000;
+
   useEffect(() => {
     const timer = setTimeout(() => {
       onDismiss(toast.id);
-    }, 4000); // Auto-dismiss after 4 seconds
+    }, duration);
     return () => clearTimeout(timer);
-  }, [toast.id, onDismiss]);
+  }, [toast.id, onDismiss, duration]);
 
   const variants = {
     success: {
@@ -46,20 +48,28 @@ export default function Toast({ toast, onDismiss }: ToastProps) {
     <div
       className={`
         animate-slide-up
-        flex items-start gap-3 p-4 rounded-xl shadow-lg border pointer-events-auto
+        flex flex-col rounded-xl shadow-lg border pointer-events-auto overflow-hidden
         ${style.bg}
       `}
     >
-      <div className="shrink-0 mt-0.5">{style.icon}</div>
-      <div className={`flex-1 text-sm font-medium ${style.text}`}>
-        {toast.message}
+      <div className="flex items-start gap-3 p-4">
+        <div className="shrink-0 mt-0.5">{style.icon}</div>
+        <div className={`flex-1 text-sm font-medium ${style.text}`}>
+          {toast.message}
+        </div>
+        <button
+          onClick={() => onDismiss(toast.id)}
+          className="shrink-0 text-gray-400 hover:text-gray-600 transition-colors ml-2"
+        >
+          <X size={16} />
+        </button>
       </div>
-      <button
-        onClick={() => onDismiss(toast.id)}
-        className="shrink-0 text-gray-400 hover:text-gray-600 transition-colors ml-2"
-      >
-        <X size={16} />
-      </button>
+      <div
+        className="h-0.5 bg-current opacity-20"
+        style={{
+          animation: `toast-countdown ${duration}ms linear forwards`,
+        }}
+      />
     </div>
   );
 }
