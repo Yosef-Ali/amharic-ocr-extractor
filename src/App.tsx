@@ -36,15 +36,36 @@ const is429Error = (err: unknown): boolean => {
 };
 
 const RATE_LIMIT_ERROR_HTML = `
-  <div style="border:2px solid #ef4444;border-radius:8px;padding:1.5rem;text-align:center;background:#fef2f2;margin:2rem 0;">
-    <p style="color:#dc2626;font-weight:700;font-size:1rem;margin:0 0 0.5rem;">
-      ⚠️ Rate Limit Reached (429)
+  <div style="border:2px solid #ef4444;border-radius:16px;padding:2rem;text-align:center;background:#fef2f2;margin:3rem auto;max-width:420px;">
+    <div style="font-size:2rem;margin-bottom:0.5rem;">⏳</div>
+    <p style="color:#dc2626;font-weight:800;font-size:1.1rem;margin:0 0 0.5rem;">
+      Rate Limit Reached
     </p>
-    <p style="color:#991b1b;font-size:0.875rem;margin:0;">
-      You've hit the API rate limit. Please wait a minute, then click <strong>Extract</strong> to continue.
+    <p style="color:#991b1b;font-size:0.85rem;margin:0 0 1rem;line-height:1.5;">
+      The API needs a moment to cool down. Wait about 60 seconds, then use the <strong>↻ Re-extract</strong> button in the toolbar above.
     </p>
+    <div style="display:inline-block;padding:6px 16px;background:#fee2e2;border-radius:8px;font-size:0.75rem;color:#b91c1c;font-weight:600;">
+      Tip: Use <strong>Fast</strong> mode for fewer rate limits
+    </div>
   </div>
 `.trim();
+
+function buildErrorHTML(page: number, message: string): string {
+  return `
+    <div style="border:2px solid #f59e0b;border-radius:16px;padding:2rem;text-align:center;background:#fffbeb;margin:3rem auto;max-width:420px;">
+      <div style="font-size:2rem;margin-bottom:0.5rem;">⚠️</div>
+      <p style="color:#92400e;font-weight:800;font-size:1.1rem;margin:0 0 0.5rem;">
+        Extraction Failed — Page ${page}
+      </p>
+      <p style="color:#78350f;font-size:0.82rem;margin:0 0 1rem;line-height:1.5;">
+        ${message.length > 120 ? message.slice(0, 120) + '…' : message}
+      </p>
+      <p style="color:#92400e;font-size:0.78rem;margin:0;font-weight:600;">
+        Use the <strong>↻ Re-extract</strong> button to try again
+      </p>
+    </div>
+  `.trim();
+}
 
 // ---------------------------------------------------------------------------
 // App
@@ -358,9 +379,7 @@ export default function App() {
           const error = err as Error & { status?: number };
           const errHtml = is429Error(err)
             ? RATE_LIMIT_ERROR_HTML
-            : `<p style="color:red;text-align:center;font-weight:bold;">
-                ⚠️ Error on page ${p}: ${error?.message ?? 'Unknown error'}
-              </p>`;
+            : buildErrorHTML(p, error?.message ?? 'Unknown error');
 
           setPageResults((prev) => ({ ...prev, [p]: errHtml }));
           if (is429Error(err)) { setProcessingStatus('Rate limit hit — paused.'); break; }
@@ -409,7 +428,7 @@ export default function App() {
       const error = err as Error & { status?: number };
       const errHtml = is429Error(err)
         ? RATE_LIMIT_ERROR_HTML
-        : `<p style="color:red;text-align:center;font-weight:bold;">⚠️ Error on page ${pageNumber}: ${error?.message ?? 'Unknown error'}</p>`;
+        : buildErrorHTML(pageNumber, error?.message ?? 'Unknown error');
       setPageResults((prev) => ({ ...prev, [pageNumber]: errHtml }));
     } finally {
       setRegeneratingPages((prev) => {
