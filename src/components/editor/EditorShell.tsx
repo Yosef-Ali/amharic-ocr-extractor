@@ -113,6 +113,7 @@ export default function EditorShell({
   const [rightDrawer,     setRightDrawer]     = useState<DrawerPanel>(null);
   const [showFindReplace, setShowFindReplace] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
+  const [pageInputActive, setPageInputActive] = useState(false);
   const [pageLayout,    setPageLayout]    = useState<PageLayout>(DEFAULT_LAYOUT);
   const [elementStyles, setElementStyles] = useState<ElementStyles | null>(null);
   const [styleApplySignal, setStyleApplySignal] =
@@ -492,10 +493,34 @@ export default function EditorShell({
             <button className="es-nav-btn" onClick={() => changePage(Math.max(navMin, activePage - 1))} disabled={activePage <= navMin}>
               <ChevronLeft size={14} />
             </button>
-            <span className="es-page-ct">
-              <strong>{activePage === -1 ? 'Back' : activePage === 0 ? 'Cover' : activePage}</strong>
-              {totalPages > 0 && <> / {totalPages}</>}
-            </span>
+            {pageInputActive ? (
+              <input
+                className="es-page-input"
+                type="number"
+                min={1}
+                max={totalPages}
+                defaultValue={activePage > 0 ? activePage : 1}
+                autoFocus
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    const val = parseInt((e.target as HTMLInputElement).value);
+                    if (val >= 1 && val <= totalPages) changePage(val);
+                    setPageInputActive(false);
+                  }
+                  if (e.key === 'Escape') setPageInputActive(false);
+                }}
+                onBlur={e => {
+                  const val = parseInt(e.target.value);
+                  if (val >= 1 && val <= totalPages) changePage(val);
+                  setPageInputActive(false);
+                }}
+              />
+            ) : (
+              <button className="es-page-ct" onClick={() => activePage > 0 && setPageInputActive(true)} title="Click to jump to page">
+                <strong>{activePage === -1 ? 'Back' : activePage === 0 ? 'Cover' : activePage}</strong>
+                {totalPages > 0 && <> / {totalPages}</>}
+              </button>
+            )}
             <button className="es-nav-btn" onClick={() => changePage(Math.min(totalPages, activePage + 1))} disabled={activePage >= totalPages}>
               <ChevronRight size={14} />
             </button>

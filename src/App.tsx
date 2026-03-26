@@ -652,6 +652,7 @@ export default function App() {
   // Clear everything — back to upload screen
   // -------------------------------------------------------------------------
   const handleClear = useCallback(() => {
+    if (isDirty && !window.confirm('You have unsaved changes. Close without saving?')) return;
     setActiveDocId(null);
     setFileName('');
     setPageImages([]);
@@ -660,8 +661,9 @@ export default function App() {
     setFromPage(1);
     setToPage(1);
     setProcessingStatus('');
+    setIsDirty(false);
     localStorage.removeItem('aoe_active_doc');
-  }, []);
+  }, [isDirty]);
 
   const handleShowAdmin   = useCallback(() => setShowAdmin(true), []);
   const handleShowLibrary = useCallback(() => setShowLibrary(true), []);

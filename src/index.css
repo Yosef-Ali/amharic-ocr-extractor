@@ -1281,6 +1281,30 @@
   text-align: center;
 }
 .es-page-ct strong { color: var(--t-text); }
+.es-page-ct {
+  cursor: pointer;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.es-page-ct:hover { background: var(--t-surface3); }
+.es-page-input {
+  width: 44px;
+  padding: 2px 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+  border: 1.5px solid var(--t-primary, #6366f1);
+  border-radius: 6px;
+  background: var(--t-surface);
+  color: var(--t-text);
+  outline: none;
+  font-variant-numeric: tabular-nums;
+}
+.es-page-input::-webkit-inner-spin-button,
+.es-page-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.es-page-input { -moz-appearance: textfield; }
 .es-nav-btn {
   display: flex;
   align-items: center;
