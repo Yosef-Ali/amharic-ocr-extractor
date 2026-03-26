@@ -45,6 +45,7 @@ interface Props {
   regeneratingPages: Set<number>;
   isPdfExporting:    boolean;
   isSaving?:         boolean;
+  isDirty?:          boolean;
 
   onEdit:             (pageNumber: number, html: string) => void;
   onRegenerate:       (pageNumber: number) => void;
@@ -77,7 +78,7 @@ type DrawerPanel = 'agent' | 'inspector' | 'cover' | 'homophone' | null;
 export default function EditorShell({
   fileName, pageImages, pageDimensions, pageResults, imageQuality,
   isProcessing, processingStatus, regeneratingPages,
-  isPdfExporting, isSaving,
+  isPdfExporting, isSaving, isDirty,
   onEdit, onRegenerate, onDeletePage, onDeleteCover,
   onReorderPages, onInsertPage,
   onExtract, onForceExtract, onSave, onClear,
@@ -857,6 +858,7 @@ export default function EditorShell({
             isRegenerating={isRegen}
             isPdfExporting={isPdfExporting}
             isSaving={isSaving}
+            isDirty={isDirty}
             imageQuality={imageQuality}
             processingStatus={processingStatus}
             hasImage={activePage > 0 ? !!pageImages[activePage - 1] : false}

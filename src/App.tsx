@@ -159,12 +159,22 @@ export default function App() {
   const [processingStatus, setProcessingStatus] = useState('');
   const [isPdfExporting,   setIsPdfExporting]   = useState(false);
   const [isSaving,         setIsSaving]         = useState(false);
+  const [isDirty,          setIsDirty]          = useState(false);
   const [showLibrary,      setShowLibrary]      = useState(false);
   const [toast,            setToast]            = useState<ToastMessage | null>(null);
   const [imageQuality,     setImageQuality]     = useState<ImageQuality>('fast');
   const [regeneratingPages, setRegeneratingPages] = useState<Set<number>>(new Set());
   const [activePage,       setActivePage]       = useState(1);
   const [showAdmin,        setShowAdmin]        = useState(false);
+
+  // ── Warn before closing with unsaved changes ──
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) { e.preventDefault(); }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
 
   // ── Lazy load active page image ──────────────────────────────────────────
   useEffect(() => {
@@ -399,6 +409,7 @@ export default function App() {
 
       // ── Extraction complete ──
       if (extractedCount > 0) {
+        setIsDirty(true);
         const msg = errorCount > 0
           ? `Extracted ${extractedCount} page${extractedCount > 1 ? 's' : ''} (${errorCount} failed — use Re-extract to retry)`
           : `${extractedCount} page${extractedCount > 1 ? 's' : ''} extracted successfully`;
@@ -416,6 +427,7 @@ export default function App() {
   // -------------------------------------------------------------------------
   const handleEdit = (pageNumber: number, html: string) => {
     setPageResults((prev) => ({ ...prev, [pageNumber]: html }));
+    setIsDirty(true);
   };
 
   // -------------------------------------------------------------------------
@@ -531,6 +543,7 @@ export default function App() {
       setActiveDocId(docId);
       localStorage.setItem('aoe_active_doc', docId);
       setToast({ id: Date.now().toString(), message: `"${fileName}" saved to library.`, variant: 'success' });
+      setIsDirty(false);
       // Persist AI-data export in the background when the user has opted in
       if (neonUser && docId && localStorage.getItem(AI_DATA_EXPORT_KEY) === 'true') {
         void saveDocumentExport(docId, neonUser.id, buildDocumentExport(docId, fileName, pageResults))
@@ -750,6 +763,7 @@ export default function App() {
         onForceExtract={() => processPages(true)}
         onSave={handleSave}
         isSaving={isSaving}
+        isDirty={isDirty}
         onClear={handleClear}
         onShowLibrary={handleShowLibrary}
         onDownloadPDF={handleDownloadPDF}

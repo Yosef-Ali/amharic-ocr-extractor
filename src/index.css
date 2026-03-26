@@ -2193,6 +2193,21 @@
 .bt-btn--regen:hover:not(:disabled) {
   opacity: 1;
 }
+.bt-dirty-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  background: #f59e0b;
+  border-radius: 50%;
+  border: 1.5px solid var(--t-surface);
+  animation: bt-dot-pulse 2s ease-in-out infinite;
+}
+@keyframes bt-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.6; transform: scale(0.85); }
+}
 
 /* Fast / Pro toggle */
 .bt-mode {

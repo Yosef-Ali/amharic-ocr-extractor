@@ -15,6 +15,7 @@ interface Props {
   isRegenerating:   boolean;
   isPdfExporting:   boolean;
   isSaving?:        boolean;
+  isDirty?:         boolean;
   imageQuality:     ImageQuality;
   processingStatus: string;
   hasImage?:        boolean;
@@ -36,7 +37,7 @@ interface Props {
 
 export default function BottomToolbar({
   activePage, hasResult, hasAnyResults,
-  isProcessing, isRegenerating, isPdfExporting, isSaving,
+  isProcessing, isRegenerating, isPdfExporting, isSaving, isDirty,
   imageQuality, processingStatus,
   hasImage = true,
   onExtract, onForceExtract,
@@ -119,9 +120,10 @@ export default function BottomToolbar({
         <div className="bt-group">
           {hasAnyResults && (
             <>
-              <button className="bt-btn bt-btn--save" onClick={onSave} disabled={isProcessing || isSaving} title="Save to library (Ctrl+S)">
+              <button className="bt-btn bt-btn--save" onClick={onSave} disabled={isProcessing || isSaving} title="Save to library (Ctrl+S)" style={{ position: 'relative' }}>
                 {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                 <span className="bt-label-desktop">{isSaving ? 'Saving…' : 'Save'}</span>
+                {isDirty && !isSaving && <span className="bt-dirty-dot" />}
               </button>
 
               {/* Export group — all visible */}
