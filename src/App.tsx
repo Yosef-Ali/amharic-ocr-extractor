@@ -365,6 +365,7 @@ export default function App() {
     async (force = false) => {
       setIsProcessing(true);
       cancelRef.current = false;
+      const startTime = Date.now();
       let prevHTML: string | undefined;
       let extractedCount = 0;
       let errorCount = 0;
@@ -385,7 +386,7 @@ export default function App() {
           continue;
         }
 
-        setProcessingStatus(`Extracting page ${p} of ${toPage}…`);
+        setProcessingStatus(`Extracting page ${p} of ${toPage}… (${Math.round((Date.now() - startTime) / 1000)}s)`);
 
         try {
           const html = await extractPageHTML(pageImages[p - 1], prevHTML);
@@ -395,7 +396,7 @@ export default function App() {
           const { html: finalHtml } = await autoFillImagePlaceholders(
             html,
             pageImages[p - 1],
-            (msg) => setProcessingStatus(`Page ${p}: ${msg}`),
+            (msg) => setProcessingStatus(`Page ${p}: ${msg} (${Math.round((Date.now() - startTime) / 1000)}s)`),
           );
 
           prevHTML = finalHtml;
@@ -424,9 +425,11 @@ export default function App() {
       // ── Extraction complete ──
       if (extractedCount > 0) {
         setIsDirty(true);
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        const timeStr = elapsed >= 60 ? `${Math.floor(elapsed / 60)}m ${elapsed % 60}s` : `${elapsed}s`;
         const msg = errorCount > 0
-          ? `Extracted ${extractedCount} page${extractedCount > 1 ? 's' : ''} (${errorCount} failed — use Re-extract to retry)`
-          : `${extractedCount} page${extractedCount > 1 ? 's' : ''} extracted successfully`;
+          ? `Extracted ${extractedCount} page${extractedCount > 1 ? 's' : ''} in ${timeStr} (${errorCount} failed)`
+          : `${extractedCount} page${extractedCount > 1 ? 's' : ''} extracted in ${timeStr}`;
         setToast({ id: Date.now().toString(), message: msg, variant: errorCount > 0 ? 'error' : 'success' });
       }
 
