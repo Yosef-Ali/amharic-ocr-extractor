@@ -84,8 +84,7 @@ export default function EditorShell({
   onEdit, onRegenerate, onDeletePage, onDeleteCover,
   onReorderPages, onInsertPage,
   onExtract, onForceExtract, onSave, onClear,
-  onShowLibrary, onDownloadPDF, onDownloadTxt, onDownloadDocx, onCopyAllText,
-  onCancel,
+  onShowLibrary, onDownloadPDF, onDownloadTxt, onDownloadDocx, onCopyAllText, onCancel,
   onImageQualityChange,
   onActivePageChange,
   onError,
@@ -904,9 +903,9 @@ export default function EditorShell({
             onDownloadTxt={onDownloadTxt}
             onDownloadDocx={onDownloadDocx}
             onCopyAllText={onCopyAllText}
+            onCancel={onCancel}
             onImageQualityChange={onImageQualityChange}
             onCoverPage={() => changePage(0)}
-            onCancel={onCancel}
           />
         </main>
 

@@ -1,5 +1,5 @@
 import {
-  Layers, Loader2, Save, Download, FileText, FileDown, ClipboardCopy,
+  Layers, Loader2, Save, Download, FileText, FileDown, ClipboardCopy, X,
   RefreshCw, Trash2, Zap, Sparkles, MoreHorizontal, BookOpen, Image as ImageIcon, HelpCircle,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -32,9 +32,9 @@ interface Props {
   onDownloadTxt?:      () => void;
   onDownloadDocx?:     () => void;
   onCopyAllText?:      () => void;
+  onCancel?:           () => void;
   onImageQualityChange: (q: ImageQuality) => void;
   onCoverPage?:        () => void;
-  onCancel?:           () => void;
 }
 
 export default function BottomToolbar({
@@ -44,8 +44,8 @@ export default function BottomToolbar({
   hasImage = true,
   onExtract, onForceExtract,
   onRegenerate, onDeletePage,
-  onSave, onShowLibrary, onDownloadPDF, onDownloadTxt, onDownloadDocx, onCopyAllText,
-  onImageQualityChange, onCoverPage, onCancel,
+  onSave, onShowLibrary, onDownloadPDF, onDownloadTxt, onDownloadDocx, onCopyAllText, onCancel,
+  onImageQualityChange, onCoverPage,
 }: Props) {
   const [moreOpen,  setMoreOpen]  = useState(false);
   const [showHelp,  setShowHelp]  = useState(false);
@@ -111,6 +111,14 @@ export default function BottomToolbar({
                 : <>Extract All<span className="bt-badge">{totalPages}</span></>}
             </span>
           </button>
+
+          {/* Cancel extraction */}
+          {isProcessing && onCancel && (
+            <button className="bt-btn bt-btn--cancel" onClick={onCancel} title="Stop extraction">
+              <X size={14} />
+              <span className="bt-label-desktop">Stop</span>
+            </button>
+          )}
 
           {/* Re-extract current page */}
           {hasResult && hasImage && (

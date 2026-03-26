@@ -2232,6 +2232,14 @@
 .bt-btn--regen:hover:not(:disabled) {
   opacity: 1;
 }
+.bt-btn--cancel {
+  background: rgba(239,68,68,0.12) !important;
+  color: #ef4444 !important;
+  border-color: rgba(239,68,68,0.3) !important;
+}
+.bt-btn--cancel:hover:not(:disabled) {
+  background: rgba(239,68,68,0.2) !important;
+}
 .bt-dirty-dot {
   position: absolute;
   top: 3px;
