@@ -83,12 +83,13 @@ export type AgentModel =
   | 'gemini-flash'
   | 'gemini-pro'
   | 'claude-sonnet'
-  | 'claude-opus';
+  | 'claude-opus'
+  | 'minimax-m27';
 
 export interface ModelDef {
   id:      AgentModel;
   label:   string;
-  vendor:  'gemini' | 'claude';
+  vendor:  'gemini' | 'claude' | 'minimax';
   badge:   string;
   color:   string;
   apiKey?: 'gemini' | 'anthropic';
@@ -111,6 +112,15 @@ export const AGENT_MODELS: ModelDef[] = [
     badge:  'Pro',
     color:  '#818cf8',
     apiKey: 'gemini',
+  },
+  {
+    id:     'minimax-m27',
+    label:  'MiniMax-M2.7',
+    vendor: 'minimax',
+    badge:  'Smart',
+    color:  '#f59e0b',
+    apiKey: 'anthropic',
+    note:   'Using MiniMax via Anthropic API',
   },
   {
     id:     'claude-sonnet',

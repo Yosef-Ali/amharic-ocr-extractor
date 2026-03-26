@@ -12,7 +12,7 @@ import {
   AlertTriangle, ListOrdered, Cpu, KeyRound,
   MessageCircle, Wrench,
 } from 'lucide-react';
-import { editPageWithTools, chatWithAI, setApiKey, isApiKeyError, type ChatTurn, type CanvasContext } from '../../services/geminiService';
+import { editPageWithTools, chatWithAI, setApiKey, isApiKeyError, setActiveModel, type ChatTurn, type CanvasContext } from '../../services/geminiService';
 import {
   getProjectMemory, saveProjectMemory, buildProjectContext, appendAgentSummary,
   type ProjectMemory,
@@ -30,8 +30,9 @@ import { MarkdownText } from '../../utils/markdownRenderer';
 const MODEL_API: Record<AgentModel, string> = {
   'gemini-flash':  'gemini-3-flash-preview',
   'gemini-pro':    'gemini-3.1-pro-preview',
-  'claude-sonnet': '',   // placeholder — requires Anthropic setup
-  'claude-opus':   '',
+  'claude-sonnet': 'claude-3-5-sonnet-20240620',
+  'claude-opus':   'claude-3-opus-20240229',
+  'minimax-m27':   'MiniMax-M2.7',
 };
 
 // ── Props ─────────────────────────────────────────────────────────────────
@@ -409,7 +410,11 @@ function ModelSelector({
               key={m.id}
               className={`ap-model-option${m.id === model ? ' active' : ''}${m.note ? ' ap-model-option--disabled' : ''}`}
               onClick={() => {
-                if (!m.note) { onChange(m.id); setOpen(false); }
+                if (!m.note || m.id === 'minimax-m27') { 
+                  onChange(m.id); 
+                  setActiveModel(m.id);
+                  setOpen(false); 
+                }
               }}
               title={m.note}
             >
@@ -709,7 +714,7 @@ export default function AgentPanel({
       const canvasCtx: CanvasContext | undefined =
         context ? { pageNumber: context.pageNumber, html: context.html, image: context.image } : undefined;
 
-      const reply = await chatWithAI(newHistory, canvasCtx, projectContext);
+      const reply = await chatWithAI(newHistory, canvasCtx, projectContext, model);
 
       setMessages(prev => prev.filter(m => !(m.type === 'thinking' && m.id === thinkId)));
       addMsg({ type: 'text', id: uid(), content: reply });

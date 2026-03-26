@@ -807,6 +807,7 @@ export default function App() {
         theme={theme}
         onToggleTheme={toggleTheme}
         onError={handleError}
+        onCancel={handleCancel}
       />
 
       {/* ── Hidden PDF export container ─────────────────────────────────

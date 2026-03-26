@@ -1,31 +1,41 @@
 import { GoogleGenAI } from '@google/genai';
 import { APPROVAL_REQUIRED_TOOLS } from '../types/a2ui';
+import { 
+  buildOcrPrompt, 
+  buildLayoutPrompt, 
+  verifyLayout, 
+  type ChatTurn, 
+  type CanvasContext,
+  type BBox,
+  type ImageAspectRatio,
+  type ImageSize,
+  type ImageGenOptions,
+  type ImageQuality
+} from './aiCommon';
+import { anthropicChat, anthropicExtractPageHTML, anthropicEditPage } from './anthropicService';
+
+export type { ChatTurn, CanvasContext, BBox, ImageAspectRatio, ImageSize, ImageGenOptions, ImageQuality };
 
 const MODEL       = 'gemini-3-flash-preview';          // agent chat — function calling (tools in config.tools)
 const OCR_FAST    = 'gemini-3.1-flash-image-preview';  // Pass 1 & 2 batch extraction (fast model — DO NOT CHANGE)
 const IMAGE_MODEL = 'gemini-3-pro-image-preview';      // image generation & editing (DO NOT CHANGE)
 const NANOBANANA2 = 'gemini-3.1-flash-image-preview';  // NanoBanana 2 — cover page generation (pro quality at flash speed)
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-export type ImageQuality    = 'fast' | 'pro';
-export type ImageAspectRatio = '1:1' | '4:3' | '3:4' | '16:9' | '9:16';
-export type ImageSize       = '512px' | '1K' | '2K';
+// ── Model Selection Logic ──────────────────────────────────────────────────
 
-export interface ImageGenOptions {
-  aspectRatio?: ImageAspectRatio;
-  imageSize?:   ImageSize;
-  quality?:     ImageQuality;
+let currentModelId: string | undefined;
+
+/** Set the active model for all subsequent generic AI calls */
+export function setActiveModel(modelId: string) {
+  currentModelId = modelId;
 }
 
-/** Bounding box expressed as percentages of the full page (0–100) */
-export interface BBox {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
+/** Get the currently active model ID */
+export function getActiveModelId() {
+  return currentModelId;
 }
+
+// (ImageQuality is now imported from aiCommon)
 
 const LS_KEY = 'gemini_api_key';
 
@@ -53,162 +63,23 @@ export function isApiKeyError(err: unknown): boolean {
   return /API_KEY_INVALID|API key expired|API key not valid|API_KEY_NOT_FOUND|INVALID_ARGUMENT.*key/i.test(msg);
 }
 
-// ---------------------------------------------------------------------------
-// Pass 1 — OCR: extract raw text from the page image
-// ---------------------------------------------------------------------------
-function buildOcrPrompt(): string {
-  return `You are an expert multilingual OCR engine that works with any document type (books, newspapers, forms, academic papers, religious texts, manuals, etc.).
+// ── Prompt Builders (imported from aiCommon) ──────────────────────────────
 
-TASK: Extract ALL text from this page image with 100% accuracy.
+// ── Edit Page ─────────────────────────────────────────────────────────────
 
-CRITICAL — AMHARIC / ETHIOPIC (ፊደል) TEXT RULES:
-- NEVER substitute, correct, modernize, or "fix" any Amharic word. Output EXACTLY what is printed.
-- Visually similar Ethiopic characters MUST be distinguished carefully:
-  ሀ ≠ ሐ ≠ ኀ  |  ሰ ≠ ሠ  |  ጸ ≠ ፀ  |  አ ≠ ዐ
-- Preserve ALL Ethiopic punctuation exactly: ። (full stop) ፣ (comma) ፤ (semicolon) ፡ (wordspace) :: (old-style full stop)
-- Church/religious texts use archaic forms — do NOT replace them with modern equivalents.
-- If a word is unclear, output your best character-level reading — NEVER skip or paraphrase it.
-- Mixed Amharic + English/numbers: keep both scripts exactly as printed, in the correct reading order.
-
-GENERAL RULES:
-- Output ONLY the raw text — nothing else, no explanations.
-- Preserve every character, punctuation mark, and number exactly as it appears.
-- Preserve paragraph breaks with blank lines.
-- If the page has two or more columns, extract each column left-to-right, separated by "---COLUMN BREAK---".
-- Mark headers and titles with "### " prefix.
-- Mark a text line with "[BOXED] " ONLY when it sits inside a clearly drawn rectangle whose lines are visible on ALL FOUR sides. Do NOT mark colored or styled text that simply has no surrounding box.
-- For photographs, illustrations, drawings, charts, or any non-text graphic region: insert a marker IN PLACE (at the exact reading position where it appears in the page flow):
-    [IMAGE: <brief English description> | pos:<top|upper|middle|lower|bottom> | h:<approximate % of page height the image occupies>]
-  Examples:
-    [IMAGE: black-and-white woodcut of people gathered around a fire | pos:top | h:38]
-    [IMAGE: portrait photograph of a man in traditional dress | pos:upper | h:22]
-    [IMAGE: decorative horizontal divider line | pos:middle | h:2]
-  Do NOT skip the marker — missing it means the image will be lost from the output.
-- Do NOT translate, interpret, or add commentary.
-
-Extract now:`;
-}
-
-// ---------------------------------------------------------------------------
-// Pass 2 — Layout: reconstruct HTML from extracted text + page image reference
-// ---------------------------------------------------------------------------
-function buildLayoutPrompt(extractedText: string, prevHTML?: string): string {
-  return `You are an expert document layout reconstructor for Amharic (Ge'ez) text.
-
-TASK: Convert the extracted OCR text below into clean, professional HTML that faithfully reproduces the original page layout shown in the image. This app works with ANY document type — books, newspapers, academic papers, forms, manuals — so adapt the design to what you actually see, not to assumptions about document type.
-
-EXTRACTED TEXT:
-${extractedText}
-
-ABSOLUTE RULE — TEXT INTEGRITY:
-You MUST use the EXACT text from "EXTRACTED TEXT" above — copy it character-by-character into your HTML.
-- NEVER rewrite, paraphrase, modernize, or "improve" any Amharic word.
-- NEVER drop words, add words, or reorder words.
-- NEVER substitute similar-looking Ethiopic characters (ሀ≠ሐ≠ኀ, ሰ≠ሠ, ጸ≠ፀ).
-- If the extracted text has errors, preserve those errors — your job is LAYOUT, not editing.
-- Every single word from the extracted text MUST appear in your HTML output.
-- Output raw HTML only — zero markdown, zero code fences, zero \`\`\`html wrappers.
-- Do NOT include <html>, <head>, <body>, or <doctype> tags.
-- Start your output directly with the first HTML element.
-- Preserve ALL text character-perfect from the extracted text above.
-- Lines marked "[BOXED]" in the extracted text sat inside a four-sided rectangle in the scan — render them with a CSS border div (see template below), NOT as an image placeholder.
-
-LAYOUT TEMPLATES — adapt colors to match the original document's palette:
-
-Two-column layout (only when the page clearly has two columns):
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;width:100%;">
-
-Primary header:
-  <h2 style="text-align:center;font-weight:900;color:#0f172a;font-size:1.2rem;margin:0 0 0.75rem;">
-
-Section subheader (use the dominant heading color of the original — e.g. #b91c1c for red, #1d4ed8 for blue, #0f172a for black):
-  <h3 style="text-align:center;font-weight:700;color:[HEADING_COLOR];font-size:0.95rem;margin:0 0 0.5rem;">
-
-Body paragraph:
-  <p style="line-height:1.75;color:#1c1917;margin:0 0 0.85rem;text-align:justify;font-size:1rem;">
-
-Bordered text box — ONLY for [BOXED] lines (match the border color of the original scan):
-  <div style="border:2px solid [BORDER_COLOR];border-radius:4px;padding:0.55rem 0.85rem;margin:0.6rem 0;text-align:center;">
-
-DESIGN PRINCIPLES (follow these — act as a senior document designer):
-- Use borders SPARINGLY — only when a four-sided rectangle is explicitly visible in the scan.
-- Section titles that are merely colored or bold text → use <h3>, NOT a bordered div.
-- Maintain clear visual hierarchy: primary header > subheader > body.
-- Keep margins compact and consistent — avoid excessive whitespace or crowding.
-- Prefer semantic HTML (h2, h3, p) over generic divs for text content.
-- Every element must carry its own inline styles — no class dependencies.
-
-IMAGE PLACEHOLDERS — converting [IMAGE: ...] markers:
-
-  The extracted text contains [IMAGE: description | pos:X | h:N] markers.
-  Each marker represents a real graphic region in the scan. You MUST:
-  1. Replace the marker with a placeholder div AT THAT EXACT POSITION in the HTML flow.
-  2. Set data-bbox using the scan image as visual reference — look at where the image actually is.
-
-  data-bbox format: "x1,y1,x2,y2" — percentages of full page (0–100).
-  x1,y1 = top-left corner of the image; x2,y2 = bottom-right corner.
-
-  Use the pos/h hints as a starting estimate, then refine by looking at the scan:
-  - pos:top    → y1 ≈ 0–5
-  - pos:upper  → y1 ≈ 5–25
-  - pos:middle → y1 ≈ 35–55
-  - pos:lower  → y1 ≈ 55–75
-  - pos:bottom → y1 ≈ 75–95
-  - h:38 means the image occupies ~38% of the page height, so y2 ≈ y1 + 38
-  - For x1/x2: a full-width image is 0,100; a left-column image is 0,48; right-column is 52,100.
-
-  Use this exact HTML:
-<div class="ai-image-placeholder" data-description="[description from marker]" data-bbox="[x1],[y1],[x2],[y2]">
-  <span class="ai-ph-icon">📷</span>
-  <p class="ai-ph-label">[description from marker]</p>
-</div>
-
-  ❌ NEVER insert a placeholder for:
-     - [BOXED] text areas — render those with a CSS border div
-     - Any area where you can read the actual text content
-
-${prevHTML
-    ? `PREVIOUS PAGE HTML (use for style consistency — do NOT repeat its content):\n${prevHTML.slice(0, 2500)}`
-    : ''}
-
-Now output the HTML layout for this page:`.trim();
-}
-
-// ---------------------------------------------------------------------------
-// Layout verification — clean up model output
-// ---------------------------------------------------------------------------
-function verifyLayout(html: string): string {
-  let cleaned = html
-    .replace(/^```html\s*/i, '')
-    .replace(/^```\s*/i, '')
-    .replace(/```\s*$/i, '')
-    .trim();
-
-  cleaned = cleaned
-    .replace(/<\/?html[^>]*>/gi, '')
-    .replace(/<\/?head[^>]*>/gi, '')
-    .replace(/<\/?body[^>]*>/gi, '')
-    .replace(/<\/?doctype[^>]*>/gi, '')
-    .replace(/<!DOCTYPE[^>]*>/gi, '')
-    .trim();
-
-  if (!cleaned.startsWith('<')) {
-    cleaned = `<p style="line-height: 1.8; color: #1c1917; margin-bottom: 2rem; text-align: justify; font-size: 1rem;">${cleaned}</p>`;
-  }
-
-  return cleaned;
-}
-
-// ---------------------------------------------------------------------------
-// AI Design Chat — edit a page via natural language instruction
-// Acts as a senior document designer: improves layout, removes clutter,
-// fixes typography, while preserving every word of the original content.
-// ---------------------------------------------------------------------------
 export async function editPageWithChat(
   base64Image: string,
   currentHTML: string,
   instruction: string,
+  modelId?: string,
 ): Promise<string> {
+  const activeModel = modelId || currentModelId;
+  const isAnthropic = activeModel?.startsWith('minimax-') || activeModel?.startsWith('claude-');
+
+  if (isAnthropic) {
+    return anthropicEditPage(base64Image, currentHTML, instruction, activeModel);
+  }
+
   const imagePart = { inlineData: { mimeType: 'image/jpeg', data: base64Image } };
 
   const prompt = `You are a senior document designer and HTML expert.
@@ -253,7 +124,15 @@ Output the improved HTML now:`.trim();
 export async function extractPageHTML(
   base64Image: string,
   previousPageHTML?: string,
+  modelId?: string,
 ): Promise<string> {
+  const activeModel = modelId || currentModelId;
+  const isAnthropic = activeModel?.startsWith('minimax-') || activeModel?.startsWith('claude-');
+
+  if (isAnthropic) {
+    return anthropicExtractPageHTML(base64Image, previousPageHTML);
+  }
+
   const imagePart = { inlineData: { mimeType: 'image/jpeg', data: base64Image } };
 
   // ── Pass 1: OCR — extract raw text (fast model) ──
@@ -892,28 +771,26 @@ export async function editPageWithTools(
 // Floating Chat — general-purpose multimodal assistant chat
 // Supports conversation history with optional image attachments per turn.
 // ---------------------------------------------------------------------------
-export interface ChatTurn {
-  role: 'user' | 'ai';
-  text: string;
-  imageDataUrl?: string; // full "data:image/...;base64,..." data URL
-}
-
-/** Optional context about the document page currently open in the editor */
-export interface CanvasContext {
-  pageNumber: number;
-  html:       string;
-  image:      string;   // raw base64 JPEG (no data: prefix)
-}
-
 export async function chatWithAI(
   history: ChatTurn[],
   canvasContext?: CanvasContext,
   projectContext?: string,
+  modelId?: string,
 ): Promise<string> {
+  const activeModel = modelId || currentModelId;
+  const isAnthropic = activeModel?.startsWith('minimax-') || activeModel?.startsWith('claude-');
+
+  if (isAnthropic) {
+    let targetModel = activeModel;
+    if (activeModel === 'minimax-m27') targetModel = import.meta.env.VITE_ANTHROPIC_MODEL || 'MiniMax-M2.7';
+    return anthropicChat(history, canvasContext, projectContext, targetModel);
+  }
+
+  const modelName = activeModel === 'gemini-pro' ? 'gemini-3.1-pro-preview' : MODEL;
+
   type Part = { text?: string; inlineData?: { mimeType: string; data: string } };
   type Content = { role: 'user' | 'model'; parts: Part[] };
 
-  // If a canvas page is open, inject it as a silent context exchange before history
   const contextContents: Content[] = canvasContext ? [
     {
       role: 'user',
@@ -945,7 +822,7 @@ export async function chatWithAI(
     });
 
   const response = await client.models.generateContent({
-    model: MODEL,
+    model: modelName,
     contents: [...contextContents, ...historyContents],
     config: {
       systemInstruction:

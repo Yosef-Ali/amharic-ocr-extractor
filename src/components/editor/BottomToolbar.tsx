@@ -34,6 +34,7 @@ interface Props {
   onCopyAllText?:      () => void;
   onImageQualityChange: (q: ImageQuality) => void;
   onCoverPage?:        () => void;
+  onCancel?:           () => void;
 }
 
 export default function BottomToolbar({
@@ -44,7 +45,7 @@ export default function BottomToolbar({
   onExtract, onForceExtract,
   onRegenerate, onDeletePage,
   onSave, onShowLibrary, onDownloadPDF, onDownloadTxt, onDownloadDocx, onCopyAllText,
-  onImageQualityChange, onCoverPage,
+  onImageQualityChange, onCoverPage, onCancel,
 }: Props) {
   const [moreOpen,  setMoreOpen]  = useState(false);
   const [showHelp,  setShowHelp]  = useState(false);
@@ -63,6 +64,14 @@ export default function BottomToolbar({
               <Loader2 size={11} className="animate-spin" />
               <span>{processingStatus}</span>
               {total > 0 && <span className="bt-status-pct">{pct}%</span>}
+              {onCancel && (
+                <button 
+                  className="ml-auto text-[10px] font-bold uppercase tracking-wider text-red-500 hover:text-red-600 transition-colors"
+                  onClick={onCancel}
+                >
+                  Cancel
+                </button>
+              )}
             </div>
             {total > 0 && (
               <div className="bt-progress-track">
