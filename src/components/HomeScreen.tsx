@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  FileText, Upload, FolderOpen, Trash2, Clock, BookOpen,
+  FileText, Upload, FolderOpen, Trash2, Clock,
   Sparkles, ChevronRight, Plus, Search, Loader2, ScanSearch,
   ShieldCheck, Download, Layers, ImageIcon, AlignLeft,
 } from 'lucide-react';
