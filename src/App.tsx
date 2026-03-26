@@ -347,6 +347,8 @@ export default function App() {
     async (force = false) => {
       setIsProcessing(true);
       let prevHTML: string | undefined;
+      let extractedCount = 0;
+      let errorCount = 0;
 
       for (let p = fromPage; p <= toPage; p++) {
         if (!force && pageResults[p]) {
@@ -375,6 +377,7 @@ export default function App() {
 
           prevHTML = finalHtml;
           setPageResults((prev) => ({ ...prev, [p]: finalHtml }));
+          extractedCount++;
         } catch (err: unknown) {
           const error = err as Error & { status?: number };
           const errHtml = is429Error(err)
@@ -382,6 +385,7 @@ export default function App() {
             : buildErrorHTML(p, error?.message ?? 'Unknown error');
 
           setPageResults((prev) => ({ ...prev, [p]: errHtml }));
+          errorCount++;
           if (is429Error(err)) { setProcessingStatus('Rate limit hit — paused.'); break; }
         }
 
@@ -391,6 +395,14 @@ export default function App() {
             await sleep(1000);
           }
         }
+      }
+
+      // ── Extraction complete ──
+      if (extractedCount > 0) {
+        const msg = errorCount > 0
+          ? `Extracted ${extractedCount} page${extractedCount > 1 ? 's' : ''} (${errorCount} failed — use Re-extract to retry)`
+          : `${extractedCount} page${extractedCount > 1 ? 's' : ''} extracted successfully`;
+        setToast({ id: Date.now().toString(), message: msg, variant: errorCount > 0 ? 'error' : 'success' });
       }
 
       setIsProcessing(false);
