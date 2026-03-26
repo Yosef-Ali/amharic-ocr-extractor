@@ -36,7 +36,7 @@ interface Props {
 }
 
 export default function BottomToolbar({
-  activePage, hasResult, hasAnyResults,
+  activePage, totalPages, hasResult, hasAnyResults,
   isProcessing, isRegenerating, isPdfExporting, isSaving, isDirty,
   imageQuality, processingStatus,
   hasImage = true,
@@ -91,14 +91,14 @@ export default function BottomToolbar({
           </button>
 
           {/* Extract */}
-          <button className="bt-btn bt-btn--primary" onClick={onExtract} disabled={isProcessing}>
+          <button className="bt-btn bt-btn--primary" onClick={onExtract} disabled={isProcessing} title={`Extract ${totalPages} page${totalPages !== 1 ? 's' : ''} with AI OCR`}>
             {isProcessing ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />}
             <span>
               {isProcessing
                 ? (processingStatus.match(/page (\d+) of (\d+)/i)
                     ? `${processingStatus.match(/page (\d+) of (\d+)/i)![1]}/${processingStatus.match(/page (\d+) of (\d+)/i)![2]}`
                     : 'Extracting…')
-                : 'Extract All'}
+                : <>Extract All<span className="bt-badge">{totalPages}</span></>}
             </span>
           </button>
 

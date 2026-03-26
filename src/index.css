@@ -2170,6 +2170,21 @@
   color: #fff;
 }
 .bt-btn--primary:hover:not(:disabled) { background: #4f46e5; border-color: #4f46e5; }
+.bt-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 4px;
+  background: rgba(255,255,255,0.25);
+  border-radius: 9px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
 .bt-btn--save { }
 .bt-btn--pdf { }
 .bt-btn--export {
