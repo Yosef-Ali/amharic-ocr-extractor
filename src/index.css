@@ -2001,7 +2001,7 @@
   top: 44px;
   right: 0;
   bottom: 48px;
-  width: 480px;
+  width: min(380px, 85vw);
   z-index: 45;
   display: flex;
   flex-direction: column;
@@ -5889,6 +5889,47 @@
 }
 .home-empty-title { font-size: 1.2rem; font-weight: 800; color: var(--t-text2); margin-bottom: 0.4rem; }
 .home-empty-sub { max-width: 360px; color: var(--t-text3); font-size: 0.9rem; line-height: 1.5; margin-bottom: 2.5rem; }
+
+/* How-it-works steps */
+.home-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 2.5rem;
+  max-width: 440px;
+  width: 100%;
+}
+.home-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  text-align: left;
+}
+.home-step-num {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--t-primary, #6366f1);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.home-step-label {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--t-text);
+  margin: 0 0 2px;
+}
+.home-step-desc {
+  font-size: 0.78rem;
+  color: var(--t-text3);
+  margin: 0;
+  line-height: 1.4;
+}
 
 /* Feature grid (shown on empty state) */
 .home-feat-grid {
