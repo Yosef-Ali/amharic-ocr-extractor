@@ -79,7 +79,7 @@ export default function BottomToolbar({
             className="bt-mode"
             onClick={() => onImageQualityChange(imageQuality === 'fast' ? 'pro' : 'fast')}
             disabled={isProcessing}
-            title={imageQuality === 'pro' ? 'Switch to Fast' : 'Switch to Pro'}
+            title={imageQuality === 'fast' ? 'Fast mode: quicker, good for most documents. Click for Pro.' : 'Pro mode: higher accuracy, slower. Click for Fast.'}
           >
             <span className={`bt-mode-opt${imageQuality === 'fast' ? ' bt-mode-opt--on' : ''}`}>
               <Zap size={10} /> Fast
@@ -95,21 +95,22 @@ export default function BottomToolbar({
             <span>
               {isProcessing
                 ? (processingStatus.match(/page (\d+) of (\d+)/i)
-                    ? `Page ${processingStatus.match(/page (\d+) of (\d+)/i)![1]}/${processingStatus.match(/page (\d+) of (\d+)/i)![2]}…`
+                    ? `${processingStatus.match(/page (\d+) of (\d+)/i)![1]}/${processingStatus.match(/page (\d+) of (\d+)/i)![2]}`
                     : 'Extracting…')
-                : 'Extract'}
+                : 'Extract All'}
             </span>
           </button>
 
-          {/* Re-extract current page — hidden for text-based pages with no scan image */}
+          {/* Re-extract current page */}
           {hasResult && hasImage && (
             <button
-              className="bt-icon"
+              className="bt-btn bt-btn--regen"
               onClick={onRegenerate}
               disabled={isRegenerating || isProcessing}
               title={`Re-extract page ${activePage}`}
             >
-              <RefreshCw size={14} />
+              {isRegenerating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              <span className="bt-label-desktop">Re-extract</span>
             </button>
           )}
         </div>

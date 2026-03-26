@@ -177,7 +177,7 @@ export default function HomeScreen({
               <span className="home-hero-accent">Amharic Documents</span>
             </h1>
             <p className="home-hero-sub">
-              AI-powered OCR that preserves layout, images, and Ethiopic text — with a full live editor.
+              Upload any scanned Amharic page — AI reads the fidel accurately, preserves layout, and gives you editable text you can export.
             </p>
             <div className="home-feat-pills">
               {FEATURES.map(f => (
@@ -365,6 +365,7 @@ function ProjectCard({ doc, thumbSrc, onOpen, onDeleteRequest, onDownload, isLoa
         {isLoading && (
           <div className="proj-card-overlay">
             <Loader2 size={22} className="animate-spin" />
+            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#fff', marginTop: 4 }}>Opening…</span>
           </div>
         )}
       </div>

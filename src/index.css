@@ -2182,6 +2182,13 @@
   border-radius: 10px;
   padding: 2px;
 }
+.bt-btn--regen {
+  opacity: 0.8;
+  border-color: var(--t-border) !important;
+}
+.bt-btn--regen:hover:not(:disabled) {
+  opacity: 1;
+}
 
 /* Fast / Pro toggle */
 .bt-mode {
