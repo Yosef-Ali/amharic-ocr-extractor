@@ -757,7 +757,7 @@ export default function EditorShell({
                   <Sparkles size={20} />
                   <div>
                     <strong>{totalPages} page{totalPages > 1 ? 's' : ''} loaded</strong>
-                    <span>Click <b>Extract</b> below to start Amharic OCR</span>
+                    <span>Click <b>Extract All</b> below to start Amharic OCR</span>
                   </div>
                 </div>
               )}

@@ -358,7 +358,7 @@ function SectionTips() {
           ['⌘ 0',       'Reset zoom to fit'],
           ['← →',       'Previous / next page'],
           ['H',          'Toggle hand tool (pan)'],
-          ['Esc',        'Close panel / exit selection'],
+          ['Esc',        'Close panel / cancel extraction'],
         ].map(([key, desc]) => (
           <div key={key} className="help-shortcut-row">
             <Kbd>{key}</Kbd>
