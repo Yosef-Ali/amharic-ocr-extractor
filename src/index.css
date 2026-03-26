@@ -1263,6 +1263,23 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.es-filename:hover {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  cursor: text;
+}
+.es-filename-input {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--t-text);
+  background: var(--t-surface);
+  border: 1.5px solid var(--t-primary, #6366f1);
+  border-radius: 4px;
+  padding: 1px 6px;
+  outline: none;
+  width: 160px;
+  max-width: 200px;
+}
 .es-page-nav {
   display: flex;
   align-items: center;

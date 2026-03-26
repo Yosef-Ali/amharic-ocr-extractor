@@ -63,6 +63,7 @@ interface Props {
   onDownloadDocx?:    () => void;
   onCopyAllText?:     () => void;
   onCancel?:          () => void;
+  onRename?:          (name: string) => void;
   onImageQualityChange:    (q: ImageQuality) => void;
   onActivePageChange?: (page: number) => void;
   onError:  (msg: string) => void;
@@ -84,7 +85,7 @@ export default function EditorShell({
   onEdit, onRegenerate, onDeletePage, onDeleteCover,
   onReorderPages, onInsertPage,
   onExtract, onForceExtract, onSave, onClear,
-  onShowLibrary, onDownloadPDF, onDownloadTxt, onDownloadDocx, onCopyAllText, onCancel,
+  onShowLibrary, onDownloadPDF, onDownloadTxt, onDownloadDocx, onCopyAllText, onCancel, onRename,
   onImageQualityChange,
   onActivePageChange,
   onError,
@@ -116,6 +117,7 @@ export default function EditorShell({
   const [showFindReplace, setShowFindReplace] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [pageInputActive, setPageInputActive] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const [pageLayout,    setPageLayout]    = useState<PageLayout>(DEFAULT_LAYOUT);
   const [elementStyles, setElementStyles] = useState<ElementStyles | null>(null);
   const [styleApplySignal, setStyleApplySignal] =
@@ -310,8 +312,8 @@ export default function EditorShell({
       }
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return;
       if (e.key === 'Escape') {
-        // Never interrupt an active extraction with Escape
-        if (isProcessing) return;
+        // Cancel extraction if running
+        if (isProcessing) { onCancel?.(); return; }
         if (showFindReplace) { setShowFindReplace(false); return; }
         setSelectionMode(false); setRightDrawer(null); setHandTool(false);
         // Escape from blank cover page → go to page 1
@@ -487,7 +489,29 @@ export default function EditorShell({
           </button>
           <div className="es-file-info">
             {isPdf ? <FileText size={14} /> : <FileImage size={14} />}
-            <span className="es-filename">{fileName}</span>
+            {renaming && onRename ? (
+              <input
+                className="es-filename-input"
+                type="text"
+                defaultValue={fileName.replace(/\.[^.]+$/, '')}
+                autoFocus
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    const val = (e.target as HTMLInputElement).value.trim();
+                    if (val) { const ext = fileName.match(/\.[^.]+$/)?.[0] || ''; onRename(val + ext); }
+                    setRenaming(false);
+                  }
+                  if (e.key === 'Escape') setRenaming(false);
+                }}
+                onBlur={e => {
+                  const val = e.target.value.trim();
+                  if (val) { const ext = fileName.match(/\.[^.]+$/)?.[0] || ''; onRename(val + ext); }
+                  setRenaming(false);
+                }}
+              />
+            ) : (
+              <span className="es-filename" onDoubleClick={() => onRename && setRenaming(true)} title="Double-click to rename">{fileName}</span>
+            )}
           </div>
         </div>
 
@@ -812,7 +836,7 @@ export default function EditorShell({
                         />
                       </div>
                     ) : (viewMode === 'scan' || !pHasResult) ? (
-                      <div className="es-scan-wrap">
+                      <div className="es-scan-wrap" onDoubleClick={() => { if (!pHasResult && img && !isProcessing) onRegenerate(p); }}>
                         {img ? (
                           <>
                             <img

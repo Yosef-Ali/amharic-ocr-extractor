@@ -808,6 +808,7 @@ export default function App() {
         onToggleTheme={toggleTheme}
         onError={handleError}
         onCancel={handleCancel}
+        onRename={(name) => { setFileName(name); setIsDirty(true); }}
       />
 
       {/* ── Hidden PDF export container ─────────────────────────────────
