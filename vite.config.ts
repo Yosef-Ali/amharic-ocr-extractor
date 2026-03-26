@@ -10,4 +10,15 @@ export default defineConfig({
   optimizeDeps: {
     include: ['pdfjs-dist'],
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-pdf': ['pdfjs-dist', 'jspdf', 'html2canvas'],
+          'vendor-ai': ['@google/genai'],
+          'vendor-ui': ['react', 'react-dom', 'lucide-react'],
+        },
+      },
+    },
+  },
 });

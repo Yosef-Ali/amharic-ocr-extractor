@@ -1,9 +1,9 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 
 import HomeScreen    from './components/HomeScreen';
-import EditorShell   from './components/editor/EditorShell';
+const EditorShell = lazy(() => import('./components/editor/EditorShell'));
+const AdminPanel  = lazy(() => import('./components/AdminPanel'));
 import LibraryModal  from './components/LibraryModal';
-import AdminPanel    from './components/AdminPanel';
 import Toast, { type ToastMessage } from './components/Toast';
 import AuthScreen    from './components/AuthScreen';
 
@@ -703,7 +703,7 @@ export default function App() {
           isAdmin={isAdmin}
           onOpenAdmin={handleShowAdmin}
         />
-        {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
+        {showAdmin && <Suspense fallback={<div style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.5)',zIndex:999}}><Loader2 size={32} className="animate-spin" style={{color:'#6366f1'}} /></div>}><AdminPanel onClose={() => setShowAdmin(false)} /></Suspense>}
         <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 w-[350px] pointer-events-none">
           {toast && <Toast key={toast.id} toast={toast} onDismiss={handleDismissToast} />}
         </div>
@@ -713,6 +713,7 @@ export default function App() {
 
   // ── Full editor shell (file is loaded) ───────────────────────────────────
   return (
+    <Suspense fallback={<div style={{height:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'var(--t-bg)'}}><Loader2 size={36} className="animate-spin" style={{color:'#6366f1'}} /></div>}>
     <div style={{ position: 'relative' }}>
 
       {/* ── Full-viewport editor layout ── */}
@@ -817,5 +818,6 @@ export default function App() {
       </div>
 
     </div>
+    </Suspense>
   );
 }

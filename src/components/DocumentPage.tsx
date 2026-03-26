@@ -5,7 +5,7 @@ import ImageEditModal, { type ImageEditTarget } from './ImageEditModal';
 import { editImage, type ImageGenOptions } from '../services/geminiService';
 import FloatingToolbar from './FloatingToolbar';
 
-// ── Undo / Redo history stack ────────────────────────────────────────────────
+// ── Undo / Redo history stack (see hooks/useUndoRedo.ts for extracted version) ──
 const MAX_HISTORY = 80;
 interface UndoStack {
   past: string[];
