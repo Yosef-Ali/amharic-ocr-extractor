@@ -1,5 +1,5 @@
 import {
-  Layers, Loader2, Save, Download, FileText, FileDown,
+  Layers, Loader2, Save, Download, FileText, FileDown, ClipboardCopy,
   RefreshCw, Trash2, Zap, Sparkles, MoreHorizontal, BookOpen, Image as ImageIcon, HelpCircle,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -31,6 +31,7 @@ interface Props {
   onDownloadPDF:       () => void;
   onDownloadTxt?:      () => void;
   onDownloadDocx?:     () => void;
+  onCopyAllText?:      () => void;
   onImageQualityChange: (q: ImageQuality) => void;
   onCoverPage?:        () => void;
 }
@@ -42,7 +43,7 @@ export default function BottomToolbar({
   hasImage = true,
   onExtract, onForceExtract,
   onRegenerate, onDeletePage,
-  onSave, onShowLibrary, onDownloadPDF, onDownloadTxt, onDownloadDocx,
+  onSave, onShowLibrary, onDownloadPDF, onDownloadTxt, onDownloadDocx, onCopyAllText,
   onImageQualityChange, onCoverPage,
 }: Props) {
   const [moreOpen,  setMoreOpen]  = useState(false);
@@ -168,6 +169,11 @@ export default function BottomToolbar({
                   {onCoverPage && (
                     <button onClick={() => { onCoverPage(); setMoreOpen(false); }}>
                       <ImageIcon size={14} /> Cover Page
+                    </button>
+                  )}
+                  {hasAnyResults && onCopyAllText && (
+                    <button onClick={() => { onCopyAllText(); setMoreOpen(false); }}>
+                      <ClipboardCopy size={14} /> Copy all text
                     </button>
                   )}
                   {hasAnyResults && (

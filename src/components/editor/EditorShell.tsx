@@ -61,6 +61,7 @@ interface Props {
   onDownloadPDF:      () => void;
   onDownloadTxt?:     () => void;
   onDownloadDocx?:    () => void;
+  onCopyAllText?:     () => void;
   onImageQualityChange:    (q: ImageQuality) => void;
   onActivePageChange?: (page: number) => void;
   onError:  (msg: string) => void;
@@ -82,7 +83,7 @@ export default function EditorShell({
   onEdit, onRegenerate, onDeletePage, onDeleteCover,
   onReorderPages, onInsertPage,
   onExtract, onForceExtract, onSave, onClear,
-  onShowLibrary, onDownloadPDF, onDownloadTxt, onDownloadDocx,
+  onShowLibrary, onDownloadPDF, onDownloadTxt, onDownloadDocx, onCopyAllText,
   onImageQualityChange,
   onActivePageChange,
   onError,
@@ -898,6 +899,7 @@ export default function EditorShell({
             onDownloadPDF={onDownloadPDF}
             onDownloadTxt={onDownloadTxt}
             onDownloadDocx={onDownloadDocx}
+            onCopyAllText={onCopyAllText}
             onImageQualityChange={onImageQualityChange}
             onCoverPage={() => changePage(0)}
           />

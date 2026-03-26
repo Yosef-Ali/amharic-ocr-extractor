@@ -771,6 +771,19 @@ export default function App() {
         onDownloadPDF={handleDownloadPDF}
         onDownloadTxt={() => downloadAsText(pageResults, fileName)}
         onDownloadDocx={() => downloadAsDocx(pageResults, fileName)}
+        onCopyAllText={() => {
+          const keys = Object.keys(pageResults).map(Number).filter(n => n > 0).sort((a, b) => a - b);
+          const parts = keys.map(p => {
+            const doc = new DOMParser().parseFromString(pageResults[p], 'text/html');
+            doc.querySelectorAll('.ai-image-placeholder, button, img, svg, style, script').forEach(el => el.remove());
+            return (doc.body.textContent ?? '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+          }).filter(Boolean);
+          navigator.clipboard.writeText(parts.join('\n\n')).then(() => {
+            setToast({ id: Date.now().toString(), message: `Copied text from ${parts.length} pages`, variant: 'success' });
+          }).catch(() => {
+            setToast({ id: Date.now().toString(), message: 'Failed to copy — try downloading instead', variant: 'error' });
+          });
+        }}
         onImageQualityChange={setImageQuality}
         onActivePageChange={setActivePage}
         canvasExecutor={executorRef.current ?? undefined}
