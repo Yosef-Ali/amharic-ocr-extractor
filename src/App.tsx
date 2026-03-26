@@ -165,6 +165,7 @@ export default function App() {
   const [imageQuality,     setImageQuality]     = useState<ImageQuality>('fast');
   const [regeneratingPages, setRegeneratingPages] = useState<Set<number>>(new Set());
   const [activePage,       setActivePage]       = useState(1);
+  const [pendingAutoSave,  setPendingAutoSave]  = useState(false);
   const [showAdmin,        setShowAdmin]        = useState(false);
 
   // ── Warn before closing with unsaved changes ──
@@ -429,8 +430,10 @@ export default function App() {
         const timeStr = elapsed >= 60 ? `${Math.floor(elapsed / 60)}m ${elapsed % 60}s` : `${elapsed}s`;
         const msg = errorCount > 0
           ? `Extracted ${extractedCount} page${extractedCount > 1 ? 's' : ''} in ${timeStr} (${errorCount} failed)`
-          : `${extractedCount} page${extractedCount > 1 ? 's' : ''} extracted in ${timeStr}`;
+          : `${extractedCount} page${extractedCount > 1 ? 's' : ''} extracted in ${timeStr} — auto-saving…`;
         setToast({ id: Date.now().toString(), message: msg, variant: errorCount > 0 ? 'error' : 'success' });
+        // Auto-save after extraction
+        setPendingAutoSave(true);
       }
 
       setIsProcessing(false);
@@ -580,6 +583,13 @@ export default function App() {
       setIsSaving(false);
     }
   };
+
+  // Auto-save after extraction completes
+  useEffect(() => {
+    if (!pendingAutoSave || isSaving) return;
+    setPendingAutoSave(false);
+    handleSave();
+  }, [pendingAutoSave]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // -------------------------------------------------------------------------
   // Load from library
