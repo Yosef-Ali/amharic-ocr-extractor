@@ -177,6 +177,18 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [isDirty]);
 
+  // ── Auto-save after extraction completes ──
+  useEffect(() => {
+    if (!pendingAutoSave) return;
+    setPendingAutoSave(false);
+    // Small delay so the UI settles before save starts
+    const timer = setTimeout(() => {
+      handleSave();
+    }, 500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAutoSave]);
+
   // ── Browser tab title ──
   useEffect(() => {
     document.title = fileName
