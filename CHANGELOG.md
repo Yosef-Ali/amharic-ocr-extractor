@@ -4,7 +4,7 @@ All notable changes to the Amharic OCR Extractor.
 
 ---
 
-## [Unreleased]
+## [0.1.1] - 2026-03-27
 
 ### Security (P0 — Critical fixes from /review)
 
