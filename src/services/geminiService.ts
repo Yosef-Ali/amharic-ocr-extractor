@@ -13,6 +13,7 @@ import {
   type ImageQuality
 } from './aiCommon';
 import { anthropicChat, anthropicExtractPageHTML, anthropicEditPage } from './anthropicService';
+import { authFetch } from '../lib/apiClient';
 
 export type { ChatTurn, CanvasContext, BBox, ImageAspectRatio, ImageSize, ImageGenOptions, ImageQuality };
 
@@ -133,30 +134,42 @@ export async function extractPageHTML(
     return anthropicExtractPageHTML(base64Image, previousPageHTML);
   }
 
-  const imagePart = { inlineData: { mimeType: 'image/jpeg', data: base64Image } };
+  // Use server-side OCR proxy to keep API key secure
+  try {
+    const res = await authFetch('/api/ocr', {
+      method: 'POST',
+      body: JSON.stringify({ base64Image, previousPageHTML }),
+    });
+    const { html } = await res.json();
+    // Resolve image placeholders client-side (needs DOMParser)
+    return resolvePlaceholders(html, base64Image);
+  } catch (err) {
+    // Fallback to client-side extraction if API route unavailable (local dev)
+    console.warn('OCR API route failed, falling back to client-side:', err);
+    const imagePart = { inlineData: { mimeType: 'image/jpeg', data: base64Image } };
 
-  // ── Pass 1: OCR — extract raw text (fast model) ──
-  const ocrResponse = await client.models.generateContent({
-    model: OCR_FAST,
-    contents: [{ role: 'user', parts: [imagePart, { text: buildOcrPrompt() }] }],
-  });
+    // ── Pass 1: OCR — extract raw text (fast model) ──
+    const ocrResponse = await client.models.generateContent({
+      model: OCR_FAST,
+      contents: [{ role: 'user', parts: [imagePart, { text: buildOcrPrompt() }] }],
+    });
 
-  const extractedText = ocrResponse.text ?? '';
-  if (!extractedText.trim()) {
-    return '<p style="color:red;text-align:center;font-weight:bold;">⚠️ OCR returned no text for this page.</p>';
+    const extractedText = ocrResponse.text ?? '';
+    if (!extractedText.trim()) {
+      return '<p style="color:red;text-align:center;font-weight:bold;">⚠️ OCR returned no text for this page.</p>';
+    }
+
+    // ── Pass 2: Layout — reconstruct HTML from text + image reference ──
+    const layoutResponse = await client.models.generateContent({
+      model: OCR_FAST,
+      contents: [{ role: 'user', parts: [imagePart, { text: buildLayoutPrompt(extractedText, previousPageHTML) }] }],
+    });
+
+    const layoutHtml = verifyLayout(layoutResponse.text ?? '');
+
+    // ── Pass 3: resolve image placeholders by cropping directly from the scan ──
+    return resolvePlaceholders(layoutHtml, base64Image);
   }
-
-  // ── Pass 2: Layout — reconstruct HTML from text + image reference ──
-  // Use the fast model for batch extraction; pro is reserved for agent/chat editing
-  const layoutResponse = await client.models.generateContent({
-    model: OCR_FAST,
-    contents: [{ role: 'user', parts: [imagePart, { text: buildLayoutPrompt(extractedText, previousPageHTML) }] }],
-  });
-
-  const layoutHtml = verifyLayout(layoutResponse.text ?? '');
-
-  // ── Pass 3: resolve image placeholders by cropping directly from the scan ──
-  return resolvePlaceholders(layoutHtml, base64Image);
 }
 
 // ---------------------------------------------------------------------------

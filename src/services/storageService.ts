@@ -1,7 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
-import { sql } from '../lib/neon';
+import { authFetch, getAccessToken } from '../lib/apiClient';
 import localforage from 'localforage';
-import { getUserQuota } from './adminService';
 
 /** Typed error thrown when a user has reached their document quota. */
 export class QuotaExceededError extends Error {
@@ -42,32 +41,32 @@ const isUrl = (s: string) => s.startsWith('https://') || s.startsWith('http://')
 // ---------------------------------------------------------------------------
 // One-time schema migration — called from App.tsx after sign-in
 // ---------------------------------------------------------------------------
-let _schemaReady = false;
-
-async function ensureSchema(): Promise<void> {
-  if (_schemaReady) return;
-  try {
-    await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`;
-  } catch { /* column already exists */ }
-  _schemaReady = true;
-}
-
 export async function initializeSchema(): Promise<void> {
-  return ensureSchema();
+  await authFetch('/api/schema', { method: 'POST' });
 }
 
 // ---------------------------------------------------------------------------
-// Auth context — set by App.tsx when a user signs in/out
+// Authenticated fetch with QuotaExceededError support
 // ---------------------------------------------------------------------------
-let _userId: string | null = null;
-
-export function initStorage(userId: string | null): void {
-  _userId = userId;
-}
-
-function requireUserId(): string {
-  if (!_userId) throw new Error('Not authenticated');
-  return _userId;
+async function storageAuthFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const token = getAccessToken();
+  if (!token) throw new Error('Not authenticated');
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers as Record<string, string>,
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: 'Request failed' }));
+    if (body.error === 'QUOTA_EXCEEDED') {
+      throw new QuotaExceededError(body.used, body.limit);
+    }
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
+  return res;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,49 +109,21 @@ export async function saveDocument(
   pageImages: string[],
   pageResults: Record<number, string>,
 ): Promise<string> {   // returns the document UUID
-  const userId = requireUserId();
-  const id     = docId || uuidv4();
-
-  // ── Quota check — only for brand-new documents ──────────────────────────
-  if (!docId) {
-    const { used, limit } = await getUserQuota(userId);
-    if (used >= limit) throw new QuotaExceededError(used, limit);
-  }
-
-  // If we have a docId, fetch the existing images to fill in any empty slots
-  let origImages: string[] = [];
-  if (docId) {
-    const rows = await sql`
-      SELECT c.page_images 
-      FROM document_content c 
-      JOIN documents d ON d.id = c.document_id
-      WHERE d.id = ${docId} AND d.user_id = ${userId}
-      LIMIT 1
-    `;
-    if (rows.length) {
-      origImages = rows[0].page_images as string[];
-    }
-  }
+  const id = docId || uuidv4();
 
   // Upload page images and thumbnail in parallel
   const thumbBase64 = extractThumbnailBase64(pageImages, pageResults);
   const [storedImages, thumbnailUrl] = await Promise.all([
     Promise.all(
       pageImages.map(async (img, i) => {
-        // If image is lazy-loaded placeholder (empty string), use original from database
-        let resolveImg = img;
-        if (img === '') {
-           resolveImg = origImages[i] ?? '';
-        }
-
         // Cache base64 locally on-save to guarantee fast retrieval
-        if (resolveImg && !isUrl(resolveImg)) {
-           localforage.setItem(`aoe_img_${id}_${i}`, resolveImg).catch(console.warn);
+        if (img && !isUrl(img)) {
+           localforage.setItem(`aoe_img_${id}_${i}`, img).catch(console.warn);
         }
 
-        if (isUrl(resolveImg)) return resolveImg;
-        const url = await uploadToBlob(resolveImg, `${id}/page-${i + 1}.jpg`);
-        return url ?? resolveImg;
+        if (isUrl(img)) return img;
+        const url = await uploadToBlob(img, `${id}/page-${i + 1}.jpg`);
+        return url ?? img;
       }),
     ),
     thumbBase64
@@ -161,41 +132,22 @@ export async function saveDocument(
       : Promise.resolve(null),
   ]);
 
-  if (docId && origImages.length > 0) {
-    // Update existing document instead of duplicating
-    await sql`
-      UPDATE documents 
-      SET name = ${name}, 
-          page_count = ${pageImages.length}, 
-          thumbnail_url = ${thumbnailUrl}, 
-          updated_at = NOW()
-      WHERE id = ${id} AND user_id = ${userId}
-    `;
-    await sql`
-      UPDATE document_content
-      SET page_images = ${JSON.stringify(storedImages)}::jsonb,
-          page_results = ${JSON.stringify(pageResults)}::jsonb
-      WHERE document_id = ${id}
-    `;
-  } else {
-    // Insert new document
-    await sql`
-      INSERT INTO documents (id, user_id, name, page_count, thumbnail_url, saved_at, updated_at)
-      VALUES (${id}, ${userId}, ${name}, ${pageImages.length}, ${thumbnailUrl}, NOW(), NOW())
-    `;
-    await sql`
-      INSERT INTO document_content (document_id, page_images, page_results)
-      VALUES (
-        ${id},
-        ${JSON.stringify(storedImages)}::jsonb,
-        ${JSON.stringify(pageResults)}::jsonb
-      )
-    `;
-  }
-  
+  const res = await storageAuthFetch('/api/documents', {
+    method: 'POST',
+    body: JSON.stringify({
+      docId: docId || null,
+      name,
+      pageCount: pageImages.length,
+      storedImages,
+      pageResults,
+      thumbnailUrl,
+    }),
+  });
+  const { id: returnedId } = await res.json();
+
   // Update local IndexedDB cache with the newest document state for instant local loading
   const docToCache: SavedDocument = {
-    id,
+    id: returnedId || id,
     name,
     savedAt: new Date().toISOString(),
     pageCount: pageImages.length,
@@ -203,32 +155,17 @@ export async function saveDocument(
     pageResults,
     thumbnailUrl: thumbnailUrl ?? undefined
   };
-  localforage.setItem(`aoe_doc_${id}`, docToCache).catch(console.warn);
+  localforage.setItem(`aoe_doc_${returnedId || id}`, docToCache).catch(console.warn);
 
-  return id;
+  return returnedId || id;
 }
 
 // ---------------------------------------------------------------------------
 // Load all documents — returns metadata stubs (no large content)
 // ---------------------------------------------------------------------------
 export async function loadAllDocuments(): Promise<SavedDocument[]> {
-  const userId = requireUserId();
-  await ensureSchema();
-  const rows = await sql`
-    SELECT d.id, d.name, d.saved_at, d.page_count, d.thumbnail_url
-    FROM   documents d
-    WHERE  d.user_id = ${userId}
-    ORDER  BY d.saved_at DESC
-  `;
-  return rows.map((r: any) => ({
-    id: r.id,
-    name: r.name,
-    savedAt: r.saved_at,
-    pageCount: r.page_count,
-    thumbnailUrl: r.thumbnail_url ?? undefined,
-    pageImages: [],
-    pageResults: {},
-  }));
+  const res = await storageAuthFetch('/api/documents');
+  return res.json();
 }
 
 // ---------------------------------------------------------------------------
@@ -243,27 +180,8 @@ export async function loadDocumentContent(id: string): Promise<SavedDocument> {
     console.warn('Local cache read failed:', err);
   }
 
-  const userId = requireUserId();
-  const rows = await sql`
-    SELECT d.id, d.name, d.saved_at, d.page_count,
-           c.page_results
-    FROM   documents d
-    JOIN   document_content c ON c.document_id = d.id
-    WHERE  d.id = ${id}
-    AND    d.user_id = ${userId}
-    LIMIT  1
-  `;
-  if (!rows.length) throw new Error('Document not found');
-  const r = rows[0];
-  
-  const doc: SavedDocument = {
-    id:          r.id as string,
-    name:        r.name as string,
-    savedAt:     r.saved_at as string,
-    pageCount:   r.page_count as number,
-    pageImages:  new Array(r.page_count as number).fill(''),
-    pageResults: r.page_results as Record<number, string>,
-  };
+  const res = await storageAuthFetch(`/api/document-content?id=${encodeURIComponent(id)}`);
+  const doc = await res.json();
 
   try {
     await localforage.setItem(cacheKey, doc);
@@ -279,43 +197,33 @@ export async function loadDocumentPageImage(docId: string, pageIndex: number): P
   const cacheKey = `aoe_img_${docId}_${pageIndex}`;
   try {
     const cached = await localforage.getItem<string>(cacheKey);
-    // If the image is locally cached and valid, skip remote SQL fetch entirely
+    // If the image is locally cached and valid, skip remote fetch entirely
     if (cached && typeof cached === 'string') return cached;
   } catch (err) {
     console.warn('Local cache read failed:', err);
   }
 
-  const userId = requireUserId();
-  const rows = await sql`
-    SELECT c.page_images->>(${pageIndex}::int) AS img
-    FROM   document_content c
-    JOIN   documents d ON d.id = c.document_id
-    WHERE  c.document_id = ${docId}
-    AND    d.user_id = ${userId}
-    LIMIT  1
-  `;
-  if (!rows.length) return null;
-  const imgStr = rows[0].img as string;
-  
-  if (imgStr) {
+  const res = await storageAuthFetch(`/api/page-image?docId=${encodeURIComponent(docId)}&page=${pageIndex}`);
+  const { img } = await res.json();
+
+  if (img) {
     try {
-      await localforage.setItem(cacheKey, imgStr);
+      await localforage.setItem(cacheKey, img);
     } catch (err) { }
   }
 
-  return imgStr;
+  return img;
 }
 
 // ---------------------------------------------------------------------------
 // Delete a document (CASCADE removes document_content row)
 // ---------------------------------------------------------------------------
 export async function deleteDocument(id: string): Promise<void> {
-  const userId = requireUserId();
-  await sql`
-    DELETE FROM documents
-    WHERE id = ${id} AND user_id = ${userId}
-  `;
-  
+  await storageAuthFetch('/api/document-delete', {
+    method: 'POST',
+    body: JSON.stringify({ id }),
+  });
+
   // Wipe associated data from the local IndexedDB cache safely
   try {
     await localforage.removeItem(`aoe_doc_${id}`);

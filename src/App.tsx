@@ -9,14 +9,15 @@ import AuthScreen    from './components/AuthScreen';
 
 import { pdfToImages, imageFileToBase64, detectFileType, docxToHtmlPages, textToHtmlPages, type PageDimension } from './services/pdfService';
 import { extractPageHTML, autoFillImagePlaceholders, type ImageQuality } from './services/geminiService';
-import { saveDocument, initStorage, initializeSchema, loadDocumentContent, loadDocumentPageImage, QuotaExceededError, type SavedDocument } from './services/storageService';
+import { saveDocument, initializeSchema, loadDocumentContent, loadDocumentPageImage, QuotaExceededError, type SavedDocument } from './services/storageService';
 import { buildDocumentExport, saveDocumentExport, downloadAsText, downloadAsDocx } from './services/exportService';
 import { AI_DATA_EXPORT_KEY } from './components/editor/SettingsPanel';
 import { Loader2 } from 'lucide-react';
 import { CanvasExecutor } from './services/canvasExecutor';
 import { WsBridge }      from './services/wsBridge';
-import { ensureUsersTable, upsertUser, checkUserBlocked } from './services/adminService';
+import { upsertUser } from './services/adminService';
 import { authClient } from './lib/neonAuth';
+import { setAccessToken } from './lib/apiClient';
 import { useTheme } from './hooks/useTheme';
 
 type NeonUser = { id: string; email?: string; name?: string };
@@ -83,14 +84,13 @@ export default function App() {
   const syncAuthState = useCallback(async () => {
     const result = await (authClient as any).getSession();
     const u = result?.data?.user ?? null;
+    const accessToken = result?.data?.accessToken ?? null;
     setNeonUser(u);
-    initStorage(u?.id ?? null);
-    if (u?.id) initializeSchema().catch(() => {/* best-effort */});
-    if (u?.id && u?.email) {
+    setAccessToken(accessToken);
+    if (accessToken) initializeSchema().catch(() => {/* best-effort */});
+    if (u?.id && u?.email && accessToken) {
       try {
-        await ensureUsersTable();
-        await upsertUser(u.id, u.email, u.name);
-        const blocked = await checkUserBlocked(u.id);
+        const { blocked } = await upsertUser(u.id, u.email, u.name);
         setIsBlocked(blocked);
       } catch (e) {
         console.error(e);
@@ -140,7 +140,7 @@ export default function App() {
   const handleSignOut = useCallback(async () => {
     await (authClient as any).signOut();
     setNeonUser(null);
-    initStorage(null);
+    setAccessToken(null);
   }, []);
 
   const handleAuthSuccess = useCallback(async () => {

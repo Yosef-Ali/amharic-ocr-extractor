@@ -1,4 +1,4 @@
-import { sql } from '../lib/neon';
+import { authFetch } from '../lib/apiClient';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,161 +29,109 @@ export interface AdminStats {
 }
 
 // ---------------------------------------------------------------------------
-// Ensure users table exists (idempotent)
+// Ensure users table exists — now handled by /api/schema, called elsewhere
 // ---------------------------------------------------------------------------
 export async function ensureUsersTable(): Promise<void> {
-  await sql`
-    CREATE TABLE IF NOT EXISTS users (
-      id         TEXT PRIMARY KEY,
-      email      TEXT NOT NULL,
-      name       TEXT,
-      blocked    BOOLEAN NOT NULL DEFAULT FALSE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      last_seen  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `;
-  // Add columns if table already existed without them
-  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked   BOOLEAN NOT NULL DEFAULT FALSE`;
-  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS doc_limit INT     NOT NULL DEFAULT 3`;
+  // Schema handled by /api/schema, called elsewhere
 }
 
 // ---------------------------------------------------------------------------
 // Upsert user on login — called from App.tsx after auth
 // ---------------------------------------------------------------------------
-export async function upsertUser(id: string, email: string, name?: string): Promise<void> {
-  await sql`
-    INSERT INTO users (id, email, name, created_at, last_seen)
-    VALUES (${id}, ${email}, ${name ?? null}, NOW(), NOW())
-    ON CONFLICT (id) DO UPDATE
-      SET email     = EXCLUDED.email,
-          name      = EXCLUDED.name,
-          last_seen = NOW()
-  `;
+export async function upsertUser(_id: string, email: string, name?: string): Promise<{ blocked: boolean }> {
+  const res = await authFetch('/api/user-sync', {
+    method: 'POST',
+    body: JSON.stringify({ email, name }),
+  });
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Check if user is blocked — now returned by upsertUser
+// ---------------------------------------------------------------------------
+export async function checkUserBlocked(_userId: string): Promise<boolean> {
+  // This is handled by upsertUser now (returns blocked status)
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Per-user quota — checked server-side during save
+// ---------------------------------------------------------------------------
+export async function getUserQuota(_userId: string): Promise<{ used: number; limit: number }> {
+  // This is checked server-side during save, no client call needed
+  return { used: 0, limit: 999 };
 }
 
 // ---------------------------------------------------------------------------
 // Stats
 // ---------------------------------------------------------------------------
 export async function getAdminStats(): Promise<AdminStats> {
-  const [users, docs] = await Promise.all([
-    sql`SELECT COUNT(*)::int AS count FROM users`,
-    sql`SELECT COUNT(*)::int AS doc_count, COALESCE(SUM(page_count), 0)::int AS page_sum FROM documents`,
-  ]);
-  return {
-    totalUsers:     users[0].count     as number,
-    totalDocuments: docs[0].doc_count  as number,
-    totalPages:     docs[0].page_sum   as number,
-  };
+  const res = await authFetch('/api/admin?action=stats');
+  return res.json();
 }
 
 // ---------------------------------------------------------------------------
 // Users — with doc counts
 // ---------------------------------------------------------------------------
 export async function getAdminUsers(): Promise<AdminUser[]> {
-  const rows = await sql`
-    SELECT
-      u.id,
-      u.email,
-      u.name,
-      u.blocked,
-      u.doc_limit,
-      u.created_at,
-      COUNT(d.id)::int AS doc_count
-    FROM users u
-    LEFT JOIN documents d ON d.user_id = u.id
-    GROUP BY u.id, u.email, u.name, u.blocked, u.doc_limit, u.created_at
-    ORDER BY u.created_at DESC
-  `;
-  return rows.map(r => ({
-    id:        r.id         as string,
-    email:     r.email      as string,
-    name:      r.name       as string | null,
-    createdAt: r.created_at as string,
-    docCount:  r.doc_count  as number,
-    docLimit:  r.doc_limit  as number,
-    blocked:   r.blocked    as boolean,
-  }));
+  const res = await authFetch('/api/admin?action=users');
+  return res.json();
 }
 
 // ---------------------------------------------------------------------------
-// Per-user quota — returns used / limit (called from storageService)
-// ---------------------------------------------------------------------------
-export async function getUserQuota(userId: string): Promise<{ used: number; limit: number }> {
-  const rows = await sql`
-    SELECT u.doc_limit, COUNT(d.id)::int AS used
-    FROM users u
-    LEFT JOIN documents d ON d.user_id = u.id
-    WHERE u.id = ${userId}
-    GROUP BY u.doc_limit
-  `;
-  if (!rows[0]) return { used: 0, limit: 3 };
-  return { used: rows[0].used as number, limit: rows[0].doc_limit as number };
-}
-
-// ---------------------------------------------------------------------------
-// Set per-user document limit (admin only)
+// Per-user document limit (admin only)
 // ---------------------------------------------------------------------------
 export async function setUserDocLimit(userId: string, limit: number): Promise<void> {
-  await sql`UPDATE users SET doc_limit = ${limit} WHERE id = ${userId}`;
+  await authFetch('/api/admin?action=setDocLimit', {
+    method: 'POST',
+    body: JSON.stringify({ userId, limit }),
+  });
 }
 
 // ---------------------------------------------------------------------------
 // All documents — optionally filtered by user
 // ---------------------------------------------------------------------------
 export async function getAdminDocuments(userId?: string): Promise<AdminDocument[]> {
-  const rows = userId
-    ? await sql`
-        SELECT d.id, d.user_id, COALESCE(u.email, d.user_id) AS user_email,
-               d.name, d.page_count, d.saved_at
-        FROM documents d
-        LEFT JOIN users u ON u.id = d.user_id
-        WHERE d.user_id = ${userId}
-        ORDER BY d.saved_at DESC
-      `
-    : await sql`
-        SELECT d.id, d.user_id, COALESCE(u.email, d.user_id) AS user_email,
-               d.name, d.page_count, d.saved_at
-        FROM documents d
-        LEFT JOIN users u ON u.id = d.user_id
-        ORDER BY d.saved_at DESC
-      `;
-  return rows.map(r => ({
-    id:        r.id         as string,
-    userId:    r.user_id    as string,
-    userEmail: r.user_email as string,
-    name:      r.name       as string,
-    pageCount: r.page_count as number,
-    savedAt:   r.saved_at   as string,
-  }));
+  const url = userId
+    ? `/api/admin?action=documents&userId=${encodeURIComponent(userId)}`
+    : '/api/admin?action=documents';
+  const res = await authFetch(url);
+  return res.json();
 }
 
 // ---------------------------------------------------------------------------
 // Delete any document (admin — no user_id guard)
 // ---------------------------------------------------------------------------
 export async function adminDeleteDocument(id: string): Promise<void> {
-  await sql`DELETE FROM documents WHERE id = ${id}`;
+  await authFetch('/api/admin?action=deleteDocument', {
+    method: 'DELETE',
+    body: JSON.stringify({ docId: id }),
+  });
 }
 
 // ---------------------------------------------------------------------------
 // Delete user + all their data
 // ---------------------------------------------------------------------------
 export async function deleteUser(id: string): Promise<void> {
-  await sql`DELETE FROM documents WHERE user_id = ${id}`;
-  await sql`DELETE FROM users WHERE id = ${id}`;
+  await authFetch('/api/admin?action=deleteUser', {
+    method: 'DELETE',
+    body: JSON.stringify({ userId: id }),
+  });
 }
 
 // ---------------------------------------------------------------------------
-// Block / unblock / check
+// Block / unblock
 // ---------------------------------------------------------------------------
 export async function blockUser(id: string): Promise<void> {
-  await sql`UPDATE users SET blocked = TRUE WHERE id = ${id}`;
+  await authFetch('/api/admin?action=blockUser', {
+    method: 'POST',
+    body: JSON.stringify({ userId: id }),
+  });
 }
 
 export async function unblockUser(id: string): Promise<void> {
-  await sql`UPDATE users SET blocked = FALSE WHERE id = ${id}`;
-}
-
-export async function checkUserBlocked(userId: string): Promise<boolean> {
-  const rows = await sql`SELECT blocked FROM users WHERE id = ${userId} LIMIT 1`;
-  return rows[0]?.blocked === true;
+  await authFetch('/api/admin?action=unblockUser', {
+    method: 'POST',
+    body: JSON.stringify({ userId: id }),
+  });
 }
