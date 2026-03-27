@@ -18,7 +18,7 @@
   --t-text:       #0f172a;
   --t-text2:      #1e293b;
   --t-text3:      #64748b;
-  --t-text4:      #94a3b8;
+  --t-text4:      #6b7280;
   --t-text5:      #cbd5e1;
   --t-nav-bg:     rgba(255, 255, 255, 0.85);
   --t-nav-border: rgba(226, 232, 240, 0.8);
@@ -102,9 +102,9 @@
   display: flex; align-items: center; gap: 0.35rem;
   padding: 0.3rem 0.7rem; border-radius: 0.5rem;
   font-size: 0.75rem; font-weight: 600;
-  color: #818cf8;
-  background: rgba(129,140,248,0.08);
-  border: 1px solid rgba(129,140,248,0.2);
+  color: #6366f1;
+  background: rgba(99,102,241,0.08);
+  border: 1px solid rgba(99,102,241,0.2);
   transition: background 0.15s, border-color 0.15s;
 }
 .home-admin-btn:hover {
@@ -5686,7 +5686,7 @@
   animation: pulse 2s infinite;
 }
 .home-brand-name { font-weight: 800; color: var(--t-text); letter-spacing: -0.02em; line-height: 1; }
-.home-brand-accent { color: #ef4444; }
+.home-brand-accent { color: #dc2626; }
 .home-brand-sub { font-size: 0.62rem; font-weight: 700; color: var(--t-text4); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 0.15rem; }
 
 /* ── Hero section ── */
@@ -5706,7 +5706,7 @@
   color: var(--t-text); margin-bottom: 0.85rem;
 }
 .home-hero-accent {
-  background: linear-gradient(135deg, #ef4444, #f97316);
+  background: linear-gradient(135deg, #dc2626, #ea580c);
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   background-clip: text;
 }

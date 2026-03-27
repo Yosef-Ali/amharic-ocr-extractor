@@ -215,7 +215,7 @@ export default function HomeScreen({
                 </div>
                 <p className="home-upload-label">New Project</p>
                 <p className="home-upload-hint">Drop PDF, image, Word or text</p>
-                <p className="home-upload-hint" style={{ marginTop: '0.25rem', opacity: 0.5 }}>
+                <p className="home-upload-hint" style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}>
                   or click to browse
                 </p>
               </>
