@@ -442,7 +442,7 @@ export default function App() {
         const timeStr = elapsed >= 60 ? `${Math.floor(elapsed / 60)}m ${elapsed % 60}s` : `${elapsed}s`;
         const msg = errorCount > 0
           ? `Extracted ${extractedCount} page${extractedCount > 1 ? 's' : ''} in ${timeStr} (${errorCount} failed)`
-          : `${extractedCount} page${extractedCount > 1 ? 's' : ''} extracted in ${timeStr} — auto-saving…`;
+          : `${extractedCount} page${extractedCount > 1 ? 's' : ''} extracted in ${timeStr}`;
         setToast({ id: Date.now().toString(), message: msg, variant: errorCount > 0 ? 'error' : 'success' });
         // Auto-save after extraction
         setPendingAutoSave(true);
