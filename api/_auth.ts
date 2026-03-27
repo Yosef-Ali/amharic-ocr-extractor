@@ -1,4 +1,5 @@
 import type { VercelRequest } from '@vercel/node';
+import { timingSafeEqual } from 'crypto';
 
 export interface AuthUser {
   userId: string;
@@ -31,5 +32,8 @@ export function getAuthUser(req: VercelRequest): AuthUser | null {
 /** Admin check — compares email against ADMIN_EMAIL env var */
 export function isAdmin(user: AuthUser): boolean {
   const adminEmail = process.env.ADMIN_EMAIL;
-  return !!adminEmail && user.email === adminEmail;
+  if (!adminEmail || !user.email) return false;
+  const adminBuf = Buffer.from(adminEmail);
+  const userBuf  = Buffer.from(user.email);
+  return adminBuf.length === userBuf.length && timingSafeEqual(adminBuf, userBuf);
 }

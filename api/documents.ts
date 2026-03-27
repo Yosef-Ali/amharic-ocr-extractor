@@ -50,6 +50,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           SET page_images  = ${JSON.stringify(storedImages)}::jsonb,
               page_results = ${JSON.stringify(pageResults)}::jsonb
           WHERE document_id = ${docId}
+            AND document_id IN (
+              SELECT id FROM documents WHERE id = ${docId} AND user_id = ${user.userId}
+            )
         `;
         return res.json({ id: docId });
       } else {
