@@ -6,7 +6,16 @@ All notable changes to the Amharic OCR Extractor.
 
 ## [Unreleased]
 
+### Security (P0 — Critical fixes from /review)
+
+- **CRITICAL: API key leak fixed** — anthropicService.ts no longer exposes VITE_ANTHROPIC_API_KEY to browser. All AI calls now route through server-side /api/ai-proxy endpoint.
+- **CRITICAL: Browser require() removed** — exportService.ts no longer uses `require('docx')` inside elementToParagraphs. Now uses async dynamic import at top of downloadAsDocx.
+- **CRITICAL: IDOR vulnerability fixed** — documents.ts UPDATE now uses `RETURNING id` to verify ownership before updating document_content.
+- **API routes added** — All server-side endpoints created: /api/documents, /api/document-content, /api/document-delete, /api/admin, /api/exports, /api/ai-proxy, /api/blob-upload, /api/ocr, /api/schema, /api/user-sync, /api/page-image.
+- **Consolidated auth token state** — Single source of truth in src/lib/apiClient.ts. Removed duplicate _accessToken from storageService.ts and initStorage() call pattern.
+
 ### Added
+- **Vitest test suite** — 30 tests passing across 3 test files (apiClient, exportService, aiCommon)
 - YC 5-phase workflow documentation (WORKFLOW.md)
 - Architecture documentation (ARCHITECTURE.md)
 - Design system documentation (DESIGN_SYSTEM.md)
