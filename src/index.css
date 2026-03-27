@@ -102,14 +102,14 @@
   display: flex; align-items: center; gap: 0.35rem;
   padding: 0.3rem 0.7rem; border-radius: 0.5rem;
   font-size: 0.75rem; font-weight: 600;
-  color: #6366f1;
-  background: rgba(99,102,241,0.08);
-  border: 1px solid rgba(99,102,241,0.2);
+  color: #4f46e5;
+  background: rgba(79,70,229,0.08);
+  border: 1px solid rgba(79,70,229,0.2);
   transition: background 0.15s, border-color 0.15s;
 }
 .home-admin-btn:hover {
-  background: rgba(129,140,248,0.15);
-  border-color: rgba(129,140,248,0.4);
+  background: rgba(79,70,229,0.15);
+  border-color: rgba(79,70,229,0.4);
 }
 
 .adm-overlay {

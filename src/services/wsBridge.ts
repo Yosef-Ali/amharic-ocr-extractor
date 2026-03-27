@@ -26,7 +26,10 @@ export class WsBridge {
 
   constructor(executor: CanvasExecutor) {
     this.executor = executor;
-    this.connect();
+    // Only connect in development — MCP relay server doesn't run in production
+    if (import.meta.env.DEV) {
+      this.connect();
+    }
   }
 
   /** Subscribe to connection status changes. */
