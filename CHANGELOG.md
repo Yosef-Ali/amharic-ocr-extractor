@@ -13,6 +13,7 @@ All notable changes to the Amharic OCR Extractor.
 - **CRITICAL: IDOR vulnerability fixed** — documents.ts UPDATE now uses `RETURNING id` to verify ownership before updating document_content.
 - **API routes added** — All server-side endpoints created: /api/documents, /api/document-content, /api/document-delete, /api/admin, /api/exports, /api/ai-proxy, /api/blob-upload, /api/ocr, /api/schema, /api/user-sync, /api/page-image.
 - **Consolidated auth token state** — Single source of truth in src/lib/apiClient.ts. Removed duplicate _accessToken from storageService.ts and initStorage() call pattern.
+- **Timing-safe admin comparison** — isAdmin() now uses crypto.timingSafeEqual to prevent timing attacks.
 
 ### Added
 - **Vitest test suite** — 30 tests passing across 3 test files (apiClient, exportService, aiCommon)
@@ -35,6 +36,24 @@ All notable changes to the Amharic OCR Extractor.
 - Two-column layout detection: ✅ working
 - Ethiopic punctuation: ✅ preserved (። ፣ ፤ ፡)
 - Old Ge'ez manuscripts: ⚠️ needs work (deferred to V2)
+
+---
+
+## [0.1.0] - 2026-03-27
+
+### Security (P0)
+- **CRITICAL: API key leak fixed** — All AI calls route through server-side /api/ai-proxy. VITE_ANTHROPIC_API_KEY removed from client bundle.
+- **CRITICAL: Browser require() removed** — exportService.ts uses async dynamic import instead of require('docx').
+- **CRITICAL: IDOR vulnerability fixed** — documents.ts UPDATE uses RETURNING id ownership check.
+- **Timing-safe admin check** — isAdmin() uses crypto.timingSafeEqual.
+- **Auth token consolidated** — Single source of truth in src/lib/apiClient.ts.
+
+### Infrastructure
+- **13 new API routes** — /api/documents, /api/document-content, /api/document-delete, /api/admin, /api/exports, /api/ai-proxy, /api/blob-upload, /api/ocr, /api/schema, /api/user-sync, /api/page-image, /api/_auth, /api/_db.
+- **Vitest test suite** — 30 tests across 3 files (apiClient, exportService, aiCommon).
+
+### Removed
+- Dead `checkUserBlocked` stub from adminService.ts.
 
 ---
 
