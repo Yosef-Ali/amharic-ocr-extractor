@@ -47,14 +47,6 @@ export async function upsertUser(_id: string, email: string, name?: string): Pro
 }
 
 // ---------------------------------------------------------------------------
-// Check if user is blocked — now returned by upsertUser
-// ---------------------------------------------------------------------------
-export async function checkUserBlocked(_userId: string): Promise<boolean> {
-  // This is handled by upsertUser now (returns blocked status)
-  return false;
-}
-
-// ---------------------------------------------------------------------------
 // Per-user quota — checked server-side during save
 // ---------------------------------------------------------------------------
 export async function getUserQuota(_userId: string): Promise<{ used: number; limit: number }> {
