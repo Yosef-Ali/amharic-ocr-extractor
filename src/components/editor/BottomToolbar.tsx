@@ -64,14 +64,6 @@ export default function BottomToolbar({
               <Loader2 size={11} className="animate-spin" />
               <span>{processingStatus}</span>
               {total > 0 && <span className="bt-status-pct">{pct}%</span>}
-              {onCancel && (
-                <button 
-                  className="ml-auto text-[10px] font-bold uppercase tracking-wider text-red-500 hover:text-red-600 transition-colors"
-                  onClick={onCancel}
-                >
-                  Cancel
-                </button>
-              )}
             </div>
             {total > 0 && (
               <div className="bt-progress-track">

@@ -310,10 +310,14 @@ export default function EditorShell({
         onSave();
         return;
       }
+      // Escape cancels extraction even when inside editable content
+      if (e.key === 'Escape' && isProcessing) {
+        e.preventDefault();
+        onCancel?.();
+        return;
+      }
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return;
       if (e.key === 'Escape') {
-        // Cancel extraction if running
-        if (isProcessing) { onCancel?.(); return; }
         if (showFindReplace) { setShowFindReplace(false); return; }
         setSelectionMode(false); setRightDrawer(null); setHandTool(false);
         // Escape from blank cover page → go to page 1
