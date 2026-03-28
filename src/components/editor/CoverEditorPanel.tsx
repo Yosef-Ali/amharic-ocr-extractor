@@ -26,6 +26,15 @@ import {
   type CoverDesignMode, type TextRemovalMode,
 } from '../../services/geminiService';
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function autoLabel(blocks: CoverBlock[], index: number): string {
+  // Sort by font size descending to assign labels: largest = Title, etc.
+  const sorted = [...blocks].sort((a, b) => b.size - a.size);
+  const rank = sorted.findIndex(b => b.id === blocks[index].id);
+  const labels = ['Title', 'Subtitle', 'Author', 'Publisher'];
+  return labels[rank] ?? `T${index + 1}`;
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 const COLOR_PRESETS = ['#ffffff','#000000','#d4a574','#fbbf24','#f87171','#a3e635','#38bdf8','#c084fc','#f8fafc','#1e293b'];
 
@@ -387,7 +396,8 @@ export default function CoverEditorPanel({
               className={`ce-layer${b.id === selId ? ' ce-layer--sel' : ''}`}
               onClick={() => onSelect(b.id)}
             >
-              <span className="ce-layer-name">T{i + 1} — {b.text.slice(0, 20) || '…'}</span>
+              <span className="ce-layer-swatch" style={{ background: b.color }} />
+              <span className="ce-layer-name">{autoLabel(blocks, i)} — {b.text.slice(0, 20) || '…'}</span>
               <button className="ce-layer-del" onClick={e => { e.stopPropagation(); onDelete(b.id); }} title="Delete">
                 <Trash2 size={10} />
               </button>

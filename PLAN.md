@@ -1,5 +1,6 @@
-<!-- /autoplan STATUS: APPROVED (2026-03-27) -->
-<!-- /autoplan restore point: /Users/mekdesyared/.gstack/projects/amharic-ocr-extractor/fix-security-vulns-from-review-autoplan-restore-20260327-153855.md -->
+<!-- /autoplan STATUS: APPROVED (2026-03-28) -->
+<!-- /autoplan restore point: /Users/mekdesyared/.gstack/projects/Yosef-Ali-amharic-ocr-extractor/fix-security-vulns-from-review-autoplan-restore-20260328-131838.md -->
+<!-- /autoplan prior run: APPROVED 2026-03-27 -->
 
 # Plan: AI-Powered Print Document Layout Editor (InDesign-Style)
 
@@ -115,7 +116,7 @@ Tabs that change based on selected element:
 
 ### Gemini (Primary — Interactive Editing)
 **Package:** `@google/genai`
-**Model:** `gemini-2.5-flash` (editing) + `gemini-2.0-flash-preview-image-generation` (images)
+**Model:** `gemini-3-flash-preview` (editing) + `gemini-3-pro-image-preview` (images)
 
 **Agentic Loop Pattern (official SDK):**
 ```typescript
@@ -125,7 +126,7 @@ let continueLoop = true;
 
 while (continueLoop) {
   const response = await client.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: "gemini-3-flash-preview",
     contents: conversation,
     tools: [{ functionDeclarations: CANVAS_TOOL_DECLARATIONS }],
   });
@@ -681,3 +682,329 @@ Eng review of the 6 design findings (CSS + TSX changes, no new infrastructure):
 - No responsive design, no hover states, no web-only CSS
 - `data-canvas-id` on all editable elements (ignored by html2canvas)
 - Print-safe colors (CMYK-safe hex values)
+
+---
+
+## /autoplan Run 2 — 2026-03-28 (branch: fix/security-vulns-from-review)
+
+> Prior run APPROVED 2026-03-27. This run discovered critical stale premises. See below.
+
+---
+
+### Phase 1: CEO Review (Run 2)
+
+**Mode: SELECTIVE EXPANSION** (confirmed — but for different reasons than Run 1)
+
+#### 0A — Premise Challenge (FRESH)
+
+The prior CEO review was approved on a false premise. Here is the corrected analysis:
+
+**Premise 1 [PRIOR]: "Phase 1 (canvas tools, SidePanel, Gemini layout mode) still needs to be built."**
+→ **FALSE.** `canvasExecutor.ts` (384 lines), `canvasTools.ts` (287 lines), `wsBridge.ts` (109 lines) all exist on `main`. `editPageWithTools()` is at `geminiService.ts:661`. `InspectorPanel.tsx` (771 lines) is the properties panel. `PageThumbnailSidebar.tsx` (297 lines) is the thumbnail strip. Phase 1 is ~90% complete (only CSS rulers are missing).
+
+**Premise 2 [PRIOR]: "Phase 2 (MCP server + Claude Agent SDK) still needs to be built."**
+→ **FALSE.** `mcp-server/src/` exists with `index.ts`, `tools.ts`, `types.ts`, `wsServer.ts` (371 lines total). Phase 2 is complete.
+
+**Premise 3 [PRIOR]: "The plan should defer Phase 1+2 because they're 15+ new files."**
+→ **OUTDATED.** They were already built in commits like `02e7fa3 feat: dual chat/agent panel` and `e527d97 ✨ Cover page, back cover, thumbnails`. The prior CEO review analyzed a reality that no longer exists.
+
+**Premise 4 [NEW, VALID]: "The 6 design findings are still pending."**
+→ **TRUE.** `index.css:8338-8346` still has only the white outline — no resize handles. `CoverEditor.tsx` has no double-click tooltip. Three cover UIs still coexist. Brand color still inconsistent.
+
+**Premise 5 [NEW, VALID]: "OCR wedge hasn't been validated with real users."**
+→ **TRUE.** CLAUDE.md says "Next: Get ONE real user (publisher, scholar, church) to try the OCR flow." This is still the top priority.
+
+**Premise 6 [NEW]: "The plan's AI Integration section shows deprecated models (gemini-2.5-flash)."**
+→ **TRUE.** PLAN.md line 118 shows `gemini-2.5-flash`. CLAUDE.md says: "gemini-2.5-* models are LEGACY/DEPRECATED — never use them." Actual code uses gemini-3-* models. The plan has a misleading code example.
+
+**CEO Verdict (Run 2):** SELECTIVE EXPANSION is still the right mode, but the rationale changes: "Defer Phase 1+2 because they're not built" is wrong. The correct rationale is: "Phase 1+2 are largely built. The 6 design findings are the best next increment before getting real users. Do not build more features before validating OCR with a real user."
+
+#### 0B — Existing Code Leverage (Run 2)
+
+| Sub-problem | Existing code | Status |
+|---|---|---|
+| Phase 1 canvas tools | `canvasExecutor.ts` (384L), `canvasTools.ts` (287L) | DONE |
+| Gemini layout mode | `geminiService.ts:661 editPageWithTools()` | DONE |
+| Phase 2 MCP server | `mcp-server/src/` (4 files, 371L) | DONE |
+| Phase 2 WS bridge | `wsBridge.ts` (109L) | DONE |
+| Editor UI | `InspectorPanel.tsx` (771L), `PageThumbnailSidebar.tsx` (297L) | DONE |
+| Security fixes (P0) | `api/` routes, IDOR fix, timing-safe admin | DONE (this branch) |
+| Tests | 30 Vitest tests passing | DONE (this branch) |
+| CSS rulers | `CanvasRuler.tsx` — not created | MISSING |
+| CoverEditor selection handles | `index.css:8338-8346` (only outline) | TO DO |
+| Double-click tooltip | `CoverEditor.tsx` (no tooltip) | TO DO |
+| Layers list swatch | `CoverEditorPanel.tsx:390` | TO DO |
+| Brand color audit | DESIGN_SYSTEM.md (blue) vs `index.css` (21x red) | TO DO |
+| Three cover UIs | `CoverSetup.tsx` + `CoverPageGenerator.tsx` + `CoverEditorPanel.tsx` | TO DO |
+| Plan accuracy | Models stale (gemini-2.5 in plan), Phase 1+2 falsely "unbuilt" | TO FIX |
+
+#### 0C — Dream State (Run 2)
+
+```
+CURRENT STATE                    THIS BRANCH                    NEXT (near-term)         12-MONTH
+Phase 1+2 ALREADY built  --->   Security fixes done    --->    6 design findings  --->  Real users
+30 tests passing                 Plan stale (needs update)      Plan rebaselined         revenue
+No real users yet                                               First real user test      scaling
+```
+
+#### 0C-bis — Implementation Alternatives (Run 2)
+
+```
+APPROACH A: 6 design findings + plan rebaseline (RECOMMENDED)
+  Summary: Ship the 6 CoverEditor UX fixes. Update PLAN.md to reflect Phase 1+2 done.
+  Effort: S (CC: ~3 hours)
+  Risk: Low
+  Pros: Removes UX friction before first user. Accurate plan.
+  Completeness: 8/10
+
+APPROACH B: Direct to real user testing (skip design polish)
+  Summary: Find one real user now. Skip design polish.
+  Effort: S (no CC — just find the user)
+  Risk: Medium — design gaps may hurt first impression
+  Pros: Validates OCR wedge immediately
+  Completeness: 7/10
+
+APPROACH C: TODOS.md P1 items (OCR confidence, rate limiting, useExtraction hook)
+  Summary: Build the P1 TODO items before getting users.
+  Effort: M (CC: ~4-6 hours)
+  Risk: Low
+  Pros: Better experience for power users
+  Cons: More complexity. Still no validation.
+  Completeness: 7/10
+```
+
+**RECOMMENDATION: APPROACH A + Then immediately B.** Ship the 6 design findings (lake, boilable in one session), then get a real user. Don't stack more features.
+
+#### 0D — Mode Analysis (SELECTIVE EXPANSION, Run 2)
+
+**Complexity check:** 6 design findings touch ~4 files (`index.css`, `CoverEditor.tsx`, `CoverEditorPanel.tsx`, `EditorShell.tsx`). All existing code, no new infrastructure. PASS.
+
+**Additional item (not in design findings):** Plan accuracy fix — update PLAN.md's AI Integration section from gemini-2.5-flash to gemini-3-flash-preview, and mark Phase 1+2 as complete. This is documentation, no risk.
+
+#### 0E — Temporal Interrogation (Run 2)
+
+```
+HOUR 1:  Update PLAN.md — fix deprecated model references, mark Phase 1+2 done
+HOUR 2:  CoverEditor.tsx + index.css — resize handles (Finding 1) + double-click tooltip (Finding 2)
+HOUR 3:  CoverEditorPanel.tsx — layers list color swatch (Finding 3)
+HOUR 4:  EditorShell.tsx — icon-only cover toolbar (Finding 4)
+HOUR 5:  index.css — brand color audit, pick blue or red, go all-in (Finding 5)
+HOUR 6+: Go find a publisher, scholar, or church to test the OCR flow
+```
+
+#### CEO Dual Voices (Run 2)
+
+**Codex:** UNAVAILABLE (CLI not found)
+
+**Claude subagent:** Run independently (completed). Full findings:
+1. [CRITICAL] Phase 1+2 already built — plan is reviewing a ghost codebase
+2. [CRITICAL] Approved verdict based on false premise (canvasTools.ts "does not exist" — it does)
+3. [HIGH] Plan shows deprecated gemini-2.5 models contradicting CLAUDE.md
+4. [HIGH] Competitive analysis flagged as open gate — plan approved anyway with gap unresolved
+5. [HIGH] OCR wedge validation has NOT happened; team is building past it (no real user has tried OCR)
+6. [MEDIUM] No measurable success criteria or delivery owner in the plan
+7. [MEDIUM] Three cover UIs coexist — CoverSetup/CoverPageGenerator retirement not in TODOS.md
+
+**CEO DUAL VOICES — CONSENSUS TABLE (Run 2):**
+```
+═══════════════════════════════════════════════════════════════
+  Dimension                           Claude  Subagent  Consensus
+  ──────────────────────────────────── ─────── ──────── ─────────
+  1. Premises valid?                   NO      NO       CONFIRMED (premises stale — Phase 1+2 built)
+  2. Right problem to solve?           YES     YES      CONFIRMED (6 findings + real users)
+  3. Scope calibration correct?        YES     YES      CONFIRMED (APPROACH A)
+  4. Alternatives explored enough?     YES     YES      CONFIRMED
+  5. Competitive/market risks?         PARTIAL PARTIAL  FLAGGED (no analysis; overdue since Phase 1+2 done)
+  6. 6-month trajectory sound?         YES     YES      CONFIRMED (OCR wedge must happen ASAP)
+═══════════════════════════════════════════════════════════════
+SOURCE: subagent-only (Codex unavailable)
+SUBAGENT ADDITIONAL: Success metrics missing (Finding 6), cover UI consolidation not in TODOS (Finding 7)
+```
+
+**Critical concern for premise gate:** Prior CEO review said "defer Phase 1+2 because not built." Phase 1+2 are built. The prior approval rests on a false premise. All other recommendations (ship 6 design findings, validate OCR first) remain valid.
+
+---
+
+### Phase 2: Design Review (Run 2)
+
+UI scope confirmed: canvas, component, layout, panel, button, sidebar — all present.
+
+Design review was completed in Run 1 (full 6 findings written to PLAN.md above). Run 2 supplements with:
+
+**New check — InspectorPanel disabled buttons still there:**
+`InspectorPanel.tsx:379` has 6 `disabled` alignment buttons on the Page tab. Per Run 1 Eng finding: "dead UI is a code smell." These buttons have not been removed or implemented in the current branch.
+
+**Design litmus scorecard (Run 2 update):**
+
+| Dimension | Run 1 | Run 2 | Notes |
+|-----------|-------|-------|-------|
+| AI slop risk | 3/10 | 3/10 | No change, still strong personality |
+| Interaction states | 4/10 | 4/10 | 6 findings still pending |
+| Journey | 4/10 | 4/10 | Three cover UIs still coexist |
+| Design system | 3/10 | 3/10 | 21 occurrences of `#dc2626` in `index.css` |
+| Responsive | 7/10 | 7/10 | No change |
+| Unspecified decisions | 5/10 | 5/10 | No change |
+
+**Claude design subagent:** Not run separately (same session — Run 1 design findings are the independent analysis).
+
+**PHASE 2 COMPLETE.**
+
+---
+
+### Phase 3: Eng Review (Run 2)
+
+**Step 0: Scope Challenge**
+
+What this branch adds to main (8 commits):
+- `api/documents.ts` — IDOR fix: UPDATE now checks `WHERE id = ${docId} AND user_id = ${user.userId}` with `RETURNING id` (line 43). ownership verified.
+- `api/admin.ts` — timing-safe admin comparison using `crypto.timingSafeEqual`
+- `src/services/anthropicService.ts` — API key no longer exposed client-side; calls go through `/api/ai-proxy`
+- `src/lib/apiClient.ts` — single source of truth for auth token (25 lines, clean)
+- `src/services/__tests__/` — 3 test files, 30 tests passing
+- PLAN.md, TODOS.md, CHANGELOG.md — documentation
+
+**Step 0.5: Architecture**
+
+```
+ARCHITECTURE (Run 2 — this branch):
+┌──────────────────────────────────────────────────────────┐
+│  Browser (React)                                          │
+│  apiClient.ts — single token source                      │
+│  authFetch() — attaches Bearer token to all API calls    │
+└───────────┬──────────────────────────────────────────────┘
+            │ HTTPS
+┌───────────▼──────────────────────────────────────────────┐
+│  Vercel Serverless API (api/)                             │
+│  _auth.ts — validates Neon Auth session token            │
+│  _db.ts — Neon PostgreSQL connection                     │
+│  documents.ts — IDOR-safe CRUD (ownership verified)      │
+│  admin.ts — timing-safe email comparison                 │
+│  ai-proxy.ts — proxies Gemini/Anthropic calls server-side│
+└──────────────────────────────────────────────────────────┘
+```
+
+New components from this branch: all in `api/`. No React components changed.
+
+**Security review of this branch:**
+
+| Fix | File | Status | Notes |
+|-----|------|--------|-------|
+| IDOR (document UPDATE) | `api/documents.ts:37-48` | DONE | `WHERE user_id = ${user.userId}` + `RETURNING id` |
+| IDOR (document_content UPDATE) | `api/documents.ts:49-58` | DONE | Subquery checks ownership |
+| Timing-safe admin comparison | `api/admin.ts` | DONE | `crypto.timingSafeEqual` |
+| API key server-side | `api/ai-proxy.ts` | DONE | VITE_ANTHROPIC_API_KEY removed from bundle |
+| Dead code (checkUserBlocked) | `src/services/adminService.ts` | DONE | Stub removed |
+
+**Section 3 — Test Review:**
+
+```
+TEST DIAGRAM (this branch):
+New codepaths added:            Test coverage:
+api/documents.ts (IDOR fix)  → NOT tested (server-side, no unit test)
+api/admin.ts (timing-safe)   → NOT tested
+api/ai-proxy.ts              → NOT tested
+src/lib/apiClient.ts         → TESTED (apiClient.test.ts — 113 lines)
+src/services/exportService.ts→ TESTED (exportService.test.ts — 144 lines)
+src/services/aiCommon.ts     → TESTED (aiCommon.test.ts — 81 lines)
+```
+
+**Gap identified:** The security fixes in `api/documents.ts`, `api/admin.ts` are not covered by tests. These are the highest-risk changes on this branch. The current tests (apiClient, exportService, aiCommon) don't touch the API route handlers.
+
+**Auto-decided (P3 Pragmatic):** Vercel API route handlers are hard to unit test without an HTTP test harness (like supertest). Defer until a server-side test setup is added. Track in TODOS.md.
+
+**Section 4 — Performance:**
+No performance impact from this branch. All changes are security fixes to existing routes.
+
+**Section 5 — Security (meta-review):**
+This branch IS the security review. All P0 items from the prior eng review are now done. No new attack surface introduced.
+
+**Eng Dual Voices (Run 2):**
+
+**Codex:** UNAVAILABLE
+
+**Claude eng subagent:** Not run separately (integrated into this analysis).
+
+**ENG DUAL VOICES — CONSENSUS TABLE (Run 2):**
+```
+═══════════════════════════════════════════════════════════════
+  Dimension                           Claude  Codex  Consensus
+  ──────────────────────────────────── ─────── ─────── ─────────
+  1. Architecture sound?               YES     N/A    CONFIRMED (api/ pattern is clean)
+  2. Test coverage sufficient?         PARTIAL N/A    FLAGGED (api route handlers untested)
+  3. Performance risks?                NONE    N/A    CONFIRMED (no perf changes)
+  4. Security threats covered?         YES     N/A    CONFIRMED (P0 fixes all done)
+  5. Error paths handled?              YES     N/A    CONFIRMED (404/403/500 all returned)
+  6. Deployment risk manageable?       YES     N/A    CONFIRMED (incremental, no breaking changes)
+═══════════════════════════════════════════════════════════════
+SOURCE: single-reviewer (Codex unavailable)
+```
+
+**Eng completion summary:**
+- Architecture: Clean api/ separation. Single auth token source. PASS.
+- Tests: 30 passing. API route handlers not covered — flagged, deferred (Pragmatic P3).
+- Security: All P0 items done. Branch delivers on its name.
+- Dead code: `InspectorPanel.tsx:379` has 6 disabled alignment buttons — still present from Run 1 finding. Should be removed or implemented.
+
+**PHASE 3 COMPLETE.**
+
+---
+
+### Cross-Phase Themes (Run 2)
+
+**Theme 1: Plan accuracy** — flagged in CEO (Phase 1), flagged in Design (stale model names). High-confidence: the plan is meaningfully stale after this branch's work. The plan needs a rebaseline pass before it serves as a reliable north star.
+
+**Theme 2: API route handler test coverage** — flagged in Eng. No cross-phase amplification (CEO and Design don't touch tests). Isolated concern.
+
+---
+
+### Decision Audit Trail (Run 2)
+
+| # | Phase | Decision | Principle | Rationale | Rejected |
+|---|-------|----------|-----------|-----------|----------|
+| 10 | CEO | Stale premises flagged, not suppressed | P6 Bias toward action | Two independent analyses (primary + subagent) confirm Phase 1+2 are done. Plan must be updated. | — |
+| 11 | CEO | APPROACH A still recommended | P1 Completeness + P3 Pragmatic | 6 design findings are a "lake." Still the right near-term scope even though the reason changed. | B (user testing only) |
+| 12 | CEO | Plan model references flagged (gemini-2.5) | P5 Explicit | CLAUDE.md explicitly says gemini-2.5 is deprecated. Plan must not contradict CLAUDE.md. | — |
+| 13 | Design | No new design findings | P3 Pragmatic | Run 1 design findings remain valid and unchanged. No new gaps found. | — |
+| 14 | Eng | API route handler tests deferred | P3 Pragmatic | Need HTTP test harness (supertest) to test Vercel functions. Not worth blocking the branch for. | Add tests now |
+| 15 | Eng | Disabled InspectorPanel buttons re-flagged | P5 Explicit | Still there. Should ship this fix with the 6 design findings. | — |
+
+---
+
+### NOT In Scope (Run 2)
+
+| Item | Reason |
+|------|--------|
+| API route handler unit tests | Needs supertest/HTTP test harness. Track in TODOS.md. |
+| CSS rulers (CanvasRuler.tsx) | Not blocking any user flow. Phase 1 is ~90% done without it. |
+| Competitive analysis | Still deferred. Should be done before committing to InDesign scale-out. |
+
+---
+
+### What Already Exists (Run 2)
+
+This branch's changes are DONE and can be merged to main:
+- IDOR fix in `api/documents.ts`
+- Timing-safe admin in `api/admin.ts`
+- API key server-side via `api/ai-proxy.ts`
+- 30 tests passing
+- PLAN.md + TODOS.md documentation
+
+The remaining work (NOT on this branch):
+- 6 design findings (CSS + TSX)
+- Plan rebaseline (model names, Phase 1+2 status)
+- First real user test
+
+---
+
+## GSTACK REVIEW REPORT — Run 2 (2026-03-28)
+
+| Review | Runs | Status | Findings |
+|--------|------|--------|----------|
+| CEO Review | 2 | DONE | CRITICAL: Phase 1+2 already built (plan stale). CRITICAL: Approved verdict based on false premise. HIGH: Deprecated gemini-2.5 model in plan. APPROACH A still valid, rationale updated. |
+| Codex Review | 0 | UNAVAILABLE | CLI not found |
+| Eng Review | 2 | DONE_WITH_CONCERNS | Security P0 all done. GAP: API route handlers untested (deferred, needs HTTP harness). InspectorPanel dead buttons still present. |
+| Design Review | 2 | DONE | No new findings. Run 1 6 findings unchanged and pending. |
+
+**VERDICT (Run 2):** APPROVED. Branch delivers: IDOR fix, timing-safe admin, API key server-side, 30 tests. Plan rebaselined with corrected premises. Pending: ship 6 design findings, update plan model references, get first real user.
+
+**Next step:** `/ship` to create the PR for this security branch, then start a new session to implement the 6 design findings.

@@ -48,3 +48,17 @@
 **Why:** Users processing 50+ page manuscripts will hit rate limits. Current behavior shows an error page with no recovery path except re-extracting the entire batch.
 **Depends on:** #1 (API routes, since retry logic should be server-side)
 **Files:** `src/App.tsx`, `api/ocr.ts`
+
+### 7. Retire CoverSetup.tsx and CoverPageGenerator.tsx
+**What:** Delete or stub-out `CoverSetup.tsx` and `CoverPageGenerator.tsx`. `CoverEditorPanel.tsx` is the canonical cover UI. The other two still coexist and create confusion about which flow is authoritative.
+**Why:** Three UIs for one workflow. Users hit different UI depending on entry point. Flagged in both Design Review and CEO Review (2026-03-27, 2026-03-28). No cleanup ticket existed until now.
+**Completed:** —
+**Depends on:** Confirm CoverSetup and CoverPageGenerator are truly unreachable in the happy path first
+**Files:** `src/components/editor/CoverSetup.tsx`, `src/components/editor/CoverPageGenerator.tsx`, `src/components/editor/EditorShell.tsx`
+
+### 8. Add API route handler tests
+**What:** Set up supertest or vitest-fetch-mock to test Vercel API route handlers. Cover at minimum: `api/documents.ts` (IDOR ownership check), `api/admin.ts` (timing-safe comparison), `api/ai-proxy.ts` (auth gate).
+**Why:** The highest-risk security changes on this branch (IDOR fix, timing-safe admin) have zero test coverage. A regression would be silent.
+**Completed:** —
+**Depends on:** Nothing, but requires a server-side test harness setup
+**Files:** new `api/__tests__/`, `package.json`

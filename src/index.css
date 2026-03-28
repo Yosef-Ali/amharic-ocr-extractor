@@ -254,8 +254,8 @@
 }
 .adm-del-btn:hover:not(:disabled) { background: #fef2f2; color: #dc2626; }
 .adm-del-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.adm-download-btn { background: var(--adm-accent, #2563eb); color: #fff !important; }
-.adm-download-btn:hover:not(:disabled) { background: #1d4ed8; color: #fff; }
+.adm-download-btn { background: var(--adm-accent, #ef4444); color: #fff !important; }
+.adm-download-btn:hover:not(:disabled) { background: #dc2626; color: #fff; }
 .adm-empty { text-align: center; color: var(--t-text4); padding: 2rem 0; font-size: 0.85rem; }
 
 /* ──────────────────────────────────────────────
@@ -6392,8 +6392,8 @@
 
 .sel-mode [contenteditable="true"],
 .sel-mode {
-  /* In selection mode, elements themselves shouldn't show a text cursor */
-  cursor: default !important;
+  /* Crosshair on empty canvas signals "click to select" */
+  cursor: crosshair !important;
 }
 
 /* Base transparent outline for all items in selection mode to avoid layout jumping */
@@ -8345,6 +8345,64 @@
 }
 .ce-block--sel { outline-color: rgba(255,255,255,0.65); }
 
+/* ── Resize handles (8-point InDesign-style) ── */
+.ce-handle {
+  position: absolute;
+  width: 8px; height: 8px;
+  background: #fff;
+  border: 1.5px solid rgba(0,0,0,0.5);
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+  z-index: 20;
+  pointer-events: none;
+}
+.ce-handle--tl { top: -4px;  left: -4px;  cursor: nw-resize; }
+.ce-handle--tc { top: -4px;  left: calc(50% - 4px); cursor: n-resize; }
+.ce-handle--tr { top: -4px;  right: -4px; cursor: ne-resize; }
+.ce-handle--ml { top: calc(50% - 4px); left: -4px;  cursor: w-resize; }
+.ce-handle--mr { top: calc(50% - 4px); right: -4px; cursor: e-resize; }
+.ce-handle--bl { bottom: -4px; left: -4px;  cursor: sw-resize; }
+.ce-handle--bc { bottom: -4px; left: calc(50% - 4px); cursor: s-resize; }
+.ce-handle--br { bottom: -4px; right: -4px; cursor: se-resize; }
+
+/* ── Double-click tooltip ── */
+.ce-tooltip {
+  position: absolute;
+  top: calc(-100% - 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.78);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 3px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 30;
+  animation: ce-tooltip-fade 2s ease forwards;
+}
+@keyframes ce-tooltip-fade {
+  0%   { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ── Cover toolbar icon buttons ── */
+.es-cover-icon-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  background: var(--t-surface2);
+  color: var(--t-text);
+  border: 1px solid var(--t-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.es-cover-icon-btn:hover { background: var(--t-surface3); }
+.es-cover-icon-btn--del { background: rgba(180,20,20,0.1); color: #b91c1c; border-color: rgba(180,20,20,0.3); }
+.es-cover-icon-btn--del:hover { background: rgba(180,20,20,0.2); }
+
 /* ── Side panel (right) ── */
 .ce-panel {
   width: 220px;
@@ -8379,6 +8437,13 @@
 }
 .ce-layer:hover { background: var(--t-surface3); }
 .ce-layer--sel  { background: rgba(99,102,241,0.12); }
+.ce-layer-swatch {
+  flex-shrink: 0;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.2);
+  margin-right: 4px;
+}
 .ce-layer-name {
   font-size: 0.72rem; color: var(--t-text2); flex: 1;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -8972,4 +9037,4 @@
 .adm-del-btn:hover:not(:disabled) { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
 .adm-del-btn:disabled { opacity: 0.4; cursor: default; }
 
-.adm-download-btn:hover:not(:disabled) { background: #eff6ff; color: #2563eb; border-color: #93c5fd; }
+.adm-download-btn:hover:not(:disabled) { background: #dc2626; color: #fff; }

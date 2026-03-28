@@ -330,6 +330,8 @@ export default function EditorShell({
       if ((e.ctrlKey || e.metaKey) && e.key === '0') { e.preventDefault(); zoomFit(); return; }
       // Hand tool toggle
       if (e.key === 'h' || e.key === 'H') { setHandTool(h => !h); return; }
+      // V → Selection Tool (InDesign muscle memory)
+      if (e.key === 'v' || e.key === 'V') { setSelectionMode(m => !m); return; }
       if (selectionMode) return;
       if (e.key === 'ArrowLeft')  changePage(Math.max(navMin, activePage - 1));
       if (e.key === 'ArrowRight') changePage(Math.min(totalPages, activePage + 1));
@@ -720,17 +722,19 @@ export default function EditorShell({
                 <div data-page="0" className="page-wrapper w-full flex justify-center scroll-mt-6" id="page-0">
                   {hasCover ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', width: '100%' }}>
-                      {/* Cover toolbar — sits ABOVE the A4 page, always clickable */}
-                      <div style={{ display: 'flex', gap: '0.4rem', zIndex: 40, position: 'relative' }}>
+                      {/* Cover toolbar — icon-only, compact */}
+                      <div style={{ display: 'flex', gap: '0.25rem', zIndex: 40, position: 'relative' }}>
                         <button
-                          style={{ background: 'var(--t-surface2)', color: 'var(--t-text)', border: '1px solid var(--t-border)', borderRadius: '6px', padding: '5px 12px', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                          className="es-cover-icon-btn"
+                          title="Edit Cover"
                           onClick={() => setRightDrawer('cover')}
-                        >↺ Edit Cover</button>
+                        ><Undo2 size={13} /></button>
                         {onDeleteCover && (
                           <button
-                            style={{ background: 'rgba(180,20,20,0.12)', color: '#b91c1c', border: '1px solid rgba(180,20,20,0.35)', borderRadius: '6px', padding: '5px 10px', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                            className="es-cover-icon-btn es-cover-icon-btn--del"
+                            title="Delete Cover"
                             onClick={() => setShowDeleteCoverConfirm(true)}
-                          ><Trash2 size={11} /> Delete Cover</button>
+                          ><Trash2 size={13} /></button>
                         )}
                       </div>
                       <div className="es-doc-wrap">
