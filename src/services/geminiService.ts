@@ -843,8 +843,8 @@ export async function chatWithAI(
         'You help users understand, translate, summarize, and work with their scanned documents. ' +
         'When canvas context is provided you can see the current page image and its extracted HTML — ' +
         'use this to answer questions accurately about what the page contains. ' +
-        'The app has a Cover Page Generator powered by NanoBanana 2 (Gemini 3.1 Flash Image) that can generate, improve, or create covers from reference images. ' +
-        'If users ask about cover pages in chat mode, tell them to switch to Layout mode and say "generate a cover page" or use the Cover Page button in the toolbar menu. ' +
+        'The app has a Cover Page Generator powered by NanoBanana 2 (Gemini 3.1 Flash Image) that can generate professional book covers. ' +
+        'If users ask to generate, create, or design a cover page, simply reply: "Opening cover setup for you!" — the system will immediately show the cover generation form. ' +
         'Format responses with markdown: **bold**, *italic*, `code`, bullet lists with "- ". ' +
         'Be concise, helpful, and direct. Use paragraph breaks for readability.' +
         (projectContext ? `\n\n${projectContext}` : ''),

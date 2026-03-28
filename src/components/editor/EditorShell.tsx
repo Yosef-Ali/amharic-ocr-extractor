@@ -750,9 +750,18 @@ export default function EditorShell({
                     </div>
                   ) : (
                     <div className="es-doc-wrap" style={{ position: 'relative' }}>
-                      <div style={{ width: `${activePageDim.widthMm}mm`, minHeight: `${activePageDim.heightMm}mm`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', background: 'var(--t-surface)', borderRadius: '2px', boxShadow: '0 2px 12px rgba(0,0,0,.15)', color: 'var(--t-text3)', fontSize: '0.85rem' }}>
-                        <Sparkles size={28} style={{ opacity: 0.35 }} />
-                        <span>Use the panel on the right to generate your cover</span>
+                      <div style={{ width: `${activePageDim.widthMm}mm`, minHeight: `${activePageDim.heightMm}mm`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1rem', background: 'var(--t-surface)', borderRadius: '2px', boxShadow: '0 2px 12px rgba(0,0,0,.15)', color: 'var(--t-text3)', fontSize: '0.875rem' }}>
+                        <Sparkles size={32} style={{ opacity: 0.3 }} />
+                        <div style={{ textAlign: 'center', lineHeight: 1.5 }}>
+                          <div style={{ fontWeight: 600, color: 'var(--t-text2)', marginBottom: '0.25rem' }}>No cover page yet</div>
+                          <div style={{ fontSize: '0.8rem' }}>Generate an AI cover or build one manually</div>
+                        </div>
+                        <button
+                          onClick={() => setRightDrawer('cover')}
+                          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1.1rem', borderRadius: '8px', background: 'var(--t-primary)', color: '#fff', border: 'none', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}
+                        >
+                          <Sparkles size={13} /> Generate Cover
+                        </button>
                       </div>
                     </div>
                   )}
@@ -937,7 +946,7 @@ export default function EditorShell({
             onCopyAllText={onCopyAllText}
             onCancel={onCancel}
             onImageQualityChange={onImageQualityChange}
-            onCoverPage={() => changePage(0)}
+            onCoverPage={() => { changePage(0); setRightDrawer('cover'); }}
           />
         </main>
 
@@ -963,6 +972,7 @@ export default function EditorShell({
               extractedPages={new Set(Object.keys(pageResults).map(Number))}
               executor={canvasExecutor}
               onNavigatePage={changePage}
+              onApplyCover={(html) => { onEdit(0, html); changePage(0); }}
               onSave={onSave}
               onDownloadPDF={onDownloadPDF}
               onClose={() => setRightDrawer(null)}

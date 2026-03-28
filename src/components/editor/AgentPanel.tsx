@@ -12,7 +12,7 @@ import {
   AlertTriangle, ListOrdered, Cpu, KeyRound,
   MessageCircle, Wrench,
 } from 'lucide-react';
-import { editPageWithTools, chatWithAI, setApiKey, isApiKeyError, setActiveModel, type ChatTurn, type CanvasContext } from '../../services/geminiService';
+import { editPageWithTools, chatWithAI, setApiKey, isApiKeyError, setActiveModel, generateCoverBackground, buildEditableCoverHTML, type ChatTurn, type CanvasContext, type CoverStyle as CoverStyle_, type BindingType as BindingType_, type CoverDesignMode as CoverDesignMode_ } from '../../services/geminiService';
 import {
   getProjectMemory, saveProjectMemory, buildProjectContext, appendAgentSummary,
   type ProjectMemory,
@@ -52,6 +52,7 @@ interface Props {
   executor?:       CanvasExecutor;
   onClose?:        () => void;
   onNavigatePage?: (page: number) => void;
+  onApplyCover?:   (html: string) => void;
   onSave?:         () => void;
   onDownloadPDF?:  () => void;
   /** Document file name — used as the per-project memory key */
@@ -487,6 +488,13 @@ function DocumentStatus({
   );
 }
 
+// ── Detect cover generation intent ────────────────────────────────────────
+function parseCoverIntent(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  return /\b(generate|create|make|design|build|add)\b.{0,20}\bcover\b/.test(t)
+    || /\bcover\b.{0,20}\b(page|image|design|art)\b/.test(t);
+}
+
 // ── Detect navigation intent — "go to page 3", "show page 2" ─────────────
 function parseNavigateIntent(text: string): { page: number } | null {
   const t = text.trim().toLowerCase();
@@ -514,7 +522,7 @@ function parseExtractionIntent(text: string): { type: 'page'; page: number; forc
 export default function AgentPanel({
   context, activePage = 1, pageImage = '',
   totalPages = 0, extractedPages = new Set<number>(),
-  executor, onClose, onNavigatePage, onSave, onDownloadPDF,
+  executor, onClose, onNavigatePage, onApplyCover, onSave, onDownloadPDF,
   fileName = '',
 }: Props) {
   const [panelMode,  setPanelMode]  = useState<'chat' | 'agent'>('chat');
@@ -652,30 +660,46 @@ export default function AgentPanel({
     id: string,
     opts: { title: string; author: string; style: CoverStyle; designMode: CoverDesignMode; binding: CoverBinding },
   ) => {
-    if (!executor) return;
     updateMsg(id, { status: 'generating' } as Partial<A2UIMessage>);
     try {
-      const result = JSON.parse(await executor.execute('_generateCover', {
-        mode: 'generate',
-        title: opts.title,
-        author: opts.author || undefined,
-        style: opts.style,
-        designMode: opts.designMode,
-        binding: opts.binding,
-      }) as string);
-      if (result.error) {
-        updateMsg(id, {
-          status: 'done',
-          result: `❌ ${result.error}`,
-        } as Partial<A2UIMessage>);
+      if (executor) {
+        // Agent mode — use executor (keeps ctx.onEdit in sync)
+        const result = JSON.parse(await executor.execute('_generateCover', {
+          mode: 'generate',
+          title: opts.title,
+          author: opts.author || undefined,
+          style: opts.style,
+          designMode: opts.designMode,
+          binding: opts.binding,
+        }) as string);
+        if (result.error) {
+          updateMsg(id, { status: 'done', result: `❌ ${result.error}` } as Partial<A2UIMessage>);
+          return;
+        }
       } else {
-        updateMsg(id, {
-          status: 'done',
-          result: '✅ Cover page generated and applied.',
-        } as Partial<A2UIMessage>);
-        // Auto-navigate to cover page so user sees the result
-        onNavigatePage?.(0);
+        // Chat mode — call geminiService directly, apply via onApplyCover
+        if (!opts.title) {
+          updateMsg(id, { status: 'done', result: '❌ Title is required.' } as Partial<A2UIMessage>);
+          return;
+        }
+        const bgDataUrl = await generateCoverBackground({
+          title: opts.title,
+          author: opts.author || undefined,
+          style: opts.style as CoverStyle_,
+          binding: opts.binding as BindingType_,
+          designMode: opts.designMode as CoverDesignMode_,
+        });
+        const coverHtml = buildEditableCoverHTML(bgDataUrl, {
+          title: opts.title,
+          author: opts.author || undefined,
+          style: opts.style as CoverStyle_,
+          binding: opts.binding as BindingType_,
+          designMode: opts.designMode as CoverDesignMode_,
+        });
+        onApplyCover?.(coverHtml);
       }
+      updateMsg(id, { status: 'done', result: '✅ Cover page generated and applied.' } as Partial<A2UIMessage>);
+      onNavigatePage?.(0);
     } catch (err) {
       updateMsg(id, {
         status: 'done',
@@ -698,6 +722,13 @@ export default function AgentPanel({
     setAttachment(null);
     setAttachName('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
+
+    // ── Cover intent fast-path: inject setup card instead of calling AI ──
+    if (parseCoverIntent(text)) {
+      const setupId = uid();
+      addMsg({ type: 'cover-setup', id: setupId, status: 'pending' } as A2UIMessage);
+      return;
+    }
 
     // Build chat history
     const newHistory: ChatTurn[] = [
