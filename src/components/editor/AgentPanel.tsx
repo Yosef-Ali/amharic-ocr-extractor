@@ -80,36 +80,66 @@ type CoverStyle = 'orthodox' | 'ornate' | 'classic' | 'modern' | 'minimalist';
 type CoverDesignMode = 'full-design' | 'background-only';
 type CoverBinding = 'saddle-stitch' | 'perfect-binding';
 
-const COVER_STYLES: { value: CoverStyle; label: string; emoji: string }[] = [
-  { value: 'classic',    label: 'Classic',   emoji: '📕' },
-  { value: 'modern',     label: 'Modern',    emoji: '🎨' },
-  { value: 'ornate',     label: 'Ornate',    emoji: '📜' },
-  { value: 'orthodox',   label: 'Orthodox',  emoji: '✝️' },
-  { value: 'minimalist', label: 'Minimal',   emoji: '◻️' },
+interface CoverTemplate {
+  label:   string;
+  desc:    string;
+  style:   CoverStyle;
+  prompt:  string;
+  color:   string;
+}
+
+const COVER_TEMPLATES: CoverTemplate[] = [
+  { label: 'Ethiopian Orthodox', desc: 'Icons, gold leaf, Ge\'ez borders', style: 'orthodox',   color: '#7c2d12', prompt: 'Ethiopian Orthodox iconography with Ge\'ez illuminated manuscript borders, gold leaf accents, deep blue and crimson backgrounds, saints and angels' },
+  { label: 'Church Liturgy',     desc: 'Timkat, prayers, processions',    style: 'orthodox',   color: '#4c1d95', prompt: 'Ethiopian church liturgical scene, Timkat procession with colorful ceremonial umbrellas, priests in white robes' },
+  { label: 'Classic Novel',      desc: 'Cinematic, timeless highlands',   style: 'classic',    color: '#78350f', prompt: 'Cinematic Ethiopian highlands landscape, atmospheric golden hour lighting, sweeping scenic vista' },
+  { label: 'Academic / Scholarly', desc: 'Prestigious, distinguished',   style: 'classic',    color: '#1e3a5f', prompt: 'Distinguished academic press, deep navy background, minimal elegant composition, scholarly gravitas' },
+  { label: 'Poetry / Art',       desc: 'Watercolor, expressive',         style: 'modern',     color: '#065f46', prompt: 'Loose watercolor brush strokes, abstract expressionist composition, warm amber and deep teal palette' },
+  { label: 'Modern / Bold',      desc: 'Geometric, high contrast',       style: 'modern',     color: '#111827', prompt: 'Bold geometric shapes, strong typographic composition, high contrast contemporary design' },
+  { label: 'Children\'s Book',   desc: 'Playful, bright characters',     style: 'modern',     color: '#b45309', prompt: 'Bright whimsical illustration, friendly Ethiopian children characters, vibrant saturated colors' },
+  { label: 'Ornate Manuscript',  desc: 'Illuminated borders, ceremonial',style: 'ornate',     color: '#7e1d1d', prompt: 'Ethiopian manuscript illumination, intricate geometric interlacing borders, vivid reds and golds' },
+  { label: 'Minimalist',         desc: 'Clean, bold, one color',         style: 'minimalist', color: '#374151', prompt: 'Stark minimalist composition, single strong accent color, generous white space, simple geometric element' },
 ];
 
-const COVER_BINDINGS: { value: CoverBinding; label: string; emoji: string }[] = [
-  { value: 'saddle-stitch',   label: 'Saddle Stitch',   emoji: '📖' },
-  { value: 'perfect-binding', label: 'Perfect Binding', emoji: '📚' },
+const COVER_STYLES: { value: CoverStyle; label: string }[] = [
+  { value: 'orthodox',   label: 'Orthodox'   },
+  { value: 'classic',    label: 'Classic'    },
+  { value: 'modern',     label: 'Modern'     },
+  { value: 'ornate',     label: 'Ornate'     },
+  { value: 'minimalist', label: 'Minimal'    },
+];
+
+const COVER_BINDINGS: { value: CoverBinding; label: string; sub: string }[] = [
+  { value: 'saddle-stitch',   label: 'Single Page',      sub: 'Front cover only (A4)' },
+  { value: 'perfect-binding', label: 'Full Spread',      sub: 'Front + spine + back' },
 ];
 
 function CoverSetupCard({ msg, onSubmit, onCancel }: {
   msg: import('../../types/a2ui').A2UICoverSetupMessage;
-  onSubmit: (opts: { title: string; author: string; style: CoverStyle; designMode: CoverDesignMode; binding: CoverBinding }) => void;
+  onSubmit: (opts: { title: string; subtitle: string; author: string; style: CoverStyle; designMode: CoverDesignMode; binding: CoverBinding; customPrompt: string }) => void;
   onCancel: () => void;
 }) {
-  const [title,      setTitle]      = useState(msg.suggestedTitle ?? '');
-  const [author,     setAuthor]     = useState('');
-  const [style,      setStyle]      = useState<CoverStyle>('classic');
-  const [designMode, setDesignMode] = useState<CoverDesignMode>('full-design');
-  const [binding,    setBinding]    = useState<CoverBinding>('saddle-stitch');
+  const [title,        setTitle]        = useState(msg.suggestedTitle ?? '');
+  const [subtitle,     setSubtitle]     = useState('');
+  const [author,       setAuthor]       = useState('');
+  const [style,        setStyle]        = useState<CoverStyle>('classic');
+  const [designMode,   setDesignMode]   = useState<CoverDesignMode>('full-design');
+  const [binding,      setBinding]      = useState<CoverBinding>('saddle-stitch');
+  const [customPrompt, setCustomPrompt] = useState('');
+  const [activeTemplate, setActiveTemplate] = useState<number | null>(null);
+
+  const applyTemplate = (idx: number) => {
+    const t = COVER_TEMPLATES[idx];
+    setStyle(t.style);
+    setCustomPrompt(t.prompt);
+    setActiveTemplate(idx);
+  };
 
   if (msg.status === 'generating') {
     return (
       <div className="ap-cover-card">
         <div className="ap-cover-card-header"><Sparkles size={13} /> Generating cover…</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 0', color: 'var(--t-text3)', fontSize: '0.78rem' }}>
-          <Loader2 size={14} className="animate-spin" /> Creating your cover page…
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '1rem 0', color: 'var(--t-text3)', fontSize: '0.78rem' }}>
+          <Loader2 size={14} className="animate-spin" /> NanoBanana 2 is creating your cover — this takes ~15 seconds…
         </div>
       </div>
     );
@@ -125,9 +155,28 @@ function CoverSetupCard({ msg, onSubmit, onCancel }: {
 
   return (
     <div className="ap-cover-card">
-      <div className="ap-cover-card-header"><Sparkles size={13} /> Cover Page Setup</div>
-      <p className="ap-cover-card-hint">Fill in the details and I'll generate your cover.</p>
+      <div className="ap-cover-card-header"><Sparkles size={13} /> Cover Page Generator</div>
+      <p className="ap-cover-card-hint">Pick a template or describe your own vision.</p>
 
+      {/* ── Quick templates ── */}
+      <div className="ap-cover-section-label">Quick Templates</div>
+      <div className="ap-cover-templates">
+        {COVER_TEMPLATES.map((t, i) => (
+          <button
+            key={i}
+            className={`ap-cover-template${activeTemplate === i ? ' ap-cover-template--on' : ''}`}
+            onClick={() => applyTemplate(i)}
+            title={t.desc}
+          >
+            <span className="ap-cover-template-swatch" style={{ background: t.color }} />
+            <span className="ap-cover-template-label">{t.label}</span>
+            <span className="ap-cover-template-desc">{t.desc}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Book details ── */}
+      <div className="ap-cover-section-label" style={{ marginTop: '0.4rem' }}>Book Details</div>
       <input
         className="ap-cover-input"
         placeholder="Title *"
@@ -136,25 +185,58 @@ function CoverSetupCard({ msg, onSubmit, onCancel }: {
       />
       <input
         className="ap-cover-input"
+        placeholder="Subtitle (optional)"
+        value={subtitle}
+        onChange={e => setSubtitle(e.target.value)}
+      />
+      <input
+        className="ap-cover-input"
         placeholder="Author (optional)"
         value={author}
         onChange={e => setAuthor(e.target.value)}
       />
 
+      {/* ── Style ── */}
       <div className="ap-cover-section-label">Style</div>
       <div className="ap-cover-chips">
         {COVER_STYLES.map(s => (
           <button
             key={s.value}
             className={`ap-cover-chip${style === s.value ? ' ap-cover-chip--on' : ''}`}
-            onClick={() => setStyle(s.value)}
+            onClick={() => { setStyle(s.value); setActiveTemplate(null); }}
           >
-            {s.emoji} {s.label}
+            {s.label}
           </button>
         ))}
       </div>
 
-      <div className="ap-cover-section-label">Design mode</div>
+      {/* ── Custom prompt ── */}
+      <div className="ap-cover-section-label">Describe Your Vision <span style={{ fontWeight: 400, textTransform: 'none', opacity: 0.7 }}>(optional)</span></div>
+      <textarea
+        className="ap-cover-textarea"
+        placeholder="e.g. Dark mountain landscape at dusk, golden stars, traditional Ethiopian patterns along the border…"
+        value={customPrompt}
+        rows={3}
+        onChange={e => { setCustomPrompt(e.target.value); setActiveTemplate(null); }}
+      />
+
+      {/* ── Layout ── */}
+      <div className="ap-cover-section-label">Layout</div>
+      <div className="ap-cover-chips" style={{ flexDirection: 'column', gap: '0.3rem' }}>
+        {COVER_BINDINGS.map(b => (
+          <button
+            key={b.value}
+            className={`ap-cover-chip ap-cover-chip--layout${binding === b.value ? ' ap-cover-chip--on' : ''}`}
+            onClick={() => setBinding(b.value)}
+          >
+            <span style={{ fontWeight: 600 }}>{b.label}</span>
+            <span style={{ opacity: 0.65, marginLeft: '0.35rem', fontWeight: 400 }}>— {b.sub}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Design mode ── */}
+      <div className="ap-cover-section-label">AI Mode</div>
       <div className="ap-cover-chips">
         <button className={`ap-cover-chip${designMode === 'full-design' ? ' ap-cover-chip--on' : ''}`} onClick={() => setDesignMode('full-design')}>
           ✦ Full AI Design
@@ -164,24 +246,11 @@ function CoverSetupCard({ msg, onSubmit, onCancel }: {
         </button>
       </div>
 
-      <div className="ap-cover-section-label">Binding</div>
-      <div className="ap-cover-chips">
-        {COVER_BINDINGS.map(b => (
-          <button
-            key={b.value}
-            className={`ap-cover-chip${binding === b.value ? ' ap-cover-chip--on' : ''}`}
-            onClick={() => setBinding(b.value)}
-          >
-            {b.emoji} {b.label}
-          </button>
-        ))}
-      </div>
-
       <div className="ap-cover-actions">
         <button className="ap-cover-cancel" onClick={onCancel}>Cancel</button>
         <button
           className="ap-cover-generate"
-          onClick={() => onSubmit({ title: title.trim() || 'Untitled', author: author.trim(), style, designMode, binding })}
+          onClick={() => onSubmit({ title: title.trim() || 'Untitled', subtitle: subtitle.trim(), author: author.trim(), style, designMode, binding, customPrompt: customPrompt.trim() })}
           disabled={!title.trim()}
         >
           <Sparkles size={12} /> Generate Cover
@@ -202,7 +271,7 @@ function MessageCard({
   msg: A2UIMessage;
   onApprove?: (id: string) => void;
   onReject?:  (id: string) => void;
-  onCoverSetupSubmit?: (id: string, opts: { title: string; author: string; style: CoverStyle; designMode: CoverDesignMode; binding: CoverBinding }) => void;
+  onCoverSetupSubmit?: (id: string, opts: { title: string; subtitle: string; author: string; style: CoverStyle; designMode: CoverDesignMode; binding: CoverBinding; customPrompt: string }) => void;
   onCoverSetupCancel?: (id: string) => void;
 }) {
   if (msg.type === 'user') {
@@ -658,7 +727,7 @@ export default function AgentPanel({
 
   const handleCoverSetupSubmit = async (
     id: string,
-    opts: { title: string; author: string; style: CoverStyle; designMode: CoverDesignMode; binding: CoverBinding },
+    opts: { title: string; subtitle: string; author: string; style: CoverStyle; designMode: CoverDesignMode; binding: CoverBinding; customPrompt: string },
   ) => {
     updateMsg(id, { status: 'generating' } as Partial<A2UIMessage>);
     try {
@@ -667,10 +736,12 @@ export default function AgentPanel({
         const result = JSON.parse(await executor.execute('_generateCover', {
           mode: 'generate',
           title: opts.title,
+          subtitle: opts.subtitle || undefined,
           author: opts.author || undefined,
           style: opts.style,
           designMode: opts.designMode,
           binding: opts.binding,
+          customPrompt: opts.customPrompt || undefined,
         }) as string);
         if (result.error) {
           updateMsg(id, { status: 'done', result: `❌ ${result.error}` } as Partial<A2UIMessage>);
@@ -683,18 +754,22 @@ export default function AgentPanel({
           return;
         }
         const bgDataUrl = await generateCoverBackground({
-          title: opts.title,
-          author: opts.author || undefined,
-          style: opts.style as CoverStyle_,
-          binding: opts.binding as BindingType_,
-          designMode: opts.designMode as CoverDesignMode_,
+          title:        opts.title,
+          subtitle:     opts.subtitle || undefined,
+          author:       opts.author || undefined,
+          style:        opts.style as CoverStyle_,
+          binding:      opts.binding as BindingType_,
+          designMode:   opts.designMode as CoverDesignMode_,
+          customPrompt: opts.customPrompt || undefined,
         });
         const coverHtml = buildEditableCoverHTML(bgDataUrl, {
-          title: opts.title,
-          author: opts.author || undefined,
-          style: opts.style as CoverStyle_,
-          binding: opts.binding as BindingType_,
-          designMode: opts.designMode as CoverDesignMode_,
+          title:        opts.title,
+          subtitle:     opts.subtitle || undefined,
+          author:       opts.author || undefined,
+          style:        opts.style as CoverStyle_,
+          binding:      opts.binding as BindingType_,
+          designMode:   opts.designMode as CoverDesignMode_,
+          customPrompt: opts.customPrompt || undefined,
         });
         onApplyCover?.(coverHtml);
       }

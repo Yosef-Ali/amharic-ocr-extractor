@@ -871,14 +871,16 @@ export type CoverDesignMode = 'full-design' | 'background-only';
 export type TextRemovalMode = 'keep' | 'remove-all' | 'remove-title' | 'remove-author';
 
 export interface CoverPageOptions {
-  title:       string;
-  subtitle?:   string;
-  author?:     string;
-  style:       CoverStyle;
-  binding?:    BindingType;
+  title:        string;
+  subtitle?:    string;
+  author?:      string;
+  style:        CoverStyle;
+  binding?:     BindingType;
   aspectRatio?: ImageAspectRatio;
   imageSize?:   ImageSize;
   designMode?:  CoverDesignMode;
+  /** Free-text description from user — appended to the generation prompt */
+  customPrompt?: string;
 }
 
 const COVER_STYLE_DESCRIPTIONS: Record<CoverStyle, string> = {
@@ -891,17 +893,21 @@ const COVER_STYLE_DESCRIPTIONS: Record<CoverStyle, string> = {
 
 /** Prompt for background-only (text-free) mode */
 function buildCoverBackgroundPrompt(options: CoverPageOptions): string {
-  const { style = 'classic', binding = 'saddle-stitch' } = options;
+  const { style = 'classic', binding = 'saddle-stitch', customPrompt } = options;
   const styleDesc = COVER_STYLE_DESCRIPTIONS[style];
 
   const sizeNote = binding === 'perfect-binding'
     ? 'The image is for a BOOK COVER SPREAD: back cover (left half) + front cover (right half), landscape orientation. Leave the right half more visually prominent with open areas for text overlay. The left half should be simpler with space for a description blurb.'
     : 'A4 book cover (210mm × 297mm, portrait 3:4). Leave a clear central area (upper third to middle) and a contrasting lower portion where title and author text will be overlaid.';
 
+  const customNote = customPrompt?.trim()
+    ? `\nUSER VISION: ${customPrompt.trim()}`
+    : '';
+
   return `Generate a beautiful background image for a book cover. Text will be overlaid separately — this is the background layer only.
 
 PAGE SIZE: ${sizeNote}
-DESIGN STYLE: ${styleDesc}
+DESIGN STYLE: ${styleDesc}${customNote}
 
 REQUIREMENTS:
 - NO TEXT: Do not include any letters, words, numbers, or readable characters of any script. The image must be text-free.
@@ -913,8 +919,9 @@ REQUIREMENTS:
 
 /** Prompt for full AI design mode — typography baked into the image */
 function buildFullAICoverPrompt(options: CoverPageOptions): string {
-  const { style = 'classic', binding = 'saddle-stitch', title, subtitle, author } = options;
+  const { style = 'classic', binding = 'saddle-stitch', title, subtitle, author, customPrompt } = options;
   const styleDesc = COVER_STYLE_DESCRIPTIONS[style];
+  const customNote = customPrompt?.trim() ? `\nUSER VISION: ${customPrompt.trim()}` : '';
 
   const textLines = [
     `TITLE: "${title}"`,
@@ -932,7 +939,7 @@ BOOK DETAILS:
 ${textLines}
 
 COVER SIZE: ${sizeNote}
-DESIGN STYLE: ${styleDesc}
+DESIGN STYLE: ${styleDesc}${customNote}
 
 REQUIREMENTS:
 - The title${author ? ' and author name' : ''} must appear as beautiful, legible typography integrated into the design.

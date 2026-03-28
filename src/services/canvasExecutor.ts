@@ -319,13 +319,14 @@ export class CanvasExecutor {
 
   // ── Cover page generation via NanoBanana 2 ──────────────────────────
   async generateCover(args: Record<string, unknown>): Promise<string> {
-    const mode        = (args.mode as string) ?? 'generate';
-    const title       = (args.title as string) ?? '';
-    const subtitle    = (args.subtitle as string) ?? undefined;
-    const author      = (args.author as string) ?? undefined;
-    const style       = ((args.style as string) ?? 'classic') as CoverStyle;
-    const binding     = ((args.binding as string) ?? 'saddle-stitch') as BindingType;
-    const instruction = (args.instruction as string) ?? '';
+    const mode         = (args.mode as string) ?? 'generate';
+    const title        = (args.title as string) ?? '';
+    const subtitle     = (args.subtitle as string) ?? undefined;
+    const author       = (args.author as string) ?? undefined;
+    const style        = ((args.style as string) ?? 'classic') as CoverStyle;
+    const binding      = ((args.binding as string) ?? 'saddle-stitch') as BindingType;
+    const customPrompt = (args.customPrompt as string) ?? undefined;
+    const instruction  = (args.instruction as string) ?? '';
 
     try {
       let bgDataUrl: string;
@@ -340,11 +341,11 @@ export class CanvasExecutor {
         bgDataUrl = await improveCoverBackground(match[1], instruction || 'Improve the design quality, colors, and visual appeal of the background.');
       } else {
         if (!title) return JSON.stringify({ error: 'Title is required for cover generation.' });
-        bgDataUrl = await generateCoverBackground({ title, subtitle, author, style, binding });
+        bgDataUrl = await generateCoverBackground({ title, subtitle, author, style, binding, customPrompt });
       }
 
       // Build editable HTML and apply as page 0
-      const coverHtml = buildEditableCoverHTML(bgDataUrl, { title, subtitle, author, style, binding });
+      const coverHtml = buildEditableCoverHTML(bgDataUrl, { title, subtitle, author, style, binding, customPrompt });
       this.ctx.onEdit(0, coverHtml);
       this.ctx.onSetActivePage(0);
 
