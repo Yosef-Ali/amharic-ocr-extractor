@@ -859,7 +859,7 @@ export async function chatWithAI(
 // Three modes: generate from scratch, improve existing, generate with reference
 // ---------------------------------------------------------------------------
 
-export type CoverStyle = 'orthodox' | 'modern' | 'classic' | 'minimalist' | 'ornate';
+export type CoverStyle = 'orthodox' | 'modern' | 'classic' | 'minimalist' | 'ornate' | 'heritage' | 'academic' | 'contemporary';
 
 export type BindingType = 'saddle-stitch' | 'perfect-binding';
 
@@ -889,6 +889,9 @@ const COVER_STYLE_DESCRIPTIONS: Record<CoverStyle, string> = {
   classic:     'Traditional book cover with elegant serif typography, decorative frames, muted earth tones, and refined borders. Timeless and sophisticated.',
   minimalist:  'Ultra-clean flat design. Solid color background or very subtle texture, generous whitespace, one accent color, and simple geometric element. NO illustrations, NO patterns, NO gradients, NO shadows — just color, space, and simple shapes.',
   ornate:      'Richly decorated with intricate Ethiopian manuscript illumination patterns, vibrant colors, detailed ornamental borders, and fine geometric interlacing. Celebratory and artistic.',
+  heritage:    'Warm Ethiopian heritage aesthetic with aged parchment textures, sepia-toned ink-wash tones, traditional geometric folk-art motifs, and hand-crafted calligraphic flourishes. Timeless and cultural.',
+  academic:    'Scholarly institutional design with deep navy and ivory tones, gold ruled lines, structured layout, and classic serif typography. Authoritative and refined — suitable for liturgical, theological, or academic texts.',
+  contemporary: 'Bold contemporary African design drawing on Ethiopian flag colors — emerald green, solar gold, crimson — with strong geometric graphic elements, dynamic diagonal composition, and confident modern typography.',
 };
 
 /** Prompt for background-only (text-free) mode */
