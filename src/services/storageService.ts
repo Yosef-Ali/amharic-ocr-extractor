@@ -18,9 +18,14 @@ export class QuotaExceededError extends Error {
 // Vercel Blob helpers
 // ---------------------------------------------------------------------------
 
+// Once we confirm the blob endpoint is unavailable, skip all subsequent calls
+// to avoid spamming the console with 404s on every page image upload.
+let _blobAvailable: boolean | null = null;  // null = untested
+
 /** Upload a raw base64 JPEG to Vercel Blob via the /api/blob-upload endpoint.
  *  Returns the public URL, or null if the endpoint is unavailable (local dev). */
 async function uploadToBlob(base64: string, filename: string): Promise<string | null> {
+  if (_blobAvailable === false) return null;  // already confirmed unavailable
   try {
     const token = getAccessToken();
     const res = await fetch('/api/blob-upload', {
@@ -31,10 +36,15 @@ async function uploadToBlob(base64: string, filename: string): Promise<string | 
       },
       body:    JSON.stringify({ filename, data: base64 }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      _blobAvailable = false;
+      return null;
+    }
+    _blobAvailable = true;
     const { url } = await res.json() as { url: string };
     return url;
   } catch {
+    _blobAvailable = false;
     return null;
   }
 }
