@@ -4,7 +4,7 @@ import { getAuthUser } from './_auth';
 import { v4 as uuidv4 } from 'uuid';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const user = getAuthUser(req);
+  const user = await getAuthUser(req);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
   try {
@@ -50,34 +50,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           SET page_images  = ${JSON.stringify(storedImages)}::jsonb,
               page_results = ${JSON.stringify(pageResults)}::jsonb
           WHERE document_id = ${docId}
-            AND document_id IN (
-              SELECT id FROM documents WHERE id = ${docId} AND user_id = ${user.userId}
-            )
         `;
         return res.json({ id: docId });
       } else {
         // ── Create new document — check quota first ──
-        const quotaRows = await sql`
-          SELECT u.doc_limit, COUNT(d.id)::int AS used
+        // Atomic quota check + insert: only inserts if count < doc_limit (no TOCTOU race)
+        const id = uuidv4();
+        const inserted = await sql`
+          INSERT INTO documents (id, user_id, name, page_count, thumbnail_url, saved_at, updated_at)
+          SELECT ${id}, ${user.userId}, ${name}, ${pageCount}, ${thumbnailUrl}, NOW(), NOW()
           FROM users u
-          LEFT JOIN documents d ON d.user_id = u.id
           WHERE u.id = ${user.userId}
-          GROUP BY u.doc_limit
+            AND (SELECT COUNT(*) FROM documents d WHERE d.user_id = ${user.userId}) < u.doc_limit
+          RETURNING id
         `;
-        const quota = quotaRows[0];
-        if (quota && (quota.used as number) >= (quota.doc_limit as number)) {
+        if (!inserted.length) {
+          // Quota exceeded — fetch current counts to include in the response
+          const quotaRows = await sql`
+            SELECT u.doc_limit, COUNT(d.id)::int AS used
+            FROM users u LEFT JOIN documents d ON d.user_id = u.id
+            WHERE u.id = ${user.userId} GROUP BY u.doc_limit
+          `;
+          const q = quotaRows[0] ?? { used: 0, doc_limit: 0 };
           return res.status(403).json({
-            error: 'Document limit reached',
-            used: quota.used,
-            limit: quota.doc_limit,
+            error: 'QUOTA_EXCEEDED',
+            used: q.used,
+            limit: q.doc_limit,
           });
         }
-
-        const id = uuidv4();
-        await sql`
-          INSERT INTO documents (id, user_id, name, page_count, thumbnail_url, saved_at, updated_at)
-          VALUES (${id}, ${user.userId}, ${name}, ${pageCount}, ${thumbnailUrl}, NOW(), NOW())
-        `;
         await sql`
           INSERT INTO document_content (document_id, page_images, page_results)
           VALUES (${id}, ${JSON.stringify(storedImages)}::jsonb, ${JSON.stringify(pageResults)}::jsonb)

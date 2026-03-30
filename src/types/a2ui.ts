@@ -63,8 +63,11 @@ export interface A2UICoverSetupMessage {
   type:          'cover-setup';
   id:            string;
   suggestedTitle?: string;
-  status:        'pending' | 'generating' | 'done' | 'cancelled';
-  result?:       string;   // success / error text after generation
+  status:        'pending' | 'generating' | 'done' | 'cancelled' | 'error';
+  result?:       string;   // success text after generation
+  errorMsg?:     string;   // error message when status === 'error' (form stays open for retry)
+  generatingStep?:    string; // progress label shown during generation
+  generatingStepIdx?: number; // 0-based step index (0,1,2) for dot indicator
 }
 
 export type A2UIMessage =

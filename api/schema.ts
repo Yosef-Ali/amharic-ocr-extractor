@@ -1,16 +1,18 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { sql } from './_db';
+import { getAuthUser } from './_auth';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const user = await getAuthUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
   try {
-    // Ensure documents table has thumbnail_url column
     await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`;
 
-    // Ensure users table exists
     await sql`
       CREATE TABLE IF NOT EXISTS users (
         id         TEXT PRIMARY KEY,
@@ -22,7 +24,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       )
     `;
 
-    // Add columns if table already existed without them
     await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked   BOOLEAN NOT NULL DEFAULT FALSE`;
     await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS doc_limit INT     NOT NULL DEFAULT 3`;
 

@@ -22,9 +22,13 @@ export class QuotaExceededError extends Error {
  *  Returns the public URL, or null if the endpoint is unavailable (local dev). */
 async function uploadToBlob(base64: string, filename: string): Promise<string | null> {
   try {
+    const token = getAccessToken();
     const res = await fetch('/api/blob-upload', {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
       body:    JSON.stringify({ filename, data: base64 }),
     });
     if (!res.ok) return null;
@@ -118,7 +122,7 @@ export async function saveDocument(
       pageImages.map(async (img, i) => {
         // Cache base64 locally on-save to guarantee fast retrieval
         if (img && !isUrl(img)) {
-           localforage.setItem(`aoe_img_${id}_${i}`, img).catch(console.warn);
+          localforage.setItem(`aoe_img_${id}_${i}`, img).catch(console.warn);
         }
 
         if (isUrl(img)) return img;
@@ -226,12 +230,8 @@ export async function deleteDocument(id: string): Promise<void> {
 
   // Wipe associated data from the local IndexedDB cache safely
   try {
-    await localforage.removeItem(`aoe_doc_${id}`);
     const keys = await localforage.keys();
-    for (const key of keys) {
-      if (key.startsWith(`aoe_img_${id}_`)) {
-        await localforage.removeItem(key);
-      }
-    }
+    const toRemove = [`aoe_doc_${id}`, ...keys.filter(k => k.startsWith(`aoe_img_${id}_`))];
+    await Promise.all(toRemove.map(k => localforage.removeItem(k)));
   } catch (err) { }
 }

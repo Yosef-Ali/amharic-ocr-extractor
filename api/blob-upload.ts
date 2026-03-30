@@ -1,14 +1,40 @@
 import { put } from '@vercel/blob';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { getAuthUser } from './_auth';
+import { sql } from './_db';
+
+// Allowlist for blob filenames: <uuid>/page-N.jpg or <uuid>/thumbnail.jpg
+const SAFE_FILENAME = /^[0-9a-f-]{36}\/(page-\d+|thumbnail)\.jpg$/;
+
+// ~7.5MB decoded — reject oversized payloads before passing to Blob
+const MAX_BASE64_LEN = 10_000_000;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const user = await getAuthUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
   const { filename, data } = (req.body ?? {}) as { filename?: string; data?: string };
   if (!filename || !data) {
     return res.status(400).json({ error: 'Missing filename or data' });
+  }
+
+  if (!SAFE_FILENAME.test(filename)) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+
+  // Verify the UUID prefix belongs to a document owned by this user
+  const docUuid = filename.split('/')[0];
+  const ownerRows = await sql`SELECT id FROM documents WHERE id = ${docUuid} AND user_id = ${user.userId} LIMIT 1`;
+  if (!ownerRows.length) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  if (data.length > MAX_BASE64_LEN) {
+    return res.status(413).json({ error: 'Payload too large' });
   }
 
   // Buffer.from is the idiomatic Node.js way to decode base64 (faster than atob + loop)

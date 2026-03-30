@@ -91,7 +91,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const user = getAuthUser(req);
+  const user = await getAuthUser(req);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
   try {
@@ -104,7 +104,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'Missing base64Image' });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    // Reject oversized payloads (~7.5MB decoded) to prevent memory exhaustion
+    if (base64Image.length > 10_000_000) {
+      return res.status(413).json({ error: 'Image too large' });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
     if (!apiKey) {
       return res.status(500).json({ error: 'GEMINI_API_KEY not configured' });
     }

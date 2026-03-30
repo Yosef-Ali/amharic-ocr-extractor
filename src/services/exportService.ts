@@ -203,12 +203,11 @@ export function buildDocumentExport(
 // ---------------------------------------------------------------------------
 export async function saveDocumentExport(
   docId:     string,
-  userId:    string,
   exported:  ExportDocument,
 ): Promise<void> {
   await authFetch('/api/exports?action=save', {
     method: 'POST',
-    body: JSON.stringify({ docId, userId, exported }),
+    body: JSON.stringify({ docId, exported }),
   });
 }
 

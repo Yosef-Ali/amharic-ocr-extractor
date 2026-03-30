@@ -2,8 +2,10 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { sql } from './_db';
 import { getAuthUser, isAdmin } from './_auth';
 
-// Ensure the ai_exports table exists (idempotent)
+// Ensure the ai_exports table exists (idempotent, cached per lambda warm instance)
+let _tableReady = false;
 async function ensureTable(): Promise<void> {
+  if (_tableReady) return;
   await sql`
     CREATE TABLE IF NOT EXISTS ai_exports (
       id            TEXT PRIMARY KEY,
@@ -17,15 +19,21 @@ async function ensureTable(): Promise<void> {
       updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
+  _tableReady = true;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const user = getAuthUser(req);
+  const user = await getAuthUser(req);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
-  if (!isAdmin(user)) return res.status(403).json({ error: 'Forbidden' });
 
   const action = req.query.action as string;
   if (!action) return res.status(400).json({ error: 'Missing action query param' });
+
+  // Only the save action is open to all authenticated users.
+  // All other actions (list, get, stats, delete) require admin.
+  if (action !== 'save' && !isAdmin(user)) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
 
   try {
     await ensureTable();
@@ -33,9 +41,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // ── POST actions ──
     if (req.method === 'POST') {
       if (action === 'save') {
-        const { docId, userId, exported } = req.body as {
+        const { docId, exported } = req.body as {
           docId: string;
-          userId: string;
           exported: {
             document: {
               name: string;
@@ -47,8 +54,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           };
         };
 
-        if (!docId || !userId || !exported) {
-          return res.status(400).json({ error: 'Missing docId, userId, or exported' });
+        if (!docId || !exported) {
+          return res.status(400).json({ error: 'Missing docId or exported' });
         }
 
         const { document: meta, chunks } = exported;
@@ -56,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           INSERT INTO ai_exports
             (id, document_name, user_id, page_count, chunk_count, languages, export_json, exported_at, updated_at)
           VALUES (
-            ${docId}, ${meta.name}, ${userId},
+            ${docId}, ${meta.name}, ${user.userId},
             ${meta.totalPages}, ${meta.chunkCount},
             ${meta.languages as unknown as string},
             ${JSON.stringify({ document: meta, chunks })}::jsonb,
@@ -69,6 +76,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 languages     = EXCLUDED.languages,
                 export_json   = EXCLUDED.export_json,
                 updated_at    = NOW()
+          WHERE ai_exports.user_id = ${user.userId}
         `;
         return res.json({ ok: true });
       }

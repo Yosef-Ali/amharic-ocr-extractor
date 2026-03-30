@@ -9,7 +9,7 @@ import {
 import {
   Bot, Send, X, Paperclip, Trash2, ChevronDown,
   Check, ImageIcon, Loader2, Zap, Sparkles,
-  AlertTriangle, ListOrdered, Cpu, KeyRound,
+  AlertTriangle, AlertCircle, ListOrdered, Cpu, KeyRound,
   MessageCircle, Wrench,
 } from 'lucide-react';
 import { editPageWithTools, chatWithAI, setApiKey, isApiKeyError, setActiveModel, generateCoverBackground, buildEditableCoverHTML, type ChatTurn, type CanvasContext, type CoverStyle as CoverStyle_, type BindingType as BindingType_, type CoverDesignMode as CoverDesignMode_ } from '../../services/geminiService';
@@ -59,17 +59,13 @@ interface Props {
   fileName?:       string;
 }
 
-// ── Shimmer skeleton ──────────────────────────────────────────────────────
-function Shimmer({ lines = 3 }: { lines?: number }) {
+// ── Thinking dots (replaces shimmer skeleton) ─────────────────────────────
+function ThinkingDots() {
   return (
-    <div className="ap-shimmer">
-      {Array.from({ length: lines }).map((_, i) => (
-        <div
-          key={i}
-          className="ap-shimmer-line"
-          style={{ width: `${65 + (i % 3) * 12}%` }}
-        />
-      ))}
+    <div className="ap-thinking">
+      <span className="ap-thinking-dot" style={{ animationDelay: '0ms' }} />
+      <span className="ap-thinking-dot" style={{ animationDelay: '180ms' }} />
+      <span className="ap-thinking-dot" style={{ animationDelay: '360ms' }} />
     </div>
   );
 }
@@ -79,25 +75,77 @@ function Shimmer({ lines = 3 }: { lines?: number }) {
 type CoverStyle = 'orthodox' | 'ornate' | 'classic' | 'modern' | 'minimalist';
 type CoverDesignMode = 'full-design' | 'background-only';
 type CoverBinding = 'saddle-stitch' | 'perfect-binding';
+type CoverImageMode = 'direct' | 'ai-reference';
 
 interface CoverTemplate {
-  label:   string;
-  desc:    string;
-  style:   CoverStyle;
-  prompt:  string;
-  color:   string;
+  label:    string;
+  labelAm:  string;   // Amharic label
+  desc:     string;
+  style:    CoverStyle;
+  prompt:   string;
+  bg:       string;   // mini preview background
+  accent:   string;   // mini preview accent element color
+  layout:   'cross' | 'band-top' | 'solid' | 'band-left' | 'emblem';
 }
 
+// Print-quality, commonly used Ethiopian book/booklet covers — simple enough for any printer
 const COVER_TEMPLATES: CoverTemplate[] = [
-  { label: 'Ethiopian Orthodox', desc: 'Icons, gold leaf, Ge\'ez borders', style: 'orthodox',   color: '#7c2d12', prompt: 'Ethiopian Orthodox iconography with Ge\'ez illuminated manuscript borders, gold leaf accents, deep blue and crimson backgrounds, saints and angels' },
-  { label: 'Church Liturgy',     desc: 'Timkat, prayers, processions',    style: 'orthodox',   color: '#4c1d95', prompt: 'Ethiopian church liturgical scene, Timkat procession with colorful ceremonial umbrellas, priests in white robes' },
-  { label: 'Classic Novel',      desc: 'Cinematic, timeless highlands',   style: 'classic',    color: '#78350f', prompt: 'Cinematic Ethiopian highlands landscape, atmospheric golden hour lighting, sweeping scenic vista' },
-  { label: 'Academic / Scholarly', desc: 'Prestigious, distinguished',   style: 'classic',    color: '#1e3a5f', prompt: 'Distinguished academic press, deep navy background, minimal elegant composition, scholarly gravitas' },
-  { label: 'Poetry / Art',       desc: 'Watercolor, expressive',         style: 'modern',     color: '#065f46', prompt: 'Loose watercolor brush strokes, abstract expressionist composition, warm amber and deep teal palette' },
-  { label: 'Modern / Bold',      desc: 'Geometric, high contrast',       style: 'modern',     color: '#111827', prompt: 'Bold geometric shapes, strong typographic composition, high contrast contemporary design' },
-  { label: 'Children\'s Book',   desc: 'Playful, bright characters',     style: 'modern',     color: '#b45309', prompt: 'Bright whimsical illustration, friendly Ethiopian children characters, vibrant saturated colors' },
-  { label: 'Ornate Manuscript',  desc: 'Illuminated borders, ceremonial',style: 'ornate',     color: '#7e1d1d', prompt: 'Ethiopian manuscript illumination, intricate geometric interlacing borders, vivid reds and golds' },
-  { label: 'Minimalist',         desc: 'Clean, bold, one color',         style: 'minimalist', color: '#374151', prompt: 'Stark minimalist composition, single strong accent color, generous white space, simple geometric element' },
+  {
+    label: 'Church Bulletin',  labelAm: 'ቤተ ክርስቲያን ዜና',
+    desc: 'Dark solid + Ethiopian cross — works on B&W printers',
+    style: 'orthodox', layout: 'cross',
+    bg: '#1a0a00', accent: '#c9a84c',
+    prompt: 'Simple Ethiopian Lalibela cross centered on a deep dark burgundy background, single gold cross, clean solid color — no complex patterns, print-ready design',
+  },
+  {
+    label: 'Prayer Book',      labelAm: 'ፀሎት መጽሐፍ',
+    desc: 'Navy + gold cross — classic liturgical booklet',
+    style: 'orthodox', layout: 'cross',
+    bg: '#0f1f3d', accent: '#e8c96d',
+    prompt: 'Navy blue prayer book cover, centered Orthodox cross in gold, simple clean layout, suitable for printing, minimal ornamentation',
+  },
+  {
+    label: 'Textbook',         labelAm: 'የትምህርት መጽሐፍ',
+    desc: 'Colored top band + clean white body — Ethiopian school standard',
+    style: 'classic', layout: 'band-top',
+    bg: '#f5f5f5', accent: '#1a56a0',
+    prompt: 'Ethiopian school textbook cover, bold blue horizontal band across the top third, clean white background below, professional academic look, print-ready',
+  },
+  {
+    label: 'Amharic Novel',    labelAm: 'ልቦለድ',
+    desc: 'Warm solid color, bold title — standard paperback',
+    style: 'classic', layout: 'solid',
+    bg: '#7c3a1a', accent: '#f5c06d',
+    prompt: 'Ethiopian novel book cover, warm deep terracotta background, clean minimal composition, bold centered title area, simple and elegant — easy to print',
+  },
+  {
+    label: 'Church Program',   labelAm: 'ፕሮግራም',
+    desc: 'Light background + red accent band — event handout',
+    style: 'minimalist', layout: 'band-top',
+    bg: '#ffffff', accent: '#b91c1c',
+    prompt: 'Ethiopian church event program cover, white or cream background, red accent band, clean minimal layout, suitable for home or office printing',
+  },
+  {
+    label: 'Research / Report', labelAm: 'ምርምር / ሪፖርት',
+    desc: 'Formal navy with left accent — university/NGO style',
+    style: 'classic', layout: 'band-left',
+    bg: '#1e3a5f', accent: '#38bdf8',
+    prompt: 'Formal Ethiopian academic report cover, deep navy background, thin bright accent stripe on left margin, clean professional typography layout',
+  },
+  {
+    label: 'Church Magazine',  labelAm: 'መጽሔት',
+    desc: 'Clean white + green header — bi-weekly/monthly bulletin',
+    style: 'minimalist', layout: 'band-top',
+    bg: '#f8f8f4', accent: '#166534',
+    prompt: 'Ethiopian church magazine cover, clean off-white background, forest green header band, simple elegant layout, easy to photocopy or print',
+  },
+  {
+    label: "Children's Book",  labelAm: 'ለልጆች',
+    desc: 'Bright solid + playful — easy to print in color',
+    style: 'modern', layout: 'emblem',
+    bg: '#fbbf24', accent: '#7c3aed',
+    prompt: 'Ethiopian children\'s book cover, bright sunny yellow background, simple playful illustration in purple, clean bold colors that print well, welcoming and fun',
+  },
 ];
 
 const COVER_STYLES: { value: CoverStyle; label: string }[] = [
@@ -108,9 +156,40 @@ const COVER_STYLES: { value: CoverStyle; label: string }[] = [
   { value: 'minimalist', label: 'Minimal'    },
 ];
 
+/** Tiny CSS-based visual preview of a cover template layout */
+function CoverMiniPreview({ bg, accent, layout }: { bg: string; accent: string; layout: CoverTemplate['layout'] }) {
+  return (
+    <div className="ap-ctpl-preview" style={{ background: bg }}>
+      {layout === 'cross' && (
+        <>
+          <div className="ap-ctpl-cross-v" style={{ background: accent }} />
+          <div className="ap-ctpl-cross-h" style={{ background: accent }} />
+        </>
+      )}
+      {layout === 'band-top' && <div className="ap-ctpl-band-top" style={{ background: accent }} />}
+      {layout === 'band-left' && <div className="ap-ctpl-band-left" style={{ background: accent }} />}
+      {layout === 'solid' && (
+        <>
+          <div className="ap-ctpl-text-block" style={{ background: accent, opacity: 0.7 }} />
+          <div className="ap-ctpl-text-block ap-ctpl-text-block--sm" style={{ background: accent, opacity: 0.4 }} />
+        </>
+      )}
+      {layout === 'emblem' && <div className="ap-ctpl-emblem" style={{ background: accent }} />}
+    </div>
+  );
+}
+
 const COVER_BINDINGS: { value: CoverBinding; label: string; sub: string }[] = [
   { value: 'saddle-stitch',   label: 'Single Page',      sub: 'Front cover only (A4)' },
   { value: 'perfect-binding', label: 'Full Spread',      sub: 'Front + spine + back' },
+];
+
+const TITLE_MAX = 80;
+
+const GENERATING_STEPS = [
+  'Prompting NanoBanana 2…',
+  'Rendering your cover art…',
+  'Applying layout and typography…',
 ];
 
 function CoverSetupCard({ msg, onSubmit, onCancel }: {
@@ -126,6 +205,9 @@ function CoverSetupCard({ msg, onSubmit, onCancel }: {
   const [binding,      setBinding]      = useState<CoverBinding>('saddle-stitch');
   const [customPrompt, setCustomPrompt] = useState('');
   const [activeTemplate, setActiveTemplate] = useState<number | null>(null);
+  const [touched,      setTouched]      = useState(false);
+
+  const titleRef = useRef<HTMLInputElement>(null);
 
   const applyTemplate = (idx: number) => {
     const t = COVER_TEMPLATES[idx];
@@ -134,12 +216,38 @@ function CoverSetupCard({ msg, onSubmit, onCancel }: {
     setActiveTemplate(idx);
   };
 
+  const handleSubmit = () => {
+    setTouched(true);
+    if (!title.trim()) {
+      titleRef.current?.focus();
+      return;
+    }
+    onSubmit({ title: title.trim(), subtitle: subtitle.trim(), author: author.trim(), style, designMode, binding, customPrompt: customPrompt.trim() });
+  };
+
+  // Keyboard shortcuts: Escape → cancel, Enter on title input → submit
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+
   if (msg.status === 'generating') {
+    const step = msg.generatingStep ?? GENERATING_STEPS[0];
     return (
       <div className="ap-cover-card">
         <div className="ap-cover-card-header"><Sparkles size={13} /> Generating cover…</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '1rem 0', color: 'var(--t-text3)', fontSize: '0.78rem' }}>
-          <Loader2 size={14} className="animate-spin" /> NanoBanana 2 is creating your cover — this takes ~15 seconds…
+        <div className="ap-cover-generating">
+          <div className="ap-cover-generating-track">
+            <div className="ap-cover-generating-bar" />
+          </div>
+          <div className="ap-cover-generating-step">
+            <Loader2 size={12} className="animate-spin" />
+            <span>{step}</span>
+          </div>
+          <p className="ap-cover-generating-hint">This usually takes 10–20 seconds. The AI is composing your cover from scratch.</p>
         </div>
       </div>
     );
@@ -153,10 +261,22 @@ function CoverSetupCard({ msg, onSubmit, onCancel }: {
     );
   }
 
+  // 'pending' or 'error' — show the form (local state is preserved on retry)
+  const titleInvalid = touched && !title.trim();
+  const titleNearLimit = title.length > TITLE_MAX * 0.85;
+
   return (
     <div className="ap-cover-card">
       <div className="ap-cover-card-header"><Sparkles size={13} /> Cover Page Generator</div>
       <p className="ap-cover-card-hint">Pick a template or describe your own vision.</p>
+
+      {/* ── Error banner (shown on retry after failure) ── */}
+      {msg.status === 'error' && msg.errorMsg && (
+        <div className="ap-cover-error-banner">
+          <span className="ap-cover-error-icon"><AlertCircle size={12} /></span>
+          {msg.errorMsg} — adjust your settings and try again.
+        </div>
+      )}
 
       {/* ── Quick templates ── */}
       <div className="ap-cover-section-label">Quick Templates</div>
@@ -166,7 +286,7 @@ function CoverSetupCard({ msg, onSubmit, onCancel }: {
             key={i}
             className={`ap-cover-template${activeTemplate === i ? ' ap-cover-template--on' : ''}`}
             onClick={() => applyTemplate(i)}
-            title={t.desc}
+            title={t.prompt}
           >
             <span className="ap-cover-template-swatch" style={{ background: t.color }} />
             <span className="ap-cover-template-label">{t.label}</span>
@@ -177,23 +297,34 @@ function CoverSetupCard({ msg, onSubmit, onCancel }: {
 
       {/* ── Book details ── */}
       <div className="ap-cover-section-label" style={{ marginTop: '0.4rem' }}>Book Details</div>
-      <input
-        className="ap-cover-input"
-        placeholder="Title *"
-        value={title}
-        onChange={e => setTitle(e.target.value)}
-      />
+      <div className="ap-cover-input-wrap">
+        <input
+          ref={titleRef}
+          className={`ap-cover-input${titleInvalid ? ' ap-cover-input--invalid' : ''}`}
+          placeholder="Title *"
+          value={title}
+          maxLength={TITLE_MAX}
+          onChange={e => { setTitle(e.target.value); setTouched(false); }}
+          onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
+        />
+        <span className={`ap-cover-char-count${titleNearLimit ? ' ap-cover-char-count--warn' : ''}`}>
+          {title.length}/{TITLE_MAX}
+        </span>
+        {titleInvalid && <span className="ap-cover-field-error">Title is required to generate a cover.</span>}
+      </div>
       <input
         className="ap-cover-input"
         placeholder="Subtitle (optional)"
         value={subtitle}
         onChange={e => setSubtitle(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
       />
       <input
         className="ap-cover-input"
         placeholder="Author (optional)"
         value={author}
         onChange={e => setAuthor(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
       />
 
       {/* ── Style ── */}
@@ -247,15 +378,15 @@ function CoverSetupCard({ msg, onSubmit, onCancel }: {
       </div>
 
       <div className="ap-cover-actions">
-        <button className="ap-cover-cancel" onClick={onCancel}>Cancel</button>
+        <button className="ap-cover-cancel" onClick={onCancel} title="Cancel (Esc)">Cancel</button>
         <button
           className="ap-cover-generate"
-          onClick={() => onSubmit({ title: title.trim() || 'Untitled', subtitle: subtitle.trim(), author: author.trim(), style, designMode, binding, customPrompt: customPrompt.trim() })}
-          disabled={!title.trim()}
+          onClick={handleSubmit}
         >
           <Sparkles size={12} /> Generate Cover
         </button>
       </div>
+      <p className="ap-cover-kbd-hint">Press <kbd>Enter</kbd> to generate · <kbd>Esc</kbd> to cancel</p>
     </div>
   );
 }
@@ -292,7 +423,7 @@ function MessageCard({
           <Cpu size={11} className="ap-msg-icon" />
           <span className="ap-msg-label">{msg.label ?? 'Thinking…'}</span>
         </div>
-        <Shimmer lines={3} />
+        <ThinkingDots />
       </div>
     );
   }
@@ -502,11 +633,16 @@ function ModelSelector({
 }
 
 // ── Process indicator ─────────────────────────────────────────────────────
-function ProcessBar({ label }: { label: string }) {
+function ProcessBar({ label, step, total }: { label: string; step?: number; total?: number }) {
   return (
     <div className="ap-process-bar">
       <div className="ap-process-shimmer" />
-      <span className="ap-process-label">{label}</span>
+      <div className="ap-process-content">
+        {step != null && total != null && (
+          <span className="ap-process-step">{step}<span className="ap-process-step-sep">/</span>{total}</span>
+        )}
+        <span className="ap-process-label">{label}</span>
+      </div>
     </div>
   );
 }
@@ -729,10 +865,11 @@ export default function AgentPanel({
     id: string,
     opts: { title: string; subtitle: string; author: string; style: CoverStyle; designMode: CoverDesignMode; binding: CoverBinding; customPrompt: string },
   ) => {
-    updateMsg(id, { status: 'generating' } as Partial<A2UIMessage>);
+    updateMsg(id, { status: 'generating', generatingStep: 'Prompting NanoBanana 2…' } as Partial<A2UIMessage>);
     try {
       if (executor) {
         // Agent mode — use executor (keeps ctx.onEdit in sync)
+        updateMsg(id, { status: 'generating', generatingStep: 'Rendering your cover art…' } as Partial<A2UIMessage>);
         const result = JSON.parse(await executor.execute('_generateCover', {
           mode: 'generate',
           title: opts.title,
@@ -744,16 +881,12 @@ export default function AgentPanel({
           customPrompt: opts.customPrompt || undefined,
         }) as string);
         if (result.error) {
-          updateMsg(id, { status: 'done', result: `❌ ${result.error}` } as Partial<A2UIMessage>);
+          updateMsg(id, { status: 'error', errorMsg: result.error } as Partial<A2UIMessage>);
           return;
         }
       } else {
         // Chat mode — call geminiService directly, apply via onApplyCover
-        if (!opts.title) {
-          updateMsg(id, { status: 'done', result: '❌ Title is required.' } as Partial<A2UIMessage>);
-          return;
-        }
-        const bgDataUrl = await generateCoverBackground({
+        const coverOpts = {
           title:        opts.title,
           subtitle:     opts.subtitle || undefined,
           author:       opts.author || undefined,
@@ -761,24 +894,18 @@ export default function AgentPanel({
           binding:      opts.binding as BindingType_,
           designMode:   opts.designMode as CoverDesignMode_,
           customPrompt: opts.customPrompt || undefined,
-        });
-        const coverHtml = buildEditableCoverHTML(bgDataUrl, {
-          title:        opts.title,
-          subtitle:     opts.subtitle || undefined,
-          author:       opts.author || undefined,
-          style:        opts.style as CoverStyle_,
-          binding:      opts.binding as BindingType_,
-          designMode:   opts.designMode as CoverDesignMode_,
-          customPrompt: opts.customPrompt || undefined,
-        });
+        };
+        const bgDataUrl = await generateCoverBackground(coverOpts);
+        updateMsg(id, { status: 'generating', generatingStep: 'Applying layout and typography…' } as Partial<A2UIMessage>);
+        const coverHtml = buildEditableCoverHTML(bgDataUrl, coverOpts);
         onApplyCover?.(coverHtml);
       }
-      updateMsg(id, { status: 'done', result: '✅ Cover page generated and applied.' } as Partial<A2UIMessage>);
+      updateMsg(id, { status: 'done', result: 'Cover page generated and applied.' } as Partial<A2UIMessage>);
       onNavigatePage?.(0);
     } catch (err) {
       updateMsg(id, {
-        status: 'done',
-        result: `❌ ${(err as Error).message ?? 'Cover generation failed.'}`,
+        status: 'error',
+        errorMsg: (err as Error).message || 'Cover generation failed.',
       } as Partial<A2UIMessage>);
     }
   };
@@ -1241,10 +1368,12 @@ export default function AgentPanel({
       <div className="ap-messages">
         {messages.length === 0 && (
           <div className="ap-empty">
-            {panelMode === 'chat'
-              ? <MessageCircle size={24} className="ap-empty-icon" />
-              : <Bot size={24} className="ap-empty-icon" />
-            }
+            <div className="ap-empty-icon">
+              {panelMode === 'chat'
+                ? <MessageCircle size={18} />
+                : <Bot size={18} />
+              }
+            </div>
             <p className="ap-empty-title">
               {panelMode === 'chat'
                 ? (hasResult ? `Chat about page ${context!.pageNumber}` : 'Document Chat')

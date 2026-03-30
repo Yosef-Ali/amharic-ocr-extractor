@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:full": "vercel dev",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
@@ -27,6 +28,7 @@
     "file-saver": "^2.0.5",
     "html2canvas": "^1.4.1",
     "html2pdf.js": "^0.14.0",
+    "jose": "^6.2.2",
     "jspdf": "^4.2.0",
     "localforage": "^1.10.0",
     "lucide-react": "^0.575.0",

@@ -63,8 +63,12 @@ export default function HomeScreen({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    loadAllDocuments().then(d => { setDocs(d); setLoadingDocs(false); });
-  }, []);
+    if (!user) { setLoadingDocs(false); return; }
+    setLoadingDocs(true);
+    loadAllDocuments()
+      .then(d => { setDocs(d); setLoadingDocs(false); })
+      .catch(() => setLoadingDocs(false));
+  }, [user?.id]);
 
   const handleDeleteRequest = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -264,42 +268,11 @@ export default function HomeScreen({
           </div>
         )}
 
-        {/* Empty state — how it works */}
+        {/* Empty state */}
         {!loadingDocs && docs.length === 0 && (
           <div className="home-empty">
-            <p className="home-empty-title">How it works</p>
-            <div className="home-steps">
-              <div className="home-step">
-                <div className="home-step-num">1</div>
-                <div>
-                  <p className="home-step-label">Upload your document</p>
-                  <p className="home-step-desc">Drop a scanned PDF, photo, or Word file above</p>
-                </div>
-              </div>
-              <div className="home-step">
-                <div className="home-step-num">2</div>
-                <div>
-                  <p className="home-step-label">AI extracts Amharic text</p>
-                  <p className="home-step-desc">Click <strong>Extract All</strong> — the AI reads every fidel character accurately</p>
-                </div>
-              </div>
-              <div className="home-step">
-                <div className="home-step-num">3</div>
-                <div>
-                  <p className="home-step-label">Edit and export</p>
-                  <p className="home-step-desc">Fix any errors in-place, then download as PDF, .txt, or .doc</p>
-                </div>
-              </div>
-            </div>
-            <div className="home-feat-grid">
-              {FEATURES.map(f => (
-                <div key={f.label} className="home-feat-card">
-                  <div className="home-feat-card-icon">{f.icon}</div>
-                  <p className="home-feat-card-label">{f.label}</p>
-                  <p className="home-feat-card-desc">{f.desc}</p>
-                </div>
-              ))}
-            </div>
+            <p className="home-empty-title">No projects yet</p>
+            <p className="home-empty-hint">Drop a scanned PDF or image above to get started.</p>
           </div>
         )}
 

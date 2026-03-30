@@ -3,7 +3,7 @@ import { sql } from './_db';
 import { getAuthUser, isAdmin } from './_auth';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const user = getAuthUser(req);
+  const user = await getAuthUser(req);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
   if (!isAdmin(user)) return res.status(403).json({ error: 'Forbidden' });
 
@@ -85,6 +85,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (action === 'setDocLimit') {
         const { userId, limit } = req.body as { userId: string; limit: number };
         if (!userId || limit == null) return res.status(400).json({ error: 'Missing userId or limit' });
+        if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 0) {
+          return res.status(400).json({ error: 'limit must be a non-negative integer' });
+        }
         await sql`UPDATE users SET doc_limit = ${limit} WHERE id = ${userId}`;
         return res.json({ ok: true });
       }
@@ -111,6 +114,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (action === 'deleteUser') {
         const { userId } = req.body as { userId: string };
         if (!userId) return res.status(400).json({ error: 'Missing userId' });
+        // Delete content rows first (in case no ON DELETE CASCADE), then documents, then user
+        await sql`
+          DELETE FROM document_content
+          WHERE document_id IN (SELECT id FROM documents WHERE user_id = ${userId})
+        `;
         await sql`DELETE FROM documents WHERE user_id = ${userId}`;
         await sql`DELETE FROM users WHERE id = ${userId}`;
         return res.json({ ok: true });
@@ -119,6 +127,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (action === 'deleteDocument') {
         const { docId } = req.body as { docId: string };
         if (!docId) return res.status(400).json({ error: 'Missing docId' });
+        await sql`DELETE FROM document_content WHERE document_id = ${docId}`;
         await sql`DELETE FROM documents WHERE id = ${docId}`;
         return res.json({ ok: true });
       }

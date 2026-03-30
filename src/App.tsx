@@ -578,7 +578,7 @@ export default function App() {
       setIsDirty(false);
       // Persist AI-data export in the background when the user has opted in
       if (neonUser && docId && localStorage.getItem(AI_DATA_EXPORT_KEY) === 'true') {
-        void saveDocumentExport(docId, neonUser.id, buildDocumentExport(docId, fileName, pageResults))
+        void saveDocumentExport(docId, buildDocumentExport(docId, fileName, pageResults))
           .catch(() => { /* non-critical */ });
       }
     } catch (err) {
