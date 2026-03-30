@@ -84,7 +84,8 @@ export default function App() {
   const syncAuthState = useCallback(async () => {
     const result = await (authClient as any).getSession();
     const u = result?.data?.user ?? null;
-    const accessToken = result?.data?.accessToken ?? null;
+    // @neondatabase/auth returns data.session.token (not data.accessToken)
+    const accessToken = result?.data?.session?.token ?? null;
     setNeonUser(u);
     setAccessToken(accessToken);
     if (accessToken) initializeSchema().catch(() => {/* best-effort */});
