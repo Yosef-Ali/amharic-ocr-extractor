@@ -4,8 +4,8 @@
   "version": "0.1.1",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:full": "vercel dev",
+    "dev": "vercel dev",
+    "dev:vite": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
