@@ -185,7 +185,17 @@ export async function saveDocument(
 // ---------------------------------------------------------------------------
 export async function loadAllDocuments(): Promise<SavedDocument[]> {
   const res = await storageAuthFetch('/api/documents');
-  return res.json();
+  const rows = await res.json();
+  // API returns snake_case columns; normalize to camelCase SavedDocument shape
+  return (rows as any[]).map(r => ({
+    id:           r.id,
+    name:         r.name ?? '',
+    savedAt:      r.savedAt   ?? r.saved_at   ?? '',
+    pageCount:    r.pageCount ?? r.page_count ?? 0,
+    thumbnailUrl: r.thumbnailUrl ?? r.thumbnail_url ?? undefined,
+    pageImages:   r.pageImages  ?? [],
+    pageResults:  r.pageResults ?? {},
+  }));
 }
 
 // ---------------------------------------------------------------------------
