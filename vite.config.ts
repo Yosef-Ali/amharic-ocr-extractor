@@ -7,8 +7,6 @@ export default defineConfig({
   server: {
     host: true,
     proxy: {
-      // Forward /api/* to vercel dev (port 3000) when running plain vite.
-      // Not needed when using `npm run dev` (vercel dev handles everything).
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true,

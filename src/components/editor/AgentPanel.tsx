@@ -75,7 +75,6 @@ function ThinkingDots() {
 type CoverStyle = 'orthodox' | 'ornate' | 'classic' | 'modern' | 'minimalist';
 type CoverDesignMode = 'full-design' | 'background-only';
 type CoverBinding = 'saddle-stitch' | 'perfect-binding';
-type CoverImageMode = 'direct' | 'ai-reference';
 
 interface CoverTemplate {
   label:    string;
@@ -156,29 +155,6 @@ const COVER_STYLES: { value: CoverStyle; label: string }[] = [
   { value: 'minimalist', label: 'Minimal'    },
 ];
 
-/** Tiny CSS-based visual preview of a cover template layout */
-function CoverMiniPreview({ bg, accent, layout }: { bg: string; accent: string; layout: CoverTemplate['layout'] }) {
-  return (
-    <div className="ap-ctpl-preview" style={{ background: bg }}>
-      {layout === 'cross' && (
-        <>
-          <div className="ap-ctpl-cross-v" style={{ background: accent }} />
-          <div className="ap-ctpl-cross-h" style={{ background: accent }} />
-        </>
-      )}
-      {layout === 'band-top' && <div className="ap-ctpl-band-top" style={{ background: accent }} />}
-      {layout === 'band-left' && <div className="ap-ctpl-band-left" style={{ background: accent }} />}
-      {layout === 'solid' && (
-        <>
-          <div className="ap-ctpl-text-block" style={{ background: accent, opacity: 0.7 }} />
-          <div className="ap-ctpl-text-block ap-ctpl-text-block--sm" style={{ background: accent, opacity: 0.4 }} />
-        </>
-      )}
-      {layout === 'emblem' && <div className="ap-ctpl-emblem" style={{ background: accent }} />}
-    </div>
-  );
-}
-
 const COVER_BINDINGS: { value: CoverBinding; label: string; sub: string }[] = [
   { value: 'saddle-stitch',   label: 'Single Page',      sub: 'Front cover only (A4)' },
   { value: 'perfect-binding', label: 'Full Spread',      sub: 'Front + spine + back' },
@@ -227,7 +203,7 @@ function CoverSetupCard({ msg, onSubmit, onCancel }: {
 
   // Keyboard shortcuts: Escape → cancel, Enter on title input → submit
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === 'Escape') onCancel();
     };
     window.addEventListener('keydown', onKey);
@@ -288,7 +264,7 @@ function CoverSetupCard({ msg, onSubmit, onCancel }: {
             onClick={() => applyTemplate(i)}
             title={t.prompt}
           >
-            <span className="ap-cover-template-swatch" style={{ background: t.color }} />
+            <span className="ap-cover-template-swatch" style={{ background: t.bg }} />
             <span className="ap-cover-template-label">{t.label}</span>
             <span className="ap-cover-template-desc">{t.desc}</span>
           </button>

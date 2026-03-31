@@ -9,7 +9,7 @@
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  Sparkles, Loader2, Wand2, ImageIcon, Upload, X,
+  Sparkles, Wand2, ImageIcon, Upload, X,
   Bold, Italic, AlignLeft, AlignCenter, AlignRight,
   Trash2, Plus, Minus, Type, Layers, BookOpen, BookMarked, RotateCcw,
   Camera,
@@ -133,7 +133,6 @@ interface Props {
   activeCoverSide: 'front' | 'back';
   blocks:    CoverBlock[];
   selId:     string | null;
-  firstPageScan?: string;
   onSelect:    (id: string | null) => void;
   onUpdate:    (id: string, patch: Partial<CoverBlock>) => void;
   onAdd:       () => void;
@@ -147,7 +146,7 @@ interface Props {
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function CoverEditorPanel({
   hasCover, hasBackCover, bgUrl, backBgUrl, activeCoverSide,
-  blocks, selId, firstPageScan,
+  blocks, selId,
   onSelect, onUpdate, onAdd, onDelete, onDeleteCover, onApply, onApplyBack, onError,
 }: Props) {
   const [editSide, setEditSide] = useState<'front' | 'back'>(activeCoverSide);

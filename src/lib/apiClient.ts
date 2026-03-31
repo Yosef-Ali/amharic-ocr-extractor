@@ -18,7 +18,11 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
   }
   const res = await fetch(url, { ...options, headers });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: 'Request failed' }));
+    const rawText = await res.text().catch(() => '');
+    let body: any = { error: `Request failed (HTTP ${res.status} ${res.statusText}). Body: ${rawText.slice(0, 100)}` };
+    try {
+      if (rawText) body = JSON.parse(rawText);
+    } catch (e) { }
     throw new Error(body.error || `HTTP ${res.status}`);
   }
   return res;

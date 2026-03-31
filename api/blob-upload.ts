@@ -9,6 +9,7 @@ const SAFE_FILENAME = /^[0-9a-f-]{36}\/(page-\d+|thumbnail)\.jpg$/;
 // ~7.5MB decoded — reject oversized payloads before passing to Blob
 const MAX_BASE64_LEN = 10_000_000;
 
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -27,9 +28,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Verify the UUID prefix belongs to a document owned by this user
+  // If the document doesn't exist yet (new document), allow the upload.
   const docUuid = filename.split('/')[0];
-  const ownerRows = await sql`SELECT id FROM documents WHERE id = ${docUuid} AND user_id = ${user.userId} LIMIT 1`;
-  if (!ownerRows.length) {
+  const ownerRows = await sql`SELECT user_id FROM documents WHERE id = ${docUuid} LIMIT 1`;
+  if (ownerRows.length && ownerRows[0].user_id !== user.userId) {
     return res.status(403).json({ error: 'Forbidden' });
   }
 

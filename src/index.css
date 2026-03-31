@@ -405,6 +405,9 @@
     0 2px 4px -1px rgba(0, 0, 0, 0.03),
     0 0 0 1px rgba(0, 0, 0, 0.05);
   transition: box-shadow 0.2s ease, transform 0.2s ease;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  box-sizing: border-box;
 }
 
 .document-page[contenteditable="true"]:focus {
@@ -1359,6 +1362,7 @@
 }
 .es-icon-btn--danger:hover { background: rgba(239,68,68,0.12); color: #f87171; }
 .es-icon-btn--chat { position: relative; }
+.es-icon-btn--ai { width: auto; padding: 0 8px; gap: 4px; }
 .es-header-sep {
   width: 1px;
   height: 20px;

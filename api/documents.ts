@@ -3,6 +3,7 @@ import { sql } from './_db';
 import { getAuthUser } from './_auth';
 import { v4 as uuidv4 } from 'uuid';
 
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const user = await getAuthUser(req);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
@@ -45,9 +46,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!result.length) {
           return res.status(404).json({ error: 'Document not found' });
         }
+        const existingResult = await sql`
+          SELECT page_images FROM document_content WHERE document_id = ${docId}
+        `;
+        const existingImages = (existingResult[0]?.page_images as string[]) || [];
+        
+        // Merge missing images: if the updated array has empty strings, keep the existing image for that page
+        const finalImages = storedImages.map(
+          (img, i) => (img === null || img === '') ? (existingImages[i] || '') : img
+        );
+
         await sql`
           UPDATE document_content
-          SET page_images  = ${JSON.stringify(storedImages)}::jsonb,
+          SET page_images  = ${JSON.stringify(finalImages)}::jsonb,
               page_results = ${JSON.stringify(pageResults)}::jsonb
           WHERE document_id = ${docId}
         `;

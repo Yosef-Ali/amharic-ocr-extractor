@@ -18,33 +18,34 @@ export class QuotaExceededError extends Error {
 // Vercel Blob helpers
 // ---------------------------------------------------------------------------
 
-// Once we confirm the blob endpoint is unavailable, skip all subsequent calls
-// to avoid spamming the console with 404s on every page image upload.
-let _blobAvailable: boolean | null = null;  // null = untested
+// Once we confirm the blob endpoint is unavailable (404/500 = server-side issue),
+// skip all subsequent calls. 401 = auth issue, not endpoint issue.
+let _blobEndpointDead = false;
 
 /** Upload a raw base64 JPEG to Vercel Blob via the /api/blob-upload endpoint.
- *  Returns the public URL, or null if the endpoint is unavailable (local dev). */
+ *  Returns the public URL, or null if the endpoint is unavailable. */
 async function uploadToBlob(base64: string, filename: string): Promise<string | null> {
-  if (_blobAvailable === false) return null;  // already confirmed unavailable
+  if (_blobEndpointDead) return null;
   try {
     const token = getAccessToken();
+    if (!token) return null;  // skip if not authenticated
     const res = await fetch('/api/blob-upload', {
       method:  'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        'Authorization': `Bearer ${token}`,
       },
       body:    JSON.stringify({ filename, data: base64 }),
     });
     if (!res.ok) {
-      _blobAvailable = false;
+      // 404 or 500 = endpoint broken, stop trying. 401/400/413 = transient.
+      if (res.status >= 500 || res.status === 404) _blobEndpointDead = true;
       return null;
     }
-    _blobAvailable = true;
     const { url } = await res.json() as { url: string };
     return url;
   } catch {
-    _blobAvailable = false;
+    _blobEndpointDead = true;
     return null;
   }
 }
@@ -74,7 +75,11 @@ async function storageAuthFetch(url: string, options: RequestInit = {}): Promise
     },
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: 'Request failed' }));
+    const rawText = await res.text().catch(() => '');
+    let body: any = { error: `Request failed (HTTP ${res.status} ${res.statusText}). Body: ${rawText.slice(0, 100)}` };
+    try {
+      if (rawText) body = JSON.parse(rawText);
+    } catch (e) { }
     if (body.error === 'QUOTA_EXCEEDED') {
       throw new QuotaExceededError(body.used, body.limit);
     }
@@ -135,6 +140,7 @@ export async function saveDocument(
           localforage.setItem(`aoe_img_${id}_${i}`, img).catch(console.warn);
         }
 
+        if (!img || img.trim() === '') return ''; // Skip upload for unpacked lazy-loaded images
         if (isUrl(img)) return img;
         const url = await uploadToBlob(img, `${id}/page-${i + 1}.jpg`);
         return url ?? img;
@@ -189,13 +195,29 @@ export async function loadDocumentContent(id: string): Promise<SavedDocument> {
   const cacheKey = `aoe_doc_${id}`;
   try {
     const cached = await localforage.getItem<SavedDocument>(cacheKey);
-    if (cached) return cached; // Serve from IndexedDB for zero-latency load
+    if (cached) {
+      // Normalize stale cache entries that may be missing pageImages
+      if (!cached.pageImages) {
+        cached.pageImages = new Array(cached.pageCount ?? 0).fill('');
+      }
+      return cached;
+    }
   } catch (err) {
     console.warn('Local cache read failed:', err);
   }
 
   const res = await storageAuthFetch(`/api/document-content?id=${encodeURIComponent(id)}`);
-  const doc = await res.json();
+  const raw = await res.json();
+
+  // API returns page_count but no pageImages — fill with empty strings for lazy loading
+  const doc: SavedDocument = {
+    ...raw,
+    pageImages: raw.pageImages ?? new Array(raw.page_count ?? raw.pageCount ?? 0).fill(''),
+    pageResults: raw.pageResults ?? raw.page_results ?? {},
+    pageCount: raw.pageCount ?? raw.page_count ?? 0,
+    name: raw.name ?? '',
+    savedAt: raw.savedAt ?? raw.saved_at ?? '',
+  };
 
   try {
     await localforage.setItem(cacheKey, doc);

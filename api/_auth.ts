@@ -14,8 +14,9 @@ function getJwks(): ReturnType<typeof createRemoteJWKSet> | null {
   const authUrl = process.env.NEON_AUTH_URL || process.env.VITE_NEON_AUTH_URL;
   if (!authUrl) return null;
   if (!_jwks) {
-    // Neon Auth exposes JWKS at /.well-known/jwks.json
-    const jwksUrl = new URL('/.well-known/jwks.json', authUrl);
+    // Neon Auth exposes JWKS relative to the auth base path
+    const base = authUrl.endsWith('/') ? authUrl : authUrl + '/';
+    const jwksUrl = new URL('.well-known/jwks.json', base);
     _jwks = createRemoteJWKSet(jwksUrl);
   }
   return _jwks;
@@ -39,7 +40,8 @@ export async function getAuthUser(req: VercelRequest): Promise<AuthUser | null> 
       const userId = payload.sub;
       if (!userId) return null;
       return { userId, email: payload['email'] as string | undefined };
-    } catch {
+    } catch (err) {
+      console.error('[_auth] JWT verification failed:', (err as Error).message, 'token prefix:', token.slice(0, 20) + '...');
       return null;
     }
   }

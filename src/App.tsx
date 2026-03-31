@@ -119,13 +119,14 @@ export default function App() {
       try {
         const fullDoc = await loadDocumentContent(activeDocId);
         if (isCancelled) return;
+        const images = fullDoc.pageImages ?? new Array(fullDoc.pageCount ?? 0).fill('');
         setActiveDocId(activeDocId);
         setFileName(fullDoc.name);
-        setPageImages(fullDoc.pageImages);
-        setPageResults(fullDoc.pageResults);
-        setPageDimensions(fullDoc.pageImages.map(() => ({ widthMm: 210, heightMm: 297 })));
+        setPageImages(images);
+        setPageResults(fullDoc.pageResults ?? {});
+        setPageDimensions(images.map(() => ({ widthMm: 210, heightMm: 297 })));
         setFromPage(1);
-        setToPage(fullDoc.pageCount);
+        setToPage(fullDoc.pageCount ?? images.length);
       } catch (err) {
         console.warn('Failed to restore document session:', err);
         localStorage.removeItem('aoe_active_doc');
@@ -180,9 +181,9 @@ export default function App() {
 
   // ── Auto-save after extraction completes ──
   useEffect(() => {
-    if (!pendingAutoSave) return;
+    if (!pendingAutoSave || isSaving) return;
     setPendingAutoSave(false);
-    // Small delay so the UI settles before save starts
+    if (!neonUser) return;  // skip auto-save if not authenticated
     const timer = setTimeout(() => {
       handleSave();
     }, 500);
@@ -597,25 +598,21 @@ export default function App() {
     }
   };
 
-  // Auto-save after extraction completes
-  useEffect(() => {
-    if (!pendingAutoSave || isSaving) return;
-    setPendingAutoSave(false);
-    handleSave();
-  }, [pendingAutoSave]); // eslint-disable-line react-hooks/exhaustive-deps
+  // (auto-save effect is above, near pendingAutoSave declaration)
 
   // -------------------------------------------------------------------------
   // Load from library
   // -------------------------------------------------------------------------
   const handleLoad = (doc: SavedDocument) => {
+    const images = doc.pageImages ?? new Array(doc.pageCount ?? 0).fill('');
     setActiveDocId(doc.id);
     setFileName(doc.name);
-    setPageImages(doc.pageImages);
-    setPageResults(doc.pageResults);
+    setPageImages(images);
+    setPageResults(doc.pageResults ?? {});
     // Loaded documents don't store dimensions yet — default to A4
-    setPageDimensions(doc.pageImages.map(() => ({ widthMm: 210, heightMm: 297 })));
+    setPageDimensions(images.map(() => ({ widthMm: 210, heightMm: 297 })));
     setFromPage(1);
-    setToPage(doc.pageCount);
+    setToPage(doc.pageCount ?? images.length);
     localStorage.setItem('aoe_active_doc', doc.id);
   };
 

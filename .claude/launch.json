@@ -3,10 +3,9 @@
   "configurations": [
     {
       "name": "amharic-ocr",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 5174,
-      "autoPort": true
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vercel", "dev"],
+      "port": 3000
     }
   ]
 }

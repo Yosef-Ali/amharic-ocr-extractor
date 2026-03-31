@@ -1,6 +1,5 @@
 {
   "framework": "vite",
   "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "devCommand": "vite --port 3000"
+  "outputDirectory": "dist"
 }

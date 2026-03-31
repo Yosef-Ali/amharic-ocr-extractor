@@ -566,7 +566,7 @@ export default function EditorShell({
           {/* ── Panels group: open right drawers ── */}
           <div className="es-btn-group">
             <button
-              className={`es-icon-btn${rightDrawer === 'agent' ? ' es-icon-btn--active' : ''}`}
+              className={`es-icon-btn es-icon-btn--ai${rightDrawer === 'agent' ? ' es-icon-btn--active' : ''}`}
               onClick={() => toggleDrawer('agent')}
               title="AI Agent"
               style={{ position: 'relative' }}
@@ -1000,7 +1000,7 @@ export default function EditorShell({
               activeCoverSide={activePage === -1 ? 'back' : 'front'}
               blocks={coverBlocks}
               selId={coverSelId}
-              firstPageScan={pageImages[0] ? `data:image/jpeg;base64,${pageImages[0]}` : undefined}
+
               onSelect={setCoverSelId}
               onUpdate={handleCoverUpdate}
               onAdd={handleCoverAdd}
