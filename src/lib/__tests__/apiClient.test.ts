@@ -73,7 +73,9 @@ describe('apiClient', () => {
       setAccessToken('token');
       (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
         ok: false,
-        json: () => Promise.resolve({ error: 'Not found' }),
+        status: 404,
+        statusText: 'Not Found',
+        text: () => Promise.resolve(JSON.stringify({ error: 'Not found' })),
       });
 
       await expect(authFetch('/api/missing')).rejects.toThrow('Not found');
@@ -83,7 +85,9 @@ describe('apiClient', () => {
       setAccessToken('token');
       (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
         ok: false,
-        json: () => Promise.reject(new Error('not json')),
+        status: 500,
+        statusText: 'Internal Server Error',
+        text: () => Promise.resolve('not json'),
       });
 
       await expect(authFetch('/api/broken')).rejects.toThrow('Request failed');
