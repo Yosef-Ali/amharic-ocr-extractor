@@ -29,13 +29,6 @@ export interface AdminStats {
 }
 
 // ---------------------------------------------------------------------------
-// Ensure users table exists — now handled by /api/schema, called elsewhere
-// ---------------------------------------------------------------------------
-export async function ensureUsersTable(): Promise<void> {
-  // Schema handled by /api/schema, called elsewhere
-}
-
-// ---------------------------------------------------------------------------
 // Upsert user on login — called from App.tsx after auth
 // ---------------------------------------------------------------------------
 export async function upsertUser(_id: string, email: string, name?: string): Promise<{ blocked: boolean }> {
@@ -44,14 +37,6 @@ export async function upsertUser(_id: string, email: string, name?: string): Pro
     body: JSON.stringify({ email, name }),
   });
   return res.json();
-}
-
-// ---------------------------------------------------------------------------
-// Per-user quota — checked server-side during save
-// ---------------------------------------------------------------------------
-export async function getUserQuota(_userId: string): Promise<{ used: number; limit: number }> {
-  // This is checked server-side during save, no client call needed
-  return { used: 0, limit: 999 };
 }
 
 // ---------------------------------------------------------------------------

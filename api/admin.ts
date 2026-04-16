@@ -49,22 +49,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (action === 'documents') {
         const userId = req.query.userId as string | undefined;
-        const rows = userId
-          ? await sql`
-              SELECT d.id, d.user_id, COALESCE(u.email, d.user_id) AS user_email,
-                     d.name, d.page_count, d.saved_at
-              FROM documents d
-              LEFT JOIN users u ON u.id = d.user_id
-              WHERE d.user_id = ${userId}
-              ORDER BY d.saved_at DESC
-            `
-          : await sql`
-              SELECT d.id, d.user_id, COALESCE(u.email, d.user_id) AS user_email,
-                     d.name, d.page_count, d.saved_at
-              FROM documents d
-              LEFT JOIN users u ON u.id = d.user_id
-              ORDER BY d.saved_at DESC
-            `;
+        const rows = await sql`
+          SELECT d.id, d.user_id, COALESCE(u.email, d.user_id) AS user_email,
+                 d.name, d.page_count, d.saved_at
+          FROM documents d
+          LEFT JOIN users u ON u.id = d.user_id
+          WHERE (${userId}::text IS NULL OR d.user_id = ${userId})
+          ORDER BY d.saved_at DESC
+        `;
         return res.json(
           rows.map(r => ({
             id: r.id,

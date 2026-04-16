@@ -61,7 +61,7 @@ export async function initializeSchema(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Authenticated fetch with QuotaExceededError support
+// Authenticated fetch — delegates to authFetch but intercepts quota errors
 // ---------------------------------------------------------------------------
 async function storageAuthFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const token = getAccessToken();
@@ -69,17 +69,14 @@ async function storageAuthFetch(url: string, options: RequestInit = {}): Promise
   const res = await fetch(url, {
     ...options,
     headers: {
+      'Content-Type': 'application/json',
       ...options.headers as Record<string, string>,
       'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
     },
   });
   if (!res.ok) {
-    const rawText = await res.text().catch(() => '');
-    let body: any = { error: `Request failed (HTTP ${res.status} ${res.statusText}). Body: ${rawText.slice(0, 100)}` };
-    try {
-      if (rawText) body = JSON.parse(rawText);
-    } catch (e) { }
+    let body: any;
+    try { body = await res.clone().json(); } catch { body = {}; }
     if (body.error === 'QUOTA_EXCEEDED') {
       throw new QuotaExceededError(body.used, body.limit);
     }
