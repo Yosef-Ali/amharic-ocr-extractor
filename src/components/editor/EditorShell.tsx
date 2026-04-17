@@ -1034,24 +1034,16 @@ export default function EditorShell({
             />
           )}
           {rightDrawer === 'inspector' && (
-            <>
-              {!elementStyles && (
-                <div className="es-inspector-hint">
-                  <MousePointer2 size={13} />
-                  <span>Click any text or image on the page to edit it.</span>
-                </div>
-              )}
-              <InspectorPanel
-                layout={pageLayout}
-                elementStyles={elementStyles}
-                onChange={setPageLayout}
-                onElementStyleChange={handleElementStyleChange}
-                onTagChange={handleTagChange}
-                theme={theme}
-                onToggleTheme={onToggleTheme}
-                onDownloadPDF={onDownloadPDF}
-              />
-            </>
+            <InspectorPanel
+              layout={pageLayout}
+              elementStyles={elementStyles}
+              onChange={setPageLayout}
+              onElementStyleChange={handleElementStyleChange}
+              onTagChange={handleTagChange}
+              theme={theme}
+              onToggleTheme={onToggleTheme}
+              onDownloadPDF={onDownloadPDF}
+            />
           )}
           {rightDrawer === 'cover' && (
             <CoverEditorPanel
