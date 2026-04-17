@@ -1,10 +1,10 @@
 import { GoogleGenAI } from '@google/genai';
 import { APPROVAL_REQUIRED_TOOLS } from '../types/a2ui';
-import { 
-  buildOcrPrompt, 
-  buildLayoutPrompt, 
-  verifyLayout, 
-  type ChatTurn, 
+import {
+  buildOcrPrompt,
+  buildLayoutPrompt,
+  verifyLayout,
+  type ChatTurn,
   type CanvasContext,
   type BBox,
   type ImageAspectRatio,
@@ -389,12 +389,27 @@ COLOR PALETTE (CMYK-safe for print):
   Muted:       #44403c   Captions, footnotes
   Light rule:  #e7e5e4   Dividers, borders
 
-WORKFLOW:
-1. Call getDocumentStructure to get element IDs first.
-2. Use batchEdit for coordinated multi-element changes (preferred).
-3. Use editTextBlock for single-element changes.
-4. Call getPageScreenshot to verify key changes visually.
-5. Return a brief 1–2 sentence summary — no HTML, no raw JSON.
+WORKFLOW — TWO SPEEDS:
+
+FAST PATH (default — use this for ≥80% of edits):
+Simple property changes: color, font-size, font-weight, text-align, letter-spacing,
+line-height, margin, padding, or single-word text fixes.
+- Call getDocumentStructure ONCE if you don't already know the target's id/selector.
+- Make the change with ONE editTextBlock call. Done.
+- DO NOT call getPageScreenshot. DO NOT batchEdit a single element. DO NOT re-verify.
+- Respond in ONE short sentence.
+Example: "change title to blue" → getDocumentStructure → editTextBlock(h1, color #1e40af). Stop.
+
+STRUCTURAL PATH (only when the user asks for layout, reorganisation, or multi-element redesign):
+1. getDocumentStructure to get element IDs.
+2. batchEdit for coordinated multi-element changes.
+3. getPageScreenshot ONLY if the user asked you to verify, or you restructured columns/frames.
+4. One short summary sentence.
+
+Rules that apply to both paths:
+- Never call getPageScreenshot more than once per turn.
+- Never call getDocumentStructure twice in a row.
+- No HTML or raw JSON in your reply — the editor shows the result live.
 
 AMHARIC-SPECIFIC RULES:
 - Always justify body text (text-align: justify).

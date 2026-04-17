@@ -146,7 +146,11 @@ export const AGENT_MODELS: ModelDef[] = [
 ];
 
 // ── Tools that require human approval before execution ────────────────────
-export const APPROVAL_REQUIRED_TOOLS = new Set(['deleteElement', 'batchEdit']);
+// Keep the approval gate tight: only truly destructive ops ask the user.
+// batchEdit for property-only changes (color, font-size, alignment) is the
+// hot path for quick AI edits — gating it behind a modal made "change title
+// to blue" feel slower than Figma/Pencil. A single delete still prompts.
+export const APPROVAL_REQUIRED_TOOLS = new Set(['deleteElement']);
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 export const toolIcon: Record<string, string> = {
