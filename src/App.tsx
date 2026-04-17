@@ -309,9 +309,10 @@ export default function App() {
   const isAdmin = adminEmails.length > 0 && !!neonUser?.email &&
     adminEmails.includes(neonUser.email.toLowerCase());
 
-  // Pro-panel feature flag — hides cover editor, homophone panel, agent chat,
-  // inspector, selection/hand tool. Default off for wedge-focused v0.2.
-  const proPanelsEnabled = String(import.meta.env.VITE_ENABLE_PRO_PANELS ?? 'false') === 'true';
+  // Pro-panel feature flag — cover editor, homophone panel, agent chat,
+  // inspector, selection/hand tool. Default ON; set VITE_ENABLE_PRO_PANELS=false
+  // to hide them for wedge-focused pilots.
+  const proPanelsEnabled = String(import.meta.env.VITE_ENABLE_PRO_PANELS ?? 'true') !== 'false';
 
   const hasFile = !!fileName;
 
