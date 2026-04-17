@@ -370,6 +370,25 @@
   flex-shrink: 0;
 }
 
+.es-inspector-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin: 10px 12px 0;
+  border-radius: 8px;
+  background: var(--t-bg2);
+  border: 1px dashed var(--t-border);
+  color: var(--t-text2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.es-inspector-hint svg {
+  flex-shrink: 0;
+  color: var(--t-text3);
+}
+
 .es-mcp-dot {
   position: absolute;
   top: 4px;
@@ -1118,12 +1137,28 @@
   background: var(--t-surface);
 }
 
+.rd-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
 .rd-title {
   font-size: 0.8rem;
   font-weight: 700;
   color: var(--t-text);
   margin: 0;
   letter-spacing: -0.01em;
+}
+
+.rd-status {
+  font-size: 11px;
+  color: var(--t-text3);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .rd-close {

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   ChevronLeft, ChevronRight, Layers, Loader2,
   PanelLeftClose, PanelLeftOpen,
-  X, FileText, FileImage, MousePointer2,
+  X, FileText, FileImage, MousePointer2, Hand,
   Bot, SlidersHorizontal,
   Trash2,
   Minus, Plus, Undo2, Redo2, Sparkles, Home, Search,
@@ -386,7 +386,15 @@ export default function EditorShell({
 
   // ── Right drawer toggling ─────────────────────────────────────────────
   const toggleDrawer = (panel: DrawerPanel) => {
-    setRightDrawer(prev => prev === panel ? null : panel);
+    setRightDrawer(prev => {
+      const next = prev === panel ? null : panel;
+      // Inspector needs element selection to be useful — auto-arm it when opened,
+      // auto-disarm when closed so the user isn't left in a sticky mode.
+      if (panel === 'inspector') {
+        setSelectionMode(next === 'inspector');
+      }
+      return next;
+    });
   };
 
 
@@ -467,6 +475,23 @@ export default function EditorShell({
     : rightDrawer === 'cover'      ? 'Cover Editor'
     : rightDrawer === 'homophone'  ? 'Amharic OCR Corrections'
     : '';
+
+  // ── Drawer status line (persistent context banner) ────────────────────
+  const pageLabel = activePage === 0 ? 'Cover' : activePage === -1 ? 'Back cover' : `Page ${activePage}`;
+  const drawerStatus = (() => {
+    if (!rightDrawer) return null;
+    if (rightDrawer === 'inspector') {
+      const tag = elementStyles ? `${(elementStyles.tag || 'text').toLowerCase()} selected` : 'nothing selected';
+      return `${pageLabel} · ${tag}`;
+    }
+    if (rightDrawer === 'homophone' || rightDrawer === 'agent') {
+      return pageLabel;
+    }
+    if (rightDrawer === 'cover') {
+      return activePage === -1 ? 'Back cover' : 'Front cover';
+    }
+    return null;
+  })();
 
   // ── Render ────────────────────────────────────────────────────────────
   return (
@@ -620,13 +645,22 @@ export default function EditorShell({
               <Search size={14} />
             </button>
             {proPanelsEnabled && (
-              <button
-                className={`es-icon-btn${selectionMode ? ' es-icon-btn--active' : ''}`}
-                onClick={() => setSelectionMode(m => !m)}
-                title="Select element to inspect"
-              >
-                <MousePointer2 size={14} />
-              </button>
+              <>
+                <button
+                  className={`es-icon-btn${selectionMode ? ' es-icon-btn--active' : ''}`}
+                  onClick={() => setSelectionMode(m => !m)}
+                  title="Select element to inspect (V)"
+                >
+                  <MousePointer2 size={14} />
+                </button>
+                <button
+                  className={`es-icon-btn${handTool ? ' es-icon-btn--active' : ''}`}
+                  onClick={() => setHandTool(h => !h)}
+                  title="Hand tool — drag to pan (H)"
+                >
+                  <Hand size={14} />
+                </button>
+              </>
             )}
           </div>
 
@@ -973,6 +1007,7 @@ export default function EditorShell({
         {proPanelsEnabled && <RightDrawer
           open={!!rightDrawer}
           title={drawerTitle}
+          statusLine={drawerStatus}
           onClose={() => setRightDrawer(null)}
           mobile={isMobile}
           hideHeader={rightDrawer === 'agent'}
@@ -999,16 +1034,24 @@ export default function EditorShell({
             />
           )}
           {rightDrawer === 'inspector' && (
-            <InspectorPanel
-              layout={pageLayout}
-              elementStyles={elementStyles}
-              onChange={setPageLayout}
-              onElementStyleChange={handleElementStyleChange}
-              onTagChange={handleTagChange}
-              theme={theme}
-              onToggleTheme={onToggleTheme}
-              onDownloadPDF={onDownloadPDF}
-            />
+            <>
+              {!elementStyles && (
+                <div className="es-inspector-hint">
+                  <MousePointer2 size={13} />
+                  <span>Click any text or image on the page to edit it.</span>
+                </div>
+              )}
+              <InspectorPanel
+                layout={pageLayout}
+                elementStyles={elementStyles}
+                onChange={setPageLayout}
+                onElementStyleChange={handleElementStyleChange}
+                onTagChange={handleTagChange}
+                theme={theme}
+                onToggleTheme={onToggleTheme}
+                onDownloadPDF={onDownloadPDF}
+              />
+            </>
           )}
           {rightDrawer === 'cover' && (
             <CoverEditorPanel
