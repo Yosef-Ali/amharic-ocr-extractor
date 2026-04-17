@@ -1061,6 +1061,16 @@ export default function DocumentPage({
       const hasMulti = multiSelRef.current.size > 1;
       if (!sel && !hasMulti) return;
 
+      // Ignore keys that originate in a form field (AI agent prompt,
+      // filename rename, page-jump box). Without this guard, pressing
+      // Backspace in the chat input deletes the element selected on the
+      // canvas. We still allow keys inside the canvas itself (editorRef)
+      // because that's where in-place text editing happens.
+      const target = e.target as HTMLElement | null;
+      const inField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
+      const inOutsideEditable = target?.isContentEditable && !editorRef.current?.contains(target);
+      if (inField || inOutsideEditable) return;
+
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         if (hasMulti) {
