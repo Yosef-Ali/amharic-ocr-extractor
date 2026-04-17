@@ -425,6 +425,10 @@ Rules that apply to both paths:
 - No HTML or raw JSON in your reply — the editor shows the result live.
 
 SELECTOR DISCIPLINE (CRITICAL — scope bugs come from sloppy selectors):
+- IF the project context contains a CURRENT SELECTION block with
+  SELECTED_ELEMENT_ID, that id is the target. Use it directly. Do NOT
+  call getDocumentStructure. Do NOT broaden the scope. The user
+  literally clicked that element — they want THAT one changed.
 - NEVER pass selector="root" or selector="" to editTextBlock with a style
   patch. CSS inherits from the root to every descendant, so "change title
   color to blue" on the root paints the WHOLE page blue.

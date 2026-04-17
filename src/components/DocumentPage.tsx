@@ -71,6 +71,7 @@ export function readElementStyles(el: HTMLElement): ElementStyles {
   const csLH = parseFloat(cs.lineHeight);
   const lineHeight = s.lineHeight || (csFS > 0 ? (csLH / csFS).toFixed(2) : '1.60');
   return {
+    id:             el.getAttribute('data-canvas-id') ?? undefined,
     tag:            el.tagName.toLowerCase(),
     textAlign:      s.textAlign       || cs.textAlign       || 'left',
     fontSize:       s.fontSize        || cs.fontSize        || '16px',

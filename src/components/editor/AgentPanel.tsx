@@ -57,6 +57,9 @@ interface Props {
   onDownloadPDF?:  () => void;
   /** Document file name — used as the per-project memory key */
   fileName?:       string;
+  /** Currently selected element on the canvas — fed into the agent's
+   *  system context so edit requests are scoped to this element. */
+  selection?:      { id: string; tag: string } | null;
 }
 
 // ── Thinking dots (replaces shimmer skeleton) ─────────────────────────────
@@ -710,6 +713,7 @@ export default function AgentPanel({
   totalPages = 0, extractedPages = new Set<number>(),
   executor, onClose, onNavigatePage, onApplyCover, onSave, onDownloadPDF,
   fileName = '',
+  selection = null,
 }: Props) {
   // Panel mode is auto-derived from executor availability + per-message intent.
   // UI affordances (refs, model selector, chips) follow this default; per-send
@@ -769,6 +773,7 @@ export default function AgentPanel({
     extractedPages,
     activePage,
     memory:         memoryRef.current,
+    selection,
   });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);

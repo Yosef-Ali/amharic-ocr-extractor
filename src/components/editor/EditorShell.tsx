@@ -1071,6 +1071,9 @@ export default function EditorShell({
               onDownloadPDF={onDownloadPDF}
               onClose={() => setRightDrawer(null)}
               fileName={fileName}
+              selection={elementStyles && elementStyles.id
+                ? { id: elementStyles.id, tag: elementStyles.tag }
+                : null}
             />
           )}
           {rightDrawer === 'inspector' && (

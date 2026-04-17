@@ -4,6 +4,9 @@
  */
 
 export interface ElementStyles {
+  /** The element's data-canvas-id (stable annotation) — lets the AI agent
+   *  target the user's current selection directly via editTextBlock. */
+  id?:            string;
   tag:            string;
   textAlign:      string;
   fontSize:       string;
