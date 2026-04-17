@@ -156,7 +156,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.json({ html: verified, rawText });
   } catch (err: unknown) {
     console.error('ocr error:', err);
-    const message = err instanceof Error ? err.message : 'OCR processing failed';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: 'OCR processing failed' });
   }
 }

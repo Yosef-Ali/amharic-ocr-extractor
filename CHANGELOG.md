@@ -4,6 +4,19 @@ All notable changes to the Amharic OCR Extractor.
 
 ---
 
+## [0.1.2] - 2026-04-17
+
+### Security (P0 — Critical fixes from /review)
+
+- **Admin-gate `/api/schema`** — DDL endpoint now requires admin; previously any authenticated user could trigger `ALTER TABLE` / `CREATE TABLE IF NOT EXISTS`.
+- **Blob-upload abuse cap** — when the parent document doesn't exist yet, uploads are now gated on the user's `doc_limit` quota, preventing orphan-blob flooding of public storage.
+- **OCR error leak fixed** — `/api/ocr` no longer returns raw upstream error messages (Gemini internals, quota hints) to the client.
+
+### Changed
+- **ai-proxy model allowlist refreshed** — legacy `claude-3-*` models removed; allowlist and default now track current models (`claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`).
+
+---
+
 ## [0.1.1] - 2026-03-27
 
 ### Security (P0 — Critical fixes from /review)

@@ -4,14 +4,13 @@ import { getAuthUser } from './_auth';
 export const maxDuration = 60;
 
 const BASE_URL = process.env.ANTHROPIC_BASE_URL || process.env.VITE_ANTHROPIC_BASE_URL || 'https://api.anthropic.com/v1';
-const DEFAULT_MODEL = process.env.ANTHROPIC_MODEL || process.env.VITE_ANTHROPIC_MODEL || 'claude-3-sonnet-20240229';
+const DEFAULT_MODEL = process.env.ANTHROPIC_MODEL || process.env.VITE_ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 
 // Only these models may be requested — prevents billing abuse via expensive model substitution
 const ALLOWED_MODELS = new Set([
-  'claude-3-sonnet-20240229',
-  'claude-3-haiku-20240307',
-  'claude-3-5-sonnet-20240620',
-  'claude-3-opus-20240229',
+  'claude-opus-4-7',
+  'claude-sonnet-4-6',
+  'claude-haiku-4-5-20251001',
 ]);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

@@ -27,12 +27,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Invalid filename' });
   }
 
-  // Verify the UUID prefix belongs to a document owned by this user
-  // If the document doesn't exist yet (new document), allow the upload.
+  // Verify the UUID prefix belongs to a document owned by this user.
+  // If the document doesn't exist yet (new-document flow: client uploads blobs
+  // before calling /api/documents), gate on the user's doc quota to cap abuse.
   const docUuid = filename.split('/')[0];
   const ownerRows = await sql`SELECT user_id FROM documents WHERE id = ${docUuid} LIMIT 1`;
-  if (ownerRows.length && ownerRows[0].user_id !== user.userId) {
-    return res.status(403).json({ error: 'Forbidden' });
+  if (ownerRows.length) {
+    if (ownerRows[0].user_id !== user.userId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+  } else {
+    const quotaRows = await sql`
+      SELECT u.doc_limit, (SELECT COUNT(*) FROM documents d WHERE d.user_id = u.id)::int AS used
+      FROM users u WHERE u.id = ${user.userId}
+    `;
+    if (!quotaRows.length || quotaRows[0].used >= quotaRows[0].doc_limit) {
+      return res.status(403).json({ error: 'Quota exceeded' });
+    }
   }
 
   if (data.length > MAX_BASE64_LEN) {

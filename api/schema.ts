@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { sql } from './_db';
-import { getAuthUser } from './_auth';
+import { getAuthUser, isAdmin } from './_auth';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -9,6 +9,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const user = await getAuthUser(req);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  if (!isAdmin(user)) return res.status(403).json({ error: 'Forbidden' });
 
   try {
     await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`;
