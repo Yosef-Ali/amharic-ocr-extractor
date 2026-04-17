@@ -1214,6 +1214,9 @@ export default function DocumentPage({
     if (editorRef.current) {
       snapshotForUndo();
       onEdit(pageNumber, editorRef.current.innerHTML);
+      // Broadcast to shell so it can flash a "Saved" indicator — otherwise
+      // contentEditable gives the user no confirmation their edit stuck.
+      window.dispatchEvent(new CustomEvent('doc-edit-saved', { detail: { pageNumber } }));
     }
   };
 

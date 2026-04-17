@@ -139,10 +139,30 @@ export default function EditorShell({
   const ZOOM_MIN = 25;
   const ZOOM_MAX = 400;
   const ZOOM_STEP = 15;
-  const [zoom, setZoom]           = useState(100);
+  // Persist zoom + pan across reloads and page navigation so users don't lose
+  // their view state on every little action. Keyed by file name so switching
+  // documents gives a fresh default.
+  const viewKey = `editor.view.${fileName || 'untitled'}`;
+  const loadView = (): { zoom: number; pan: { x: number; y: number } } => {
+    try {
+      const raw = localStorage.getItem(viewKey);
+      if (!raw) return { zoom: 100, pan: { x: 0, y: 0 } };
+      const v = JSON.parse(raw);
+      return {
+        zoom: typeof v.zoom === 'number' ? v.zoom : 100,
+        pan:  v.pan && typeof v.pan.x === 'number' ? v.pan : { x: 0, y: 0 },
+      };
+    } catch { return { zoom: 100, pan: { x: 0, y: 0 } }; }
+  };
+  const initialView = loadView();
+  const [zoom, setZoom]           = useState(initialView.zoom);
   const [handTool, setHandTool]   = useState(false);
   const [isPanning, setIsPanning] = useState(false);
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [panOffset, setPanOffset] = useState(initialView.pan);
+  // Save view on every change (debounced by RAF — writes are cheap anyway).
+  useEffect(() => {
+    try { localStorage.setItem(viewKey, JSON.stringify({ zoom, pan: panOffset })); } catch { /* quota / disabled */ }
+  }, [viewKey, zoom, panOffset]);
   const panStart = useRef({ x: 0, y: 0, ox: 0, oy: 0 });
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -155,6 +175,19 @@ export default function EditorShell({
   const docHandleRef = useRef<DocumentPageHandle | null>(null);
   const handleUndo = () => docHandleRef.current?.undo();
   const handleRedo = () => docHandleRef.current?.redo();
+
+  // ── Saved-flash indicator: DocumentPage fires `doc-edit-saved` on blur
+  //    after committing an inline edit. Show a brief "Saved" pill so the
+  //    user gets confirmation that contentEditable changes landed.
+  const [savedFlash, setSavedFlash] = useState(false);
+  useEffect(() => {
+    const onSaved = () => {
+      setSavedFlash(true);
+      window.setTimeout(() => setSavedFlash(false), 1400);
+    };
+    window.addEventListener('doc-edit-saved', onSaved);
+    return () => window.removeEventListener('doc-edit-saved', onSaved);
+  }, []);
 
   // Ctrl+scroll to zoom
   useEffect(() => {
@@ -696,6 +729,13 @@ export default function EditorShell({
           </button>
         </div>
       </header>
+
+      {/* Saved-flash pill — brief confirmation after inline edit commits */}
+      {savedFlash && (
+        <div className="es-saved-flash" role="status" aria-live="polite">
+          Saved
+        </div>
+      )}
 
       {/* Selection mode strip */}
       {selectionMode && (

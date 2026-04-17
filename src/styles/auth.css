@@ -184,7 +184,8 @@
   transition: border-color .15s, box-shadow .15s;
 }
 
-.auth-input::placeholder { color: var(--t-text3); opacity: 0.7; }
+/* WCAG AA: placeholder must hit 4.5:1 against input bg — drop opacity tint. */
+.auth-input::placeholder { color: var(--t-text3); opacity: 1; }
 
 .auth-input:focus {
   border-color: rgba(239,68,68,.5);
