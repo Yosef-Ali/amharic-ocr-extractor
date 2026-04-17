@@ -473,6 +473,54 @@
   margin-bottom: 6px;
 }
 
+.hp-undo-inline {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--t-text);
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-radius: 6px;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+.hp-undo-inline:hover { background: var(--t-bg2); }
+
+.hp-confirm {
+  border: 1px solid rgba(245,158,11,0.45);
+  background: rgba(245,158,11,0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.hp-confirm-hd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: #b45309;
+  margin-bottom: 4px;
+}
+[data-theme="dark"] .hp-confirm-hd { color: #fbbf24; }
+.hp-confirm-body {
+  font-size: 0.75rem;
+  color: var(--t-text2);
+  margin: 0 0 8px 0;
+  line-height: 1.45;
+}
+.hp-confirm-hint {
+  font-size: 0.7rem;
+  color: var(--t-text3);
+}
+.hp-confirm-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 .hp-group {
   border: 1px solid var(--t-border);
   border-radius: 8px;
