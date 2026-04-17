@@ -163,9 +163,9 @@ const COVER_BINDINGS: { value: CoverBinding; label: string; sub: string }[] = [
 const TITLE_MAX = 80;
 
 const GENERATING_STEPS = [
-  'Prompting NanoBanana 2…',
-  'Rendering your cover art…',
-  'Applying layout and typography…',
+  'Writing the art prompt…',
+  'Generating your cover image…',
+  'Laying out title and typography…',
 ];
 
 function CoverSetupCard({ msg, onSubmit, onCancel }: {
@@ -286,6 +286,11 @@ function CoverSetupCard({ msg, onSubmit, onCancel }: {
         <span className={`ap-cover-char-count${titleNearLimit ? ' ap-cover-char-count--warn' : ''}`}>
           {title.length}/{TITLE_MAX}
         </span>
+        {!titleInvalid && (
+          <span className="ap-cover-field-hint">
+            The title is printed on the cover and used in the AI prompt.
+          </span>
+        )}
         {titleInvalid && <span className="ap-cover-field-error">Title is required to generate a cover.</span>}
       </div>
       <input
@@ -853,11 +858,11 @@ export default function AgentPanel({
     id: string,
     opts: { title: string; subtitle: string; author: string; style: CoverStyle; designMode: CoverDesignMode; binding: CoverBinding; customPrompt: string },
   ) => {
-    updateMsg(id, { status: 'generating', generatingStep: 'Prompting NanoBanana 2…' } as Partial<A2UIMessage>);
+    updateMsg(id, { status: 'generating', generatingStep: 'Writing the art prompt…' } as Partial<A2UIMessage>);
     try {
       if (executor) {
         // Agent mode — use executor (keeps ctx.onEdit in sync)
-        updateMsg(id, { status: 'generating', generatingStep: 'Rendering your cover art…' } as Partial<A2UIMessage>);
+        updateMsg(id, { status: 'generating', generatingStep: 'Generating your cover image…' } as Partial<A2UIMessage>);
         const result = JSON.parse(await executor.execute('_generateCover', {
           mode: 'generate',
           title: opts.title,
@@ -884,7 +889,7 @@ export default function AgentPanel({
           customPrompt: opts.customPrompt || undefined,
         };
         const bgDataUrl = await generateCoverBackground(coverOpts);
-        updateMsg(id, { status: 'generating', generatingStep: 'Applying layout and typography…' } as Partial<A2UIMessage>);
+        updateMsg(id, { status: 'generating', generatingStep: 'Laying out title and typography…' } as Partial<A2UIMessage>);
         const coverHtml = buildEditableCoverHTML(bgDataUrl, coverOpts);
         onApplyCover?.(coverHtml);
       }
