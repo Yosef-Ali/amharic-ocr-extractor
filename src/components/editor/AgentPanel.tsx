@@ -970,6 +970,22 @@ export default function AgentPanel({
       return sendChat(overrideText);
     }
 
+    // Guard: if the user references a selection ("selected", "this one",
+    // "make it blue") but nothing is actually selected on the canvas,
+    // refuse up-front with an actionable message. Prevents the agent
+    // from guessing and scope-bleeding to the whole page.
+    const refsSelection = /\b(selected|this element|this one|this text|this paragraph|this heading|this title|make it|color it)\b/i.test(text);
+    if (refsSelection && !selection?.id) {
+      addMsg({ type: 'user', id: uid(), text });
+      addMsg({
+        type: 'error', id: uid(),
+        message: 'No element is selected. Click the element on the canvas first (use the arrow/select tool in the header), then send your instruction.',
+      });
+      setInput('');
+      if (textareaRef.current) textareaRef.current.style.height = 'auto';
+      return;
+    }
+
     // Add user message
     addMsg({
       type: 'user', id: uid(), text,
@@ -1436,6 +1452,24 @@ export default function AgentPanel({
           >
             <X size={11} />
           </button>
+        </div>
+      )}
+
+      {/* ── Selection indicator — shows the user exactly which element
+           the agent will target. Without this users typed "selected
+           element" with nothing selected and the agent guessed. ── */}
+      {selection?.id && (
+        <div className="ap-selection-pill" title="The agent will scope edits to this element">
+          <span className="ap-selection-dot" />
+          <span className="ap-selection-label">Target:</span>
+          <code className="ap-selection-tag">&lt;{selection.tag}&gt;</code>
+          <span className="ap-selection-id">{selection.id}</span>
+        </div>
+      )}
+      {!selection?.id && executor && hasResult && (
+        <div className="ap-selection-pill ap-selection-pill--empty">
+          <span className="ap-selection-dot ap-selection-dot--warn" />
+          <span>No element selected — edits apply to the whole page</span>
         </div>
       )}
 

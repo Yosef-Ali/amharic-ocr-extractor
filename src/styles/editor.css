@@ -3921,6 +3921,55 @@
 
 /* ── Input row ───────────────────────────────────────────────────────────── */
 
+/* ── Selection pill above the input — tells the user what the agent
+      will target before they send. ── */
+.ap-selection-pill {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  margin: 0 .75rem .4rem;
+  padding: .3rem .6rem;
+  background: rgba(99,102,241,.08);
+  border: 1px solid rgba(99,102,241,.25);
+  border-radius: 8px;
+  font-size: .72rem;
+  color: var(--t-text2);
+  line-height: 1.2;
+}
+.ap-selection-pill--empty {
+  background: rgba(245,158,11,.08);
+  border-color: rgba(245,158,11,.3);
+  color: var(--t-text3);
+  font-style: italic;
+}
+.ap-selection-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #6366f1;
+  box-shadow: 0 0 4px rgba(99,102,241,.5);
+  flex-shrink: 0;
+}
+.ap-selection-dot--warn {
+  background: #f59e0b;
+  box-shadow: 0 0 4px rgba(245,158,11,.5);
+}
+.ap-selection-label {
+  font-weight: 600;
+  color: var(--t-text3);
+}
+.ap-selection-tag {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .7rem;
+  color: #4f46e5;
+}
+.ap-selection-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .68rem;
+  color: var(--t-text3);
+  opacity: .8;
+}
+
 .ap-input-row {
   flex-shrink: 0;
   display: flex;
