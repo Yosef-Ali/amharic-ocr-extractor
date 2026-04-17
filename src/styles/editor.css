@@ -2644,6 +2644,25 @@
   flex-shrink: 0;
 }
 
+.ap-header-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--t-text3);
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--t-bg2);
+  border: 1px solid var(--t-border);
+  cursor: help;
+  flex-shrink: 0;
+}
+
+.ap-header-hint svg {
+  flex-shrink: 0;
+}
+
 
 .ap-header-btn {
   width: 24px;

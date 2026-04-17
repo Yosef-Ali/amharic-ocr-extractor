@@ -587,10 +587,10 @@ function ModelSelector({
               key={m.id}
               className={`ap-model-option${m.id === model ? ' active' : ''}${m.note ? ' ap-model-option--disabled' : ''}`}
               onClick={() => {
-                if (!m.note || m.id === 'minimax-m27') { 
-                  onChange(m.id); 
+                if (!m.note || m.id === 'minimax-m27') {
+                  onChange(m.id);
                   setActiveModel(m.id);
-                  setOpen(false); 
+                  setOpen(false);
                 }
               }}
               title={m.note}
@@ -706,7 +706,19 @@ export default function AgentPanel({
   executor, onClose, onNavigatePage, onApplyCover, onSave, onDownloadPDF,
   fileName = '',
 }: Props) {
-  const [panelMode,  setPanelMode]  = useState<'chat' | 'agent'>('chat');
+  // Panel mode is auto-derived from executor availability + per-message intent.
+  // UI affordances (refs, model selector, chips) follow this default; per-send
+  // routing in `send()` re-checks the message so "what's on this page?" always
+  // goes through chat even in agent mode.
+  const [panelMode,  setPanelMode]  = useState<'chat' | 'agent'>(() => executor ? 'agent' : 'chat');
+  // Keep panelMode in sync if executor arrives late (e.g. after first extraction).
+  useEffect(() => {
+    setPanelMode(executor ? 'agent' : 'chat');
+  }, [executor]);
+
+  // Detect "edit intent" — verbs that imply manipulating the document.
+  const EDIT_INTENT_RE = /\b(make|change|set|update|edit|fix|bold|italic|underline|align|center|left|right|justify|insert|add|remove|delete|move|resize|larger|smaller|bigger|font|color|heading|header|title|column|columns|layout|margin|padding|style|rewrite|reflow|paragraph|extract|fill|replace|crop|regenerate|generate\s+cover|cover\s+page|two\s+column|single\s+column)\b/i;
+  const routeToChat = (text: string) => !EDIT_INTENT_RE.test(text);
   const [messages,   setMessages]   = useState<A2UIMessage[]>([]);
   const [chatHistory, setChatHistory] = useState<ChatTurn[]>([]);
   const [input,      setInput]      = useState('');
@@ -938,11 +950,15 @@ export default function AgentPanel({
   };
 
   const send = async (overrideText?: string) => {
-    // Chat mode — simple conversational AI (no tools)
-    if (panelMode === 'chat') return sendChat(overrideText);
-
     const text = overrideText ?? input.trim();
-    if (!text || loading || !executor) return;
+    if (!text || loading) return;
+
+    // Auto-route: if panel is in chat mode (no executor yet) OR the message
+    // reads as conversational (no edit verbs), go through chat. Otherwise
+    // fall through to the agent/tool pipeline below.
+    if (panelMode === 'chat' || !executor || routeToChat(text)) {
+      return sendChat(overrideText);
+    }
 
     // Add user message
     addMsg({
@@ -1259,29 +1275,16 @@ export default function AgentPanel({
       {/* ── Header ── */}
       <div className="ap-header">
         <div className="ap-header-icon">
-          {panelMode === 'chat' ? <MessageCircle size={12} /> : <Sparkles size={12} />}
+          <Sparkles size={12} />
         </div>
-        <span className="ap-header-title">{panelMode === 'chat' ? 'Chat' : 'Agent'}</span>
-
-        {/* Mode toggle pill */}
-        <div className="ap-mode-toggle">
-          <button
-            className={`ap-mode-btn${panelMode === 'chat' ? ' active' : ''}`}
-            onClick={() => setPanelMode('chat')}
-            title="Simple chat — ask questions about your document"
-          >
-            <MessageCircle size={10} />
-            Chat
-          </button>
-          <button
-            className={`ap-mode-btn${panelMode === 'agent' ? ' active' : ''}`}
-            onClick={() => setPanelMode('agent')}
-            title="MCP Agent — edit layout with AI tools"
-          >
-            <Wrench size={10} />
-            Agent
-          </button>
-        </div>
+        <span className="ap-header-title">AI</span>
+        <span className="ap-header-hint" title="AI routes questions to chat and edit requests to tools automatically">
+          {panelMode === 'agent' ? (
+            <><Wrench size={10} /> tools on</>
+          ) : (
+            <><MessageCircle size={10} /> chat only</>
+          )}
+        </span>
 
         {panelMode === 'agent' && <ModelSelector model={model} onChange={setModel} />}
 
