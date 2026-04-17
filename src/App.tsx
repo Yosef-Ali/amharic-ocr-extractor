@@ -113,7 +113,7 @@ export default function App() {
       if (isRestoringSession) setIsRestoringSession(false);
       return;
     }
-    
+
     let isCancelled = false;
     const restoreSession = async () => {
       try {
@@ -134,7 +134,7 @@ export default function App() {
         if (!isCancelled) setIsRestoringSession(false);
       }
     };
-    
+
     restoreSession();
     return () => { isCancelled = true; };
   }, [authLoading, neonUser]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -169,6 +169,7 @@ export default function App() {
   const [activePage,       setActivePage]       = useState(1);
   const [pendingAutoSave,  setPendingAutoSave]  = useState(false);
   const [showAdmin,        setShowAdmin]        = useState(false);
+  const [showAuthModal,    setShowAuthModal]    = useState(false);
 
   // ── Warn before closing with unsaved changes ──
   useEffect(() => {
@@ -202,7 +203,7 @@ export default function App() {
   useEffect(() => {
     if (!activeDocId || activePage < 1) return;
     const currentImg = pageImages[activePage - 1];
-    
+
     if (currentImg === '') {
       let isCancelled = false;
       const fetchImage = async () => {
@@ -218,7 +219,7 @@ export default function App() {
           console.warn('Failed to lazy-load image:', err);
         }
       };
-      
+
       fetchImage();
       return () => { isCancelled = true; };
     }
@@ -307,6 +308,10 @@ export default function App() {
     ?.split(',').map(e => e.trim().toLowerCase()).filter(Boolean) ?? [];
   const isAdmin = adminEmails.length > 0 && !!neonUser?.email &&
     adminEmails.includes(neonUser.email.toLowerCase());
+
+  // Pro-panel feature flag — hides cover editor, homophone panel, agent chat,
+  // inspector, selection/hand tool. Default off for wedge-focused v0.2.
+  const proPanelsEnabled = String(import.meta.env.VITE_ENABLE_PRO_PANELS ?? 'false') === 'true';
 
   const hasFile = !!fileName;
 
@@ -571,6 +576,7 @@ export default function App() {
   // Save to library
   // -------------------------------------------------------------------------
   const handleSave = async () => {
+    if (!neonUser) { setShowAuthModal(true); return; }
     setIsSaving(true);
     try {
       const docId = await saveDocument(activeDocId, fileName, pageImages, pageResults);
@@ -703,7 +709,11 @@ export default function App() {
   }, [isDirty]);
 
   const handleShowAdmin   = useCallback(() => setShowAdmin(true), []);
-  const handleShowLibrary = useCallback(() => setShowLibrary(true), []);
+  const handleShowLibrary = useCallback(() => {
+    if (!neonUser) { setShowAuthModal(true); return; }
+    setShowLibrary(true);
+  }, [neonUser]);
+  const handleRequestAuth = useCallback(() => setShowAuthModal(true), []);
   const handleCancel      = useCallback(() => { cancelRef.current = true; }, []);
   const handleError       = useCallback((msg: string) => setToast({ id: Date.now().toString(), message: msg, variant: 'error' }), []);
   const handleDismissToast = useCallback(() => setToast(null), []);
@@ -720,10 +730,12 @@ export default function App() {
   if (authLoading) {
     return <div className="auth-splash"><div className="auth-splash-spinner" /></div>;
   }
-  if (!neonUser) {
-    return <AuthScreen onSuccess={handleAuthSuccess} />;
+  // Wedge unlock: guests can upload/extract/export. Save + Library require auth.
+  const isGuest = !neonUser;
+  if (showAuthModal) {
+    return <AuthScreen onSuccess={async () => { await handleAuthSuccess(); setShowAuthModal(false); }} />;
   }
-  if (isBlocked) {
+  if (neonUser && isBlocked) {
     return (
       <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'100vh', gap:'1rem', background:'var(--t-bg)', color:'var(--t-text)' }}>
         <div style={{ fontSize:'2.5rem' }}>🚫</div>
@@ -767,6 +779,7 @@ export default function App() {
           onSignOut={handleSignOut}
           isAdmin={isAdmin}
           onOpenAdmin={handleShowAdmin}
+          onRequestAuth={handleRequestAuth}
         />
         {showAdmin && <Suspense fallback={<div style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.5)',zIndex:999}}><Loader2 size={32} className="animate-spin" style={{color:'#6366f1'}} /></div>}><AdminPanel onClose={() => setShowAdmin(false)} /></Suspense>}
         <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 w-[350px] pointer-events-none">
@@ -783,6 +796,9 @@ export default function App() {
 
       {/* ── Full-viewport editor layout ── */}
       <EditorShell
+        proPanelsEnabled={proPanelsEnabled}
+        isGuest={isGuest}
+        onRequestAuth={handleRequestAuth}
         fileName={fileName}
         pageImages={pageImages}
         pageDimensions={pageDimensions}

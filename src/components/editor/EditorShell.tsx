@@ -73,6 +73,9 @@ interface Props {
   onSignOut:     () => void;
   theme:         Theme;
   onToggleTheme: () => void;
+  proPanelsEnabled?: boolean;
+  isGuest?: boolean;
+  onRequestAuth?: () => void;
 }
 
 type DrawerPanel = 'agent' | 'inspector' | 'cover' | 'homophone' | null;
@@ -95,6 +98,9 @@ export default function EditorShell({
   onSignOut,
   theme,
   onToggleTheme,
+  proPanelsEnabled = false,
+  isGuest = false,
+  onRequestAuth,
 }: Props) {
 
   const [showDeleteCoverConfirm, setShowDeleteCoverConfirm] = useState(false);
@@ -258,7 +264,7 @@ export default function EditorShell({
         let mostVisible = activePageRef.current;
         let maxArea = 0;
         const containerRect = elContainer.getBoundingClientRect();
-        
+
         wrappers.forEach(w => {
           const r = w.getBoundingClientRect();
           const top = Math.max(r.top, containerRect.top);
@@ -271,7 +277,7 @@ export default function EditorShell({
              }
           }
         });
-        
+
         if (mostVisible !== activePageRef.current) {
           setActivePage(mostVisible);
           onActivePageChange?.(mostVisible);
@@ -563,36 +569,40 @@ export default function EditorShell({
 
         {/* Right cluster — grouped by function */}
         <div className="es-header-right">
-          {/* ── Panels group: open right drawers ── */}
-          <div className="es-btn-group">
-            <button
-              className={`es-icon-btn es-icon-btn--ai${rightDrawer === 'agent' ? ' es-icon-btn--active' : ''}`}
-              onClick={() => toggleDrawer('agent')}
-              title="AI Agent"
-              style={{ position: 'relative' }}
-            >
-              <Bot size={14} />
-              <span className="es-btn-label">AI</span>
-              {mcpConnected && <span className="es-mcp-dot" />}
-            </button>
-            <button
-              className={`es-icon-btn${rightDrawer === 'inspector' ? ' es-icon-btn--active' : ''}`}
-              onClick={() => toggleDrawer('inspector')}
-              title="Inspector"
-            >
-              <SlidersHorizontal size={14} />
-            </button>
-            <button
-              className={`es-icon-btn${rightDrawer === 'homophone' ? ' es-icon-btn--active' : ''}`}
-              onClick={() => toggleDrawer('homophone')}
-              title="Amharic OCR corrections"
-              style={{ fontFamily: "'Noto Serif Ethiopic', serif", fontSize: 13, fontWeight: 700, letterSpacing: 0 }}
-            >
-              ሀ
-            </button>
-          </div>
+          {/* ── Panels group: open right drawers (pro features) ── */}
+          {proPanelsEnabled && (
+            <>
+              <div className="es-btn-group">
+                <button
+                  className={`es-icon-btn es-icon-btn--ai${rightDrawer === 'agent' ? ' es-icon-btn--active' : ''}`}
+                  onClick={() => toggleDrawer('agent')}
+                  title="AI Agent"
+                  style={{ position: 'relative' }}
+                >
+                  <Bot size={14} />
+                  <span className="es-btn-label">AI</span>
+                  {mcpConnected && <span className="es-mcp-dot" />}
+                </button>
+                <button
+                  className={`es-icon-btn${rightDrawer === 'inspector' ? ' es-icon-btn--active' : ''}`}
+                  onClick={() => toggleDrawer('inspector')}
+                  title="Inspector"
+                >
+                  <SlidersHorizontal size={14} />
+                </button>
+                <button
+                  className={`es-icon-btn${rightDrawer === 'homophone' ? ' es-icon-btn--active' : ''}`}
+                  onClick={() => toggleDrawer('homophone')}
+                  title="Amharic OCR corrections"
+                  style={{ fontFamily: "'Noto Serif Ethiopic', serif", fontSize: 13, fontWeight: 700, letterSpacing: 0 }}
+                >
+                  ሀ
+                </button>
+              </div>
 
-          <div className="es-header-sep es-hide-mobile" />
+              <div className="es-header-sep es-hide-mobile" />
+            </>
+          )}
 
           {/* ── Edit group: content manipulation ── */}
           <div className="es-btn-group es-hide-mobile">
@@ -609,13 +619,15 @@ export default function EditorShell({
             >
               <Search size={14} />
             </button>
-            <button
-              className={`es-icon-btn${selectionMode ? ' es-icon-btn--active' : ''}`}
-              onClick={() => setSelectionMode(m => !m)}
-              title="Select element to inspect"
-            >
-              <MousePointer2 size={14} />
-            </button>
+            {proPanelsEnabled && (
+              <button
+                className={`es-icon-btn${selectionMode ? ' es-icon-btn--active' : ''}`}
+                onClick={() => setSelectionMode(m => !m)}
+                title="Select element to inspect"
+              >
+                <MousePointer2 size={14} />
+              </button>
+            )}
           </div>
 
           <div className="es-header-sep es-hide-mobile" />
@@ -638,7 +650,13 @@ export default function EditorShell({
           {/* ── App controls ── */}
           <ThemeToggleButton theme={theme} onClick={onToggleTheme} iconSize={14} />
           <div className="es-hide-mobile"><SettingsPanel /></div>
-          {user && <UserMenu user={user} onSignOut={onSignOut} />}
+          {user
+            ? <UserMenu user={user} onSignOut={onSignOut} />
+            : onRequestAuth && (
+                <button className="home-admin-btn" onClick={onRequestAuth} title="Sign in to save your work">
+                  <span>Sign In</span>
+                </button>
+              )}
           <button className="es-icon-btn es-icon-btn--danger" onClick={onClear} title="Close document">
             <X size={16} />
           </button>
@@ -716,7 +734,7 @@ export default function EditorShell({
             >
             {/* ── 🚧 CONTINUOUS SCROLL VIEW 🚧 ── */}
             <div className="flex flex-col gap-12 pb-32 items-center w-full min-h-screen">
-              
+
               {/* ── Cover Page (0) ── */}
               {((activePage === 0 && !hasResult) || hasCover) && (
                 <div data-page="0" className="page-wrapper w-full flex justify-center scroll-mt-6" id="page-0">
@@ -946,12 +964,13 @@ export default function EditorShell({
             onCopyAllText={onCopyAllText}
             onCancel={onCancel}
             onImageQualityChange={onImageQualityChange}
-            onCoverPage={() => { changePage(0); setRightDrawer('cover'); }}
+            onCoverPage={proPanelsEnabled ? () => { changePage(0); setRightDrawer('cover'); } : undefined}
+            isGuest={isGuest}
           />
         </main>
 
-        {/* ── Right drawer ────────────────────────────────────────────── */}
-        <RightDrawer
+        {/* ── Right drawer (pro panels only) ─────────────────────────── */}
+        {proPanelsEnabled && <RightDrawer
           open={!!rightDrawer}
           title={drawerTitle}
           onClose={() => setRightDrawer(null)}
@@ -1018,7 +1037,7 @@ export default function EditorShell({
               onEdit={onEdit}
             />
           )}
-        </RightDrawer>
+        </RightDrawer>}
 
       </div>
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   FileText, Upload, FolderOpen, Trash2, Clock,
-  Sparkles, ChevronRight, Plus, Search, Loader2, ScanSearch,
+  ChevronRight, Plus, Search, Loader2, ScanSearch,
   ShieldCheck, Download, Layers, ImageIcon, AlignLeft,
 } from 'lucide-react';
 import { type Theme } from '../hooks/useTheme';
@@ -24,6 +24,7 @@ interface Props {
   onSignOut:        () => void;
   isAdmin:          boolean;
   onOpenAdmin:      () => void;
+  onRequestAuth?:   () => void;
 }
 
 function formatDate(iso: string) {
@@ -43,15 +44,15 @@ function toThumbSrc(val: string | undefined | null): string | null {
 }
 
 const FEATURES = [
-  { icon: <ScanSearch size={20} />, label: 'Amharic OCR', desc: 'Accurate Ethiopic text extraction from any scan' },
-  { icon: <Layers      size={20} />, label: 'Layout Preserve', desc: 'Multi-column, two-page & complex document layouts' },
-  { icon: <ImageIcon   size={20} />, label: 'Image Embed', desc: 'Illustrations cropped and placed at exact position' },
-  { icon: <AlignLeft   size={20} />, label: 'Live Editor', desc: 'Edit, find-replace & correct homophones in-place' },
+  { icon: <ScanSearch size={20} />, label: 'Accurate OCR',     desc: 'Ethiopic text extraction from any scan' },
+  { icon: <Layers     size={20} />, label: 'Preserved Layout', desc: 'Multi-column, two-page & complex document layouts' },
+  { icon: <ImageIcon  size={20} />, label: 'Embedded Images',  desc: 'Illustrations cropped and placed at exact position' },
+  { icon: <AlignLeft  size={20} />, label: 'Live Editing',     desc: 'Edit, find-replace & correct homophones in-place' },
 ];
 
 export default function HomeScreen({
   onFile, onLoadDoc, isProcessing, processingStatus,
-  theme, onToggleTheme, user, onSignOut, isAdmin, onOpenAdmin,
+  theme, onToggleTheme, user, onSignOut, isAdmin, onOpenAdmin, onRequestAuth,
 }: Props) {
   const [docs,           setDocs]           = useState<SavedDocument[]>([]);
   const [loadingDocs,    setLoadingDocs]    = useState(true);
@@ -151,7 +152,6 @@ export default function HomeScreen({
           <div className="home-brand">
             <div className="home-brand-icon">
               <ScanSearch size={18} className="text-white" />
-              <Sparkles className="home-brand-sparkle" />
             </div>
             <div>
               <p className="home-brand-name">
@@ -167,7 +167,13 @@ export default function HomeScreen({
                 <ShieldCheck size={15} /><span>Admin</span>
               </button>
             )}
-            {user && <UserMenu user={user} onSignOut={onSignOut} />}
+            {user
+              ? <UserMenu user={user} onSignOut={onSignOut} />
+              : onRequestAuth && (
+                  <button className="home-admin-btn" onClick={onRequestAuth}>
+                    <span>Sign In</span>
+                  </button>
+                )}
           </div>
         </div>
       </header>
