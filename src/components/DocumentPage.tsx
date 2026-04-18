@@ -250,6 +250,16 @@ export default function DocumentPage({
         undoStackRef.current = pushUndo(undoStackRef.current, lastSnapshotRef.current);
       }
       el.innerHTML = html;
+      // Annotate every element with a stable data-canvas-id on mount.
+      // Without this, clicking an element before any AI tool has run
+      // yields selection.id === undefined, so the agent can't target it.
+      // Keep ids that already exist (AI-annotated HTML round-trips).
+      let nextId = Date.now() % 1_000_000;
+      el.querySelectorAll('*').forEach(node => {
+        if (!node.getAttribute('data-canvas-id')) {
+          node.setAttribute('data-canvas-id', `ce-${nextId++}`);
+        }
+      });
       lastSnapshotRef.current = html;
     }
   }, [html]);
