@@ -349,6 +349,17 @@ export default function EditorShell({
         onSave();
         return;
       }
+      // Cmd/Ctrl+K: open AI agent panel and focus its input. Intercept even
+      // inside editable content — users expect this to work from anywhere.
+      if (proPanelsEnabled && (e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setRightDrawer('agent');
+        // Focus the agent textarea on the next tick (after the drawer mounts).
+        setTimeout(() => {
+          document.querySelector<HTMLTextAreaElement>('.ap-textarea')?.focus();
+        }, 60);
+        return;
+      }
       // Escape cancels extraction even when inside editable content
       if (e.key === 'Escape' && isProcessing) {
         e.preventDefault();
@@ -359,6 +370,9 @@ export default function EditorShell({
       if (e.key === 'Escape') {
         if (showFindReplace) { setShowFindReplace(false); return; }
         setSelectionMode(false); setRightDrawer(null); setHandTool(false);
+        // Also clear any active element selection so the AI panel's
+        // Target pill disappears — Escape = "stop what I'm doing".
+        setElementStyles(null);
         // Escape from blank cover page → go to page 1
         if (activePage === 0 && !pageResults[0] && totalPages > 0) changePage(1);
         return;
@@ -377,7 +391,7 @@ export default function EditorShell({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [totalPages, activePage, selectionMode, changePage, isProcessing, showFindReplace]);
+  }, [totalPages, activePage, selectionMode, changePage, isProcessing, showFindReplace, proPanelsEnabled]);
 
   // ── Element selection (inspector) ──────────────────────────────────────
   const handleElementSelect = (styles: ElementStyles | null) => {
@@ -1074,6 +1088,10 @@ export default function EditorShell({
               selection={elementStyles && elementStyles.id
                 ? { id: elementStyles.id, tag: elementStyles.tag }
                 : null}
+              onClearSelection={() => {
+                setElementStyles(null);
+                setSelectionMode(false);
+              }}
             />
           )}
           {rightDrawer === 'inspector' && (

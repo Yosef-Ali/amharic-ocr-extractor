@@ -3969,6 +3969,24 @@
   color: var(--t-text3);
   opacity: .8;
 }
+.ap-selection-clear {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--t-text3);
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.ap-selection-clear:hover {
+  background: rgba(99,102,241,.18);
+  color: var(--t-text);
+}
 
 .ap-input-row {
   flex-shrink: 0;

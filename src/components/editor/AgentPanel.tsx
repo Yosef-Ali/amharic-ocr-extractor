@@ -60,6 +60,9 @@ interface Props {
   /** Currently selected element on the canvas — fed into the agent's
    *  system context so edit requests are scoped to this element. */
   selection?:      { id: string; tag: string } | null;
+  /** Clear the current canvas selection (called when user clicks ✕ on
+   *  the Target pill). */
+  onClearSelection?: () => void;
 }
 
 // ── Thinking dots (replaces shimmer skeleton) ─────────────────────────────
@@ -714,6 +717,7 @@ export default function AgentPanel({
   executor, onClose, onNavigatePage, onApplyCover, onSave, onDownloadPDF,
   fileName = '',
   selection = null,
+  onClearSelection,
 }: Props) {
   // Panel mode is auto-derived from executor availability + per-message intent.
   // UI affordances (refs, model selector, chips) follow this default; per-send
@@ -1464,6 +1468,16 @@ export default function AgentPanel({
           <span className="ap-selection-label">Target:</span>
           <code className="ap-selection-tag">&lt;{selection.tag}&gt;</code>
           <span className="ap-selection-id">{selection.id}</span>
+          {onClearSelection && (
+            <button
+              className="ap-selection-clear"
+              onClick={onClearSelection}
+              title="Clear selection (Esc)"
+              aria-label="Clear selection"
+            >
+              <X size={10} />
+            </button>
+          )}
         </div>
       )}
       {!selection?.id && executor && hasResult && (
@@ -1503,7 +1517,9 @@ export default function AgentPanel({
               : (!executor
                 ? 'Open a document first…'
                 : hasResult
-                ? `Instruct agent for page ${context!.pageNumber}…`
+                ? (selection?.id
+                    ? `Edit <${selection.tag}>…`
+                    : `Instruct agent for page ${context!.pageNumber}…`)
                 : `Ask agent to extract page ${activePage}…`)
           }
           value={input}
