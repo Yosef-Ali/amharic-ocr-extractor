@@ -44,6 +44,8 @@ export interface DocumentPageHandle {
 
 // ── Element style snapshot ────────────────────────────────────────────────────
 export interface ElementStyles {
+  /** The element's data-canvas-id — the AI agent targets edits by this id. */
+  id?:            string;
   tag:            string;   // 'p', 'h2', 'div', etc.
   textAlign:      string;   // 'left' | 'center' | 'right' | 'justify'
   fontSize:       string;   // e.g. '16px'
