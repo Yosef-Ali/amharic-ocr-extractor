@@ -74,8 +74,12 @@ export function buildProjectContext(opts: {
   extractedPages: Set<number>;
   activePage:     number;
   memory:         ProjectMemory;
+  /** Currently selected element on the canvas (data-canvas-id + tag).
+   *  When present, the agent should target THIS element by default
+   *  instead of guessing from the page structure. */
+  selection?:     { id: string; tag: string } | null;
 }): string {
-  const { docKey, totalPages, extractedPages, activePage, memory } = opts;
+  const { docKey, totalPages, extractedPages, activePage, memory, selection } = opts;
 
   // Separate cover/back-cover (pages 0, -1) from content pages
   const contentExtracted = [...extractedPages].filter(n => n > 0).sort((a, b) => a - b);
@@ -115,6 +119,22 @@ export function buildProjectContext(opts: {
     (coverNote ? `Covers: ${coverNote}\n` : '') +
     `Extracted pages: ${extList}\n` +
     `Not yet extracted: ${notList}`;
+
+  // The user's current canvas selection is the single most important
+  // signal for an edit request. When present, the agent MUST scope
+  // edits to this element — don't guess, don't pick the first h1.
+  if (selection && selection.id) {
+    ctx +=
+      `\n\n━━━ CURRENT SELECTION ━━━\n` +
+      `SELECTED_ELEMENT_ID: ${selection.id}\n` +
+      `SELECTED_TAG: <${selection.tag}>\n` +
+      `The user has clicked this element on the canvas. For any edit ` +
+      `request that doesn't explicitly name a different target ` +
+      `("change the color", "make it bigger", "bold this"), pass ` +
+      `selector="${selection.id}" to editTextBlock. Do NOT call ` +
+      `getDocumentStructure first — you already have the id. Do NOT ` +
+      `apply the edit to any other element.`;
+  }
 
   if (memory.notes) {
     ctx += `\n\nProject notes (learned in previous sessions):\n${memory.notes}`;

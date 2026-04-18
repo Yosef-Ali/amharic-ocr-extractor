@@ -44,6 +44,8 @@ export interface DocumentPageHandle {
 
 // ── Element style snapshot ────────────────────────────────────────────────────
 export interface ElementStyles {
+  /** The element's data-canvas-id — the AI agent targets edits by this id. */
+  id?:            string;
   tag:            string;   // 'p', 'h2', 'div', etc.
   textAlign:      string;   // 'left' | 'center' | 'right' | 'justify'
   fontSize:       string;   // e.g. '16px'
@@ -71,6 +73,7 @@ export function readElementStyles(el: HTMLElement): ElementStyles {
   const csLH = parseFloat(cs.lineHeight);
   const lineHeight = s.lineHeight || (csFS > 0 ? (csLH / csFS).toFixed(2) : '1.60');
   return {
+    id:             el.getAttribute('data-canvas-id') ?? undefined,
     tag:            el.tagName.toLowerCase(),
     textAlign:      s.textAlign       || cs.textAlign       || 'left',
     fontSize:       s.fontSize        || cs.fontSize        || '16px',
@@ -249,9 +252,33 @@ export default function DocumentPage({
         undoStackRef.current = pushUndo(undoStackRef.current, lastSnapshotRef.current);
       }
       el.innerHTML = html;
-      lastSnapshotRef.current = html;
+      // Annotate every element with a stable data-canvas-id on mount.
+      // Without this, clicking an element before any AI tool has run
+      // yields selection.id === undefined, so the agent can't target it.
+      // Keep ids that already exist (AI-annotated HTML round-trips).
+      let nextId = Date.now() % 1_000_000;
+      let addedAny = false;
+      el.querySelectorAll('*').forEach(node => {
+        if (!node.getAttribute('data-canvas-id')) {
+          node.setAttribute('data-canvas-id', `ce-${nextId++}`);
+          addedAny = true;
+        }
+      });
+      // If we stamped any new ids, commit the annotated HTML back to
+      // React state immediately. Otherwise the AI agent reads the
+      // unannotated html from pageResults, findById fails on the id the
+      // user just selected, and the model falls back to a full-page
+      // batchEdit — which is exactly the scope-bleed bug we're chasing.
+      if (addedAny) {
+        const annotated = el.innerHTML;
+        lastSnapshotRef.current = annotated;
+        // Defer to avoid re-entering the effect during the same tick.
+        queueMicrotask(() => onEdit(pageNumber, annotated));
+      } else {
+        lastSnapshotRef.current = html;
+      }
     }
-  }, [html]);
+  }, [html, onEdit, pageNumber]);
 
   // ── Expose handle via docHandle prop ─────────────────────────────────────
   useEffect(() => {
@@ -420,7 +447,8 @@ export default function DocumentPage({
       // Normal click — clear multi, single-select
       clearMulti();
       if (!found) { deselect(); return; }
-      if (found === selectedElRef.current) { deselect(); return; }
+      // InDesign behavior: clicking an already-selected element keeps it selected
+      if (found === selectedElRef.current) { return; }
 
       selectedElRef.current?.classList.remove('sel-active');
       found.classList.remove('sel-hover');
@@ -511,6 +539,94 @@ export default function DocumentPage({
       }
     };
 
+    // ── Selection mode keyboard shortcuts ────────────────────────────────────
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Escape: deselect first, exit on second press
+      if (e.key === 'Escape') {
+        e.stopImmediatePropagation();
+        if (selectedElRef.current || multiSelRef.current.size > 0) {
+          deselect();
+        } else {
+          onExitSelectionMode?.();
+        }
+        return;
+      }
+
+      // Enter: jump into text editing on the selected element
+      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        const sel = selectedElRef.current;
+        if (!sel) return;
+        const TEXT_TAGS = new Set(['P','H1','H2','H3','H4','H5','H6','DIV','LI','BLOCKQUOTE','PRE']);
+        if (!TEXT_TAGS.has(sel.tagName)) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const target = sel;
+        pendingCursorRef.current = null; // skip click-position restore; we'll place at end
+        deselect();
+        onExitSelectionMode?.();
+        requestAnimationFrame(() => {
+          const editorEl = editorRef.current;
+          if (!editorEl || !editorEl.contains(target)) return;
+          editorEl.focus();
+          const range = document.createRange();
+          range.selectNodeContents(target);
+          range.collapse(false); // caret at end of element
+          const winSel = window.getSelection();
+          winSel?.removeAllRanges();
+          winSel?.addRange(range);
+        });
+        return;
+      }
+
+      // Tab / Shift+Tab: cycle through selectable elements
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const all = (Array.from(
+          el.querySelectorAll('h1,h2,h3,h4,h5,h6,p,div,img,figure,blockquote,ul,ol,li,table')
+        ) as HTMLElement[]).filter(child => findSelectableEl(child, el) === child);
+        if (all.length === 0) return;
+        const cur = selectedElRef.current;
+        const idx = cur ? all.indexOf(cur) : -1;
+        const next = e.shiftKey
+          ? all[(idx - 1 + all.length) % all.length]
+          : all[(idx + 1) % all.length];
+        if (!next) return;
+        clearMulti();
+        selectedElRef.current?.classList.remove('sel-active');
+        hoveredElRef.current?.classList.remove('sel-hover');
+        hoveredElRef.current = null;
+        next.classList.add('sel-active');
+        selectedElRef.current = next;
+        next.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        refreshActionBar();
+        refreshHandles();
+        onElementSelectRef.current?.(readElementStyles(next));
+        return;
+      }
+
+      // Ctrl+A / Cmd+A: select all selectable elements on the page
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        selectedElRef.current?.classList.remove('sel-active');
+        selectedElRef.current = null;
+        clearMulti();
+        const seen = new Set<HTMLElement>();
+        el.querySelectorAll('h1,h2,h3,h4,h5,h6,p,div,img,figure,blockquote,ul,ol,li,table').forEach(child => {
+          const resolved = findSelectableEl(child as HTMLElement, el);
+          if (resolved && !seen.has(resolved) && el.contains(resolved) && resolved !== el) {
+            seen.add(resolved);
+            resolved.classList.add('sel-active', 'sel-multi');
+            multiSelRef.current.add(resolved);
+          }
+        });
+        setMultiCount(multiSelRef.current.size);
+        refreshActionBar();
+        return;
+      }
+    };
+
     el.addEventListener('mousemove', onMove);
     el.addEventListener('mouseleave', onLeave);
     el.addEventListener('click', onClick);
@@ -518,6 +634,7 @@ export default function DocumentPage({
     document.addEventListener('mousemove', onMouseMoveRbDoc);
     document.addEventListener('mouseup', onMouseUpRbDoc);
     el.addEventListener('dblclick', onDblClick);
+    window.addEventListener('keydown', onKeyDown);
     return () => {
       el.removeEventListener('mousemove', onMove);
       el.removeEventListener('mouseleave', onLeave);
@@ -526,8 +643,9 @@ export default function DocumentPage({
       document.removeEventListener('mousemove', onMouseMoveRbDoc);
       document.removeEventListener('mouseup', onMouseUpRbDoc);
       el.removeEventListener('dblclick', onDblClick);
+      window.removeEventListener('keydown', onKeyDown);
     };
-  }, [selectionMode, refreshActionBar, onExitSelectionMode]);
+  }, [selectionMode, refreshActionBar, refreshHandles, onExitSelectionMode]);
 
   // ── InDesign-style: place cursor when selection mode turns OFF ──────────
   useEffect(() => {
@@ -970,6 +1088,16 @@ export default function DocumentPage({
       const hasMulti = multiSelRef.current.size > 1;
       if (!sel && !hasMulti) return;
 
+      // Ignore keys that originate in a form field (AI agent prompt,
+      // filename rename, page-jump box). Without this guard, pressing
+      // Backspace in the chat input deletes the element selected on the
+      // canvas. We still allow keys inside the canvas itself (editorRef)
+      // because that's where in-place text editing happens.
+      const target = e.target as HTMLElement | null;
+      const inField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
+      const inOutsideEditable = target?.isContentEditable && !editorRef.current?.contains(target);
+      if (inField || inOutsideEditable) return;
+
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         if (hasMulti) {
@@ -1123,6 +1251,9 @@ export default function DocumentPage({
     if (editorRef.current) {
       snapshotForUndo();
       onEdit(pageNumber, editorRef.current.innerHTML);
+      // Broadcast to shell so it can flash a "Saved" indicator — otherwise
+      // contentEditable gives the user no confirmation their edit stuck.
+      window.dispatchEvent(new CustomEvent('doc-edit-saved', { detail: { pageNumber } }));
     }
   };
 
@@ -1366,6 +1497,7 @@ export default function DocumentPage({
           onInput={handleInput}
           onKeyDown={handleKeyDown}
           spellCheck={false}
+          lang="am"
           className={`document-page relative bg-white focus:outline-none flex-1 ${compact ? 'overflow-y-auto' : 'overflow-hidden mx-auto'}${selectionMode ? ' sel-mode' : ''}`}
           style={{
             width:      compact ? '100%' : pageWidth,

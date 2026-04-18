@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   ChevronLeft, ChevronRight, Layers, Loader2,
   PanelLeftClose, PanelLeftOpen,
-  X, FileText, FileImage, MousePointer2,
+  X, FileText, FileImage, MousePointer2, Hand,
   Bot, SlidersHorizontal,
   Trash2,
   Minus, Plus, Undo2, Redo2, Sparkles, Home, Search,
@@ -73,6 +73,9 @@ interface Props {
   onSignOut:     () => void;
   theme:         Theme;
   onToggleTheme: () => void;
+  proPanelsEnabled?: boolean;
+  isGuest?: boolean;
+  onRequestAuth?: () => void;
 }
 
 type DrawerPanel = 'agent' | 'inspector' | 'cover' | 'homophone' | null;
@@ -95,6 +98,9 @@ export default function EditorShell({
   onSignOut,
   theme,
   onToggleTheme,
+  proPanelsEnabled = false,
+  isGuest = false,
+  onRequestAuth,
 }: Props) {
 
   const [showDeleteCoverConfirm, setShowDeleteCoverConfirm] = useState(false);
@@ -133,10 +139,30 @@ export default function EditorShell({
   const ZOOM_MIN = 25;
   const ZOOM_MAX = 400;
   const ZOOM_STEP = 15;
-  const [zoom, setZoom]           = useState(100);
+  // Persist zoom + pan across reloads and page navigation so users don't lose
+  // their view state on every little action. Keyed by file name so switching
+  // documents gives a fresh default.
+  const viewKey = `editor.view.${fileName || 'untitled'}`;
+  const loadView = (): { zoom: number; pan: { x: number; y: number } } => {
+    try {
+      const raw = localStorage.getItem(viewKey);
+      if (!raw) return { zoom: 100, pan: { x: 0, y: 0 } };
+      const v = JSON.parse(raw);
+      return {
+        zoom: typeof v.zoom === 'number' ? v.zoom : 100,
+        pan:  v.pan && typeof v.pan.x === 'number' ? v.pan : { x: 0, y: 0 },
+      };
+    } catch { return { zoom: 100, pan: { x: 0, y: 0 } }; }
+  };
+  const initialView = loadView();
+  const [zoom, setZoom]           = useState(initialView.zoom);
   const [handTool, setHandTool]   = useState(false);
   const [isPanning, setIsPanning] = useState(false);
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [panOffset, setPanOffset] = useState(initialView.pan);
+  // Save view on every change (debounced by RAF — writes are cheap anyway).
+  useEffect(() => {
+    try { localStorage.setItem(viewKey, JSON.stringify({ zoom, pan: panOffset })); } catch { /* quota / disabled */ }
+  }, [viewKey, zoom, panOffset]);
   const panStart = useRef({ x: 0, y: 0, ox: 0, oy: 0 });
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -149,6 +175,19 @@ export default function EditorShell({
   const docHandleRef = useRef<DocumentPageHandle | null>(null);
   const handleUndo = () => docHandleRef.current?.undo();
   const handleRedo = () => docHandleRef.current?.redo();
+
+  // ── Saved-flash indicator: DocumentPage fires `doc-edit-saved` on blur
+  //    after committing an inline edit. Show a brief "Saved" pill so the
+  //    user gets confirmation that contentEditable changes landed.
+  const [savedFlash, setSavedFlash] = useState(false);
+  useEffect(() => {
+    const onSaved = () => {
+      setSavedFlash(true);
+      window.setTimeout(() => setSavedFlash(false), 1400);
+    };
+    window.addEventListener('doc-edit-saved', onSaved);
+    return () => window.removeEventListener('doc-edit-saved', onSaved);
+  }, []);
 
   // Ctrl+scroll to zoom
   useEffect(() => {
@@ -258,7 +297,7 @@ export default function EditorShell({
         let mostVisible = activePageRef.current;
         let maxArea = 0;
         const containerRect = elContainer.getBoundingClientRect();
-        
+
         wrappers.forEach(w => {
           const r = w.getBoundingClientRect();
           const top = Math.max(r.top, containerRect.top);
@@ -271,7 +310,7 @@ export default function EditorShell({
              }
           }
         });
-        
+
         if (mostVisible !== activePageRef.current) {
           setActivePage(mostVisible);
           onActivePageChange?.(mostVisible);
@@ -310,6 +349,17 @@ export default function EditorShell({
         onSave();
         return;
       }
+      // Cmd/Ctrl+K: open AI agent panel and focus its input. Intercept even
+      // inside editable content — users expect this to work from anywhere.
+      if (proPanelsEnabled && (e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setRightDrawer('agent');
+        // Focus the agent textarea on the next tick (after the drawer mounts).
+        setTimeout(() => {
+          document.querySelector<HTMLTextAreaElement>('.ap-textarea')?.focus();
+        }, 60);
+        return;
+      }
       // Escape cancels extraction even when inside editable content
       if (e.key === 'Escape' && isProcessing) {
         e.preventDefault();
@@ -320,6 +370,9 @@ export default function EditorShell({
       if (e.key === 'Escape') {
         if (showFindReplace) { setShowFindReplace(false); return; }
         setSelectionMode(false); setRightDrawer(null); setHandTool(false);
+        // Also clear any active element selection so the AI panel's
+        // Target pill disappears — Escape = "stop what I'm doing".
+        setElementStyles(null);
         // Escape from blank cover page → go to page 1
         if (activePage === 0 && !pageResults[0] && totalPages > 0) changePage(1);
         return;
@@ -330,13 +383,15 @@ export default function EditorShell({
       if ((e.ctrlKey || e.metaKey) && e.key === '0') { e.preventDefault(); zoomFit(); return; }
       // Hand tool toggle
       if (e.key === 'h' || e.key === 'H') { setHandTool(h => !h); return; }
+      // V → Selection Tool (InDesign muscle memory)
+      if (e.key === 'v' || e.key === 'V') { setSelectionMode(m => !m); return; }
       if (selectionMode) return;
       if (e.key === 'ArrowLeft')  changePage(Math.max(navMin, activePage - 1));
       if (e.key === 'ArrowRight') changePage(Math.min(totalPages, activePage + 1));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [totalPages, activePage, selectionMode, changePage, isProcessing, showFindReplace]);
+  }, [totalPages, activePage, selectionMode, changePage, isProcessing, showFindReplace, proPanelsEnabled]);
 
   // ── Element selection (inspector) ──────────────────────────────────────
   const handleElementSelect = (styles: ElementStyles | null) => {
@@ -378,7 +433,15 @@ export default function EditorShell({
 
   // ── Right drawer toggling ─────────────────────────────────────────────
   const toggleDrawer = (panel: DrawerPanel) => {
-    setRightDrawer(prev => prev === panel ? null : panel);
+    setRightDrawer(prev => {
+      const next = prev === panel ? null : panel;
+      // Inspector needs element selection to be useful — auto-arm it when opened,
+      // auto-disarm when closed so the user isn't left in a sticky mode.
+      if (panel === 'inspector') {
+        setSelectionMode(next === 'inspector');
+      }
+      return next;
+    });
   };
 
 
@@ -459,6 +522,23 @@ export default function EditorShell({
     : rightDrawer === 'cover'      ? 'Cover Editor'
     : rightDrawer === 'homophone'  ? 'Amharic OCR Corrections'
     : '';
+
+  // ── Drawer status line (persistent context banner) ────────────────────
+  const pageLabel = activePage === 0 ? 'Cover' : activePage === -1 ? 'Back cover' : `Page ${activePage}`;
+  const drawerStatus = (() => {
+    if (!rightDrawer) return null;
+    if (rightDrawer === 'inspector') {
+      const tag = elementStyles ? `${(elementStyles.tag || 'text').toLowerCase()} selected` : 'nothing selected';
+      return `${pageLabel} · ${tag}`;
+    }
+    if (rightDrawer === 'homophone' || rightDrawer === 'agent') {
+      return pageLabel;
+    }
+    if (rightDrawer === 'cover') {
+      return activePage === -1 ? 'Back cover' : 'Front cover';
+    }
+    return null;
+  })();
 
   // ── Render ────────────────────────────────────────────────────────────
   return (
@@ -561,36 +641,40 @@ export default function EditorShell({
 
         {/* Right cluster — grouped by function */}
         <div className="es-header-right">
-          {/* ── Panels group: open right drawers ── */}
-          <div className="es-btn-group">
-            <button
-              className={`es-icon-btn${rightDrawer === 'agent' ? ' es-icon-btn--active' : ''}`}
-              onClick={() => toggleDrawer('agent')}
-              title="AI Agent"
-              style={{ position: 'relative' }}
-            >
-              <Bot size={14} />
-              <span className="es-btn-label">AI</span>
-              {mcpConnected && <span className="es-mcp-dot" />}
-            </button>
-            <button
-              className={`es-icon-btn${rightDrawer === 'inspector' ? ' es-icon-btn--active' : ''}`}
-              onClick={() => toggleDrawer('inspector')}
-              title="Inspector"
-            >
-              <SlidersHorizontal size={14} />
-            </button>
-            <button
-              className={`es-icon-btn${rightDrawer === 'homophone' ? ' es-icon-btn--active' : ''}`}
-              onClick={() => toggleDrawer('homophone')}
-              title="Amharic OCR corrections"
-              style={{ fontFamily: "'Noto Serif Ethiopic', serif", fontSize: 13, fontWeight: 700, letterSpacing: 0 }}
-            >
-              ሀ
-            </button>
-          </div>
+          {/* ── Panels group: open right drawers (pro features) ── */}
+          {proPanelsEnabled && (
+            <>
+              <div className="es-btn-group">
+                <button
+                  className={`es-icon-btn es-icon-btn--ai${rightDrawer === 'agent' ? ' es-icon-btn--active' : ''}`}
+                  onClick={() => toggleDrawer('agent')}
+                  title="AI Agent"
+                  style={{ position: 'relative' }}
+                >
+                  <Bot size={14} />
+                  <span className="es-btn-label">AI</span>
+                  {mcpConnected && <span className="es-mcp-dot" />}
+                </button>
+                <button
+                  className={`es-icon-btn${rightDrawer === 'inspector' ? ' es-icon-btn--active' : ''}`}
+                  onClick={() => toggleDrawer('inspector')}
+                  title="Inspector"
+                >
+                  <SlidersHorizontal size={14} />
+                </button>
+                <button
+                  className={`es-icon-btn${rightDrawer === 'homophone' ? ' es-icon-btn--active' : ''}`}
+                  onClick={() => toggleDrawer('homophone')}
+                  title="Amharic OCR corrections"
+                  style={{ fontFamily: "'Noto Serif Ethiopic', serif", fontSize: 13, fontWeight: 700, letterSpacing: 0 }}
+                >
+                  ሀ
+                </button>
+              </div>
 
-          <div className="es-header-sep es-hide-mobile" />
+              <div className="es-header-sep es-hide-mobile" />
+            </>
+          )}
 
           {/* ── Edit group: content manipulation ── */}
           <div className="es-btn-group es-hide-mobile">
@@ -607,13 +691,24 @@ export default function EditorShell({
             >
               <Search size={14} />
             </button>
-            <button
-              className={`es-icon-btn${selectionMode ? ' es-icon-btn--active' : ''}`}
-              onClick={() => setSelectionMode(m => !m)}
-              title="Select element to inspect"
-            >
-              <MousePointer2 size={14} />
-            </button>
+            {proPanelsEnabled && (
+              <>
+                <button
+                  className={`es-icon-btn${selectionMode ? ' es-icon-btn--active' : ''}`}
+                  onClick={() => setSelectionMode(m => !m)}
+                  title="Select element to inspect (V)"
+                >
+                  <MousePointer2 size={14} />
+                </button>
+                <button
+                  className={`es-icon-btn${handTool ? ' es-icon-btn--active' : ''}`}
+                  onClick={() => setHandTool(h => !h)}
+                  title="Hand tool — drag to pan (H)"
+                >
+                  <Hand size={14} />
+                </button>
+              </>
+            )}
           </div>
 
           <div className="es-header-sep es-hide-mobile" />
@@ -636,12 +731,25 @@ export default function EditorShell({
           {/* ── App controls ── */}
           <ThemeToggleButton theme={theme} onClick={onToggleTheme} iconSize={14} />
           <div className="es-hide-mobile"><SettingsPanel /></div>
-          {user && <UserMenu user={user} onSignOut={onSignOut} />}
+          {user
+            ? <UserMenu user={user} onSignOut={onSignOut} />
+            : onRequestAuth && (
+                <button className="home-admin-btn" onClick={onRequestAuth} title="Sign in to save your work">
+                  <span>Sign In</span>
+                </button>
+              )}
           <button className="es-icon-btn es-icon-btn--danger" onClick={onClear} title="Close document">
             <X size={16} />
           </button>
         </div>
       </header>
+
+      {/* Saved-flash pill — brief confirmation after inline edit commits */}
+      {savedFlash && (
+        <div className="es-saved-flash" role="status" aria-live="polite">
+          Saved
+        </div>
+      )}
 
       {/* Selection mode strip */}
       {selectionMode && (
@@ -714,23 +822,25 @@ export default function EditorShell({
             >
             {/* ── 🚧 CONTINUOUS SCROLL VIEW 🚧 ── */}
             <div className="flex flex-col gap-12 pb-32 items-center w-full min-h-screen">
-              
+
               {/* ── Cover Page (0) ── */}
               {((activePage === 0 && !hasResult) || hasCover) && (
                 <div data-page="0" className="page-wrapper w-full flex justify-center scroll-mt-6" id="page-0">
                   {hasCover ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', width: '100%' }}>
-                      {/* Cover toolbar — sits ABOVE the A4 page, always clickable */}
-                      <div style={{ display: 'flex', gap: '0.4rem', zIndex: 40, position: 'relative' }}>
+                      {/* Cover toolbar — icon-only, compact */}
+                      <div style={{ display: 'flex', gap: '0.25rem', zIndex: 40, position: 'relative' }}>
                         <button
-                          style={{ background: 'var(--t-surface2)', color: 'var(--t-text)', border: '1px solid var(--t-border)', borderRadius: '6px', padding: '5px 12px', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                          className="es-cover-icon-btn"
+                          title="Edit Cover"
                           onClick={() => setRightDrawer('cover')}
-                        >↺ Edit Cover</button>
+                        ><Undo2 size={13} /></button>
                         {onDeleteCover && (
                           <button
-                            style={{ background: 'rgba(180,20,20,0.12)', color: '#b91c1c', border: '1px solid rgba(180,20,20,0.35)', borderRadius: '6px', padding: '5px 10px', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                            className="es-cover-icon-btn es-cover-icon-btn--del"
+                            title="Delete Cover"
                             onClick={() => setShowDeleteCoverConfirm(true)}
-                          ><Trash2 size={11} /> Delete Cover</button>
+                          ><Trash2 size={13} /></button>
                         )}
                       </div>
                       <div className="es-doc-wrap">
@@ -746,9 +856,18 @@ export default function EditorShell({
                     </div>
                   ) : (
                     <div className="es-doc-wrap" style={{ position: 'relative' }}>
-                      <div style={{ width: `${activePageDim.widthMm}mm`, minHeight: `${activePageDim.heightMm}mm`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', background: 'var(--t-surface)', borderRadius: '2px', boxShadow: '0 2px 12px rgba(0,0,0,.15)', color: 'var(--t-text3)', fontSize: '0.85rem' }}>
-                        <Sparkles size={28} style={{ opacity: 0.35 }} />
-                        <span>Use the panel on the right to generate your cover</span>
+                      <div style={{ width: `${activePageDim.widthMm}mm`, minHeight: `${activePageDim.heightMm}mm`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1rem', background: 'var(--t-surface)', borderRadius: '2px', boxShadow: '0 2px 12px rgba(0,0,0,.15)', color: 'var(--t-text3)', fontSize: '0.875rem' }}>
+                        <Sparkles size={32} style={{ opacity: 0.3 }} />
+                        <div style={{ textAlign: 'center', lineHeight: 1.5 }}>
+                          <div style={{ fontWeight: 600, color: 'var(--t-text2)', marginBottom: '0.25rem' }}>No cover page yet</div>
+                          <div style={{ fontSize: '0.8rem' }}>Generate an AI cover or build one manually</div>
+                        </div>
+                        <button
+                          onClick={() => setRightDrawer('cover')}
+                          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1.1rem', borderRadius: '8px', background: 'var(--t-primary)', color: '#fff', border: 'none', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}
+                        >
+                          <Sparkles size={13} /> Generate Cover
+                        </button>
                       </div>
                     </div>
                   )}
@@ -933,14 +1052,16 @@ export default function EditorShell({
             onCopyAllText={onCopyAllText}
             onCancel={onCancel}
             onImageQualityChange={onImageQualityChange}
-            onCoverPage={() => changePage(0)}
+            onCoverPage={proPanelsEnabled ? () => { changePage(0); setRightDrawer('cover'); } : undefined}
+            isGuest={isGuest}
           />
         </main>
 
-        {/* ── Right drawer ────────────────────────────────────────────── */}
-        <RightDrawer
+        {/* ── Right drawer (pro panels only) ─────────────────────────── */}
+        {proPanelsEnabled && <RightDrawer
           open={!!rightDrawer}
           title={drawerTitle}
+          statusLine={drawerStatus}
           onClose={() => setRightDrawer(null)}
           mobile={isMobile}
           hideHeader={rightDrawer === 'agent'}
@@ -959,10 +1080,18 @@ export default function EditorShell({
               extractedPages={new Set(Object.keys(pageResults).map(Number))}
               executor={canvasExecutor}
               onNavigatePage={changePage}
+              onApplyCover={(html) => { onEdit(0, html); changePage(0); }}
               onSave={onSave}
               onDownloadPDF={onDownloadPDF}
               onClose={() => setRightDrawer(null)}
               fileName={fileName}
+              selection={elementStyles && elementStyles.id
+                ? { id: elementStyles.id, tag: elementStyles.tag }
+                : null}
+              onClearSelection={() => {
+                setElementStyles(null);
+                setSelectionMode(false);
+              }}
             />
           )}
           {rightDrawer === 'inspector' && (
@@ -986,7 +1115,7 @@ export default function EditorShell({
               activeCoverSide={activePage === -1 ? 'back' : 'front'}
               blocks={coverBlocks}
               selId={coverSelId}
-              firstPageScan={pageImages[0] ? `data:image/jpeg;base64,${pageImages[0]}` : undefined}
+
               onSelect={setCoverSelId}
               onUpdate={handleCoverUpdate}
               onAdd={handleCoverAdd}
@@ -1004,7 +1133,7 @@ export default function EditorShell({
               onEdit={onEdit}
             />
           )}
-        </RightDrawer>
+        </RightDrawer>}
 
       </div>
 

@@ -49,10 +49,12 @@ export default function SplitPageView({
   const rafRef     = useRef<number>(0);
   const drawingRef = useRef(false);   // mutable, avoids stale closure issues
   const startRef   = useRef<{ x: number; y: number } | null>(null);
-  
+
   // Ghost overlay state
   const [ghosting, setGhosting] = useState(false);
   const [ghostPos, setGhostPos] = useState({ x: 0, y: 0 });
+  // Post-insert toast with one-click Undo (falls back to Ctrl+Z otherwise).
+  const [insertToast, setInsertToast] = useState<{ label: string } | null>(null);
 
   // Selection state
   const [rect,       setRect]       = useState<NormRect | null>(null);
@@ -250,6 +252,7 @@ export default function SplitPageView({
     const placed = docRef.current?.insertImage(dataUrl, desc.trim() || 'image from scan');
     if (placed) {
       clearSel();
+      setInsertToast({ label: withRestore ? 'AI-restored image inserted' : 'Image inserted' });
     } else {
       // No placeholder found — enter ghost mode so user can click to place
       setCropUrl(dataUrl);
@@ -257,12 +260,19 @@ export default function SplitPageView({
     }
   }, [cropUrl, rect, imageQuality, desc, clearSel]);
 
+  // Auto-dismiss the insert toast after 5s
+  useEffect(() => {
+    if (!insertToast) return;
+    const t = setTimeout(() => setInsertToast(null), 5000);
+    return () => clearTimeout(t);
+  }, [insertToast]);
+
   // ── Global mouse listener for Ghost Overlay ──────────────────────────────
   useEffect(() => {
     if (!ghosting || !cropUrl) return;
 
     const onMove = (e: MouseEvent) => setGhostPos({ x: e.clientX, y: e.clientY });
-    
+
     const onClick = (e: MouseEvent) => {
       // Find the document panel
       const docPage = document.getElementById(`page-${pageNumber}`);
@@ -271,6 +281,7 @@ export default function SplitPageView({
         docRef.current?.insertImage(cropUrl, desc.trim() || 'image from scan');
         clearSel();
         setGhosting(false);
+        setInsertToast({ label: 'Image placed' });
       }
     };
 
@@ -300,9 +311,22 @@ export default function SplitPageView({
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
+      {/* ── Post-insert toast with one-click Undo ── */}
+      {insertToast && (
+        <div className="crop-insert-toast" role="status">
+          <span>{insertToast.label}</span>
+          <button
+            className="crop-insert-toast-btn"
+            onClick={() => { docRef.current?.undo(); setInsertToast(null); }}
+          >
+            Undo
+          </button>
+        </div>
+      )}
+
       {/* ── Ghost Overlay Rendering ── */}
       {ghosting && cropUrl && (
-        <div 
+        <div
           className="fixed pointer-events-none z-[9999] opacity-60 mix-blend-multiply drop-shadow-2xl transition-transform duration-75"
           style={{
             left: ghostPos.x,

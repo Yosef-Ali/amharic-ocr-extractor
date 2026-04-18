@@ -10,9 +10,11 @@ interface Props {
   mobile?: boolean;
   /** Hide the drawer's built-in header (use when child has its own header) */
   hideHeader?: boolean;
+  /** Optional short status line shown under the drawer title (e.g. "Page 2 · heading selected") */
+  statusLine?: string | null;
 }
 
-export default function RightDrawer({ open, title, onClose, children, mobile = false, hideHeader = false }: Props) {
+export default function RightDrawer({ open, title, onClose, children, mobile = false, hideHeader = false, statusLine = null }: Props) {
   // Close on Escape
   useEffect(() => {
     if (!open) return;
@@ -37,7 +39,10 @@ export default function RightDrawer({ open, title, onClose, children, mobile = f
       >
         {!hideHeader && (
           <header className="rd-header">
-            <h3 className="rd-title">{title}</h3>
+            <div className="rd-title-wrap">
+              <h3 className="rd-title">{title}</h3>
+              {statusLine && <span className="rd-status">{statusLine}</span>}
+            </div>
             <button className="rd-close" onClick={onClose} aria-label="Close">
               <X size={16} />
             </button>

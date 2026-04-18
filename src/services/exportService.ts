@@ -16,7 +16,7 @@
  * Trigger: auto-saved whenever any user saves a document.
  */
 
-import { sql } from '../lib/neon';
+import { authFetch } from '../lib/apiClient';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -195,116 +195,51 @@ export function buildDocumentExport(
 }
 
 // ---------------------------------------------------------------------------
-// DB helpers
+// DB helpers — all routed through server-side API
 // ---------------------------------------------------------------------------
-let _schemaPromise: Promise<void> | null = null;
-function ensureTable(): Promise<void> {
-  return (_schemaPromise ??= sql`
-    CREATE TABLE IF NOT EXISTS ai_exports (
-      id            TEXT PRIMARY KEY,
-      document_name TEXT        NOT NULL,
-      user_id       TEXT        NOT NULL,
-      page_count    INTEGER     NOT NULL DEFAULT 0,
-      chunk_count   INTEGER     NOT NULL DEFAULT 0,
-      languages     TEXT[]      NOT NULL DEFAULT '{}',
-      export_json   JSONB       NOT NULL,
-      exported_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `.then(() => {}));
-}
 
 // ---------------------------------------------------------------------------
 // Upsert export — called on every Save (so admin always has latest version)
 // ---------------------------------------------------------------------------
 export async function saveDocumentExport(
   docId:     string,
-  userId:    string,
   exported:  ExportDocument,
 ): Promise<void> {
-  await ensureTable();
-  const { document: meta, chunks } = exported;
-  await sql`
-    INSERT INTO ai_exports
-      (id, document_name, user_id, page_count, chunk_count, languages, export_json, exported_at, updated_at)
-    VALUES (
-      ${docId}, ${meta.name}, ${userId},
-      ${meta.totalPages}, ${meta.chunkCount},
-      ${meta.languages as unknown as string},
-      ${JSON.stringify({ document: meta, chunks })}::jsonb,
-      NOW(), NOW()
-    )
-    ON CONFLICT (id) DO UPDATE
-      SET document_name = EXCLUDED.document_name,
-          page_count    = EXCLUDED.page_count,
-          chunk_count   = EXCLUDED.chunk_count,
-          languages     = EXCLUDED.languages,
-          export_json   = EXCLUDED.export_json,
-          updated_at    = NOW()
-  `;
+  await authFetch('/api/exports?action=save', {
+    method: 'POST',
+    body: JSON.stringify({ docId, exported }),
+  });
 }
 
 // ---------------------------------------------------------------------------
 // Admin — list all exports (no large JSON payloads)
 // ---------------------------------------------------------------------------
 export async function listExports(): Promise<ExportMeta[]> {
-  await ensureTable();
-  const rows = await sql`
-    SELECT e.id, e.document_name, e.user_id, e.page_count, e.chunk_count,
-           e.languages, e.exported_at, e.updated_at,
-           COALESCE(u.email, e.user_id) AS user_email
-    FROM   ai_exports e
-    LEFT JOIN users u ON u.id = e.user_id
-    ORDER  BY e.updated_at DESC
-  `;
-  return rows.map(r => ({
-    id:           r.id            as string,
-    documentName: r.document_name as string,
-    userId:       r.user_id       as string,
-    userEmail:    r.user_email    as string | undefined,
-    pageCount:    r.page_count    as number,
-    chunkCount:   r.chunk_count   as number,
-    languages:    (r.languages    as string[] | null) ?? [],
-    exportedAt:   r.exported_at   as string,
-    updatedAt:    r.updated_at    as string,
-  }));
+  const res = await authFetch('/api/exports?action=list');
+  return res.json();
 }
 
 // ---------------------------------------------------------------------------
 // Admin — fetch full JSON for one document
 // ---------------------------------------------------------------------------
 export async function getExportJson(docId: string): Promise<ExportDocument | null> {
-  await ensureTable();
-  const rows = await sql`SELECT export_json FROM ai_exports WHERE id = ${docId} LIMIT 1`;
-  if (!rows.length) return null;
-  const p = rows[0].export_json as { document: ExportDocument['document']; chunks: ContentChunk[] };
-  return { document: p.document, chunks: p.chunks, fullText: p.chunks.map(c => c.text).join('\n') };
+  const res = await authFetch(`/api/exports?action=get&docId=${encodeURIComponent(docId)}`);
+  return res.json();
 }
 
 // ---------------------------------------------------------------------------
 // Admin — delete export
 // ---------------------------------------------------------------------------
 export async function deleteExport(docId: string): Promise<void> {
-  await ensureTable();
-  await sql`DELETE FROM ai_exports WHERE id = ${docId}`;
+  await authFetch(`/api/exports?action=delete&docId=${encodeURIComponent(docId)}`, { method: 'DELETE' });
 }
 
 // ---------------------------------------------------------------------------
 // Admin — aggregate stats
 // ---------------------------------------------------------------------------
 export async function getExportStats(): Promise<{ totalExports: number; totalChunks: number; totalPages: number }> {
-  await ensureTable();
-  const rows = await sql`
-    SELECT COUNT(*)::int                      AS total_exports,
-           COALESCE(SUM(chunk_count), 0)::int AS total_chunks,
-           COALESCE(SUM(page_count),  0)::int AS total_pages
-    FROM   ai_exports
-  `;
-  return {
-    totalExports: rows[0].total_exports as number,
-    totalChunks:  rows[0].total_chunks  as number,
-    totalPages:   rows[0].total_pages   as number,
-  };
+  const res = await authFetch('/api/exports?action=stats');
+  return res.json();
 }
 
 // ---------------------------------------------------------------------------
@@ -357,53 +292,147 @@ export function downloadAsText(
 }
 
 // ---------------------------------------------------------------------------
-// Download as .docx — uses simple HTML-to-DOCX via Mammoth-compatible Blob
+// Download as .docx — real Word document using the docx package
 // ---------------------------------------------------------------------------
-export function downloadAsDocx(
+
+/** Parse HTML string into DOM elements via DOMParser, stripping non-content nodes. */
+function htmlToElements(html: string): Element[] {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('.ai-image-placeholder, button, img, svg, style, script').forEach(el => el.remove());
+  return Array.from(doc.body.children);
+}
+
+/** Convert a single DOM element to docx Paragraph(s). */
+function elementToParagraphs(
+  el: Element,
+  docx: { Paragraph: typeof import('docx').Paragraph; TextRun: typeof import('docx').TextRun; HeadingLevel: typeof import('docx').HeadingLevel; AlignmentType: typeof import('docx').AlignmentType },
+): import('docx').Paragraph[] {
+  const { Paragraph, TextRun, HeadingLevel, AlignmentType } = docx;
+  const tag = el.tagName?.toLowerCase() ?? '';
+  const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+  if (!text) return [];
+
+  // Heading detection
+  const headingMap: Record<string, (typeof HeadingLevel)[keyof typeof HeadingLevel]> = {
+    h1: HeadingLevel.HEADING_1,
+    h2: HeadingLevel.HEADING_2,
+    h3: HeadingLevel.HEADING_3,
+    h4: HeadingLevel.HEADING_4,
+    h5: HeadingLevel.HEADING_5,
+    h6: HeadingLevel.HEADING_6,
+  };
+
+  if (headingMap[tag]) {
+    return [new Paragraph({
+      heading: headingMap[tag],
+      children: [new TextRun({ text, font: 'Noto Serif Ethiopic', bold: true })],
+      alignment: AlignmentType.CENTER,
+    })];
+  }
+
+  // List items — flatten into bullet paragraphs
+  if (tag === 'ul' || tag === 'ol') {
+    return Array.from(el.querySelectorAll('li')).map(li => {
+      const liText = (li.textContent ?? '').trim();
+      if (!liText) return null;
+      return new Paragraph({
+        bullet: { level: 0 },
+        children: [new TextRun({ text: liText, font: 'Noto Serif Ethiopic', size: 24 })],
+      });
+    }).filter(Boolean) as import('docx').Paragraph[];
+  }
+
+  // Table — flatten cells into a single paragraph (docx tables are complex, keep it simple)
+  if (tag === 'table') {
+    const cells = Array.from(el.querySelectorAll('td, th'))
+      .map(c => (c.textContent ?? '').trim())
+      .filter(Boolean);
+    if (!cells.length) return [];
+    return [new Paragraph({
+      children: [new TextRun({ text: cells.join(' | '), font: 'Noto Serif Ethiopic', size: 24 })],
+    })];
+  }
+
+  // Paragraph or generic block — detect bold/italic from inline styles or tags
+  const hasBold = el.querySelector('b, strong') !== null ||
+    (el as HTMLElement).style?.fontWeight === 'bold' ||
+    (el as HTMLElement).style?.fontWeight === '900';
+  const hasItalic = el.querySelector('i, em') !== null ||
+    (el as HTMLElement).style?.fontStyle === 'italic';
+
+  return [new Paragraph({
+    children: [new TextRun({
+      text,
+      font: 'Noto Serif Ethiopic',
+      size: 24, // 12pt
+      bold: hasBold,
+      italics: hasItalic,
+    })],
+    alignment: AlignmentType.JUSTIFIED,
+    spacing: { after: 160 }, // 8pt
+  })];
+}
+
+export async function downloadAsDocx(
   pageResults: Record<number, string>,
   fileName:    string,
-): void {
+): Promise<void> {
+  const { Document, Packer, Paragraph, TextRun, PageBreak, AlignmentType, HeadingLevel } = await import('docx');
+  const { saveAs } = await import('file-saver');
+
   const sortedKeys = Object.keys(pageResults)
     .map(Number)
     .filter(n => n > 0)
     .sort((a, b) => a - b);
 
-  // Build clean HTML body with Amharic font
-  const pages: string[] = [];
-  for (const pageNum of sortedKeys) {
+  const allParagraphs: import('docx').Paragraph[] = [];
+
+  for (let i = 0; i < sortedKeys.length; i++) {
+    const pageNum = sortedKeys[i];
     const html = pageResults[pageNum];
     if (!html?.trim()) continue;
-    // Clean up: remove buttons, image placeholders
-    const cleaned = html
-      .replace(/<button[^>]*>.*?<\/button>/gi, '')
-      .replace(/<div[^>]*class="ai-image-placeholder"[^>]*>.*?<\/div>/gi, '');
-    pages.push(
-      `<div style="page-break-after: always;">`
-      + `<p style="color: #999; font-size: 10pt; margin-bottom: 12pt;">Page ${pageNum}</p>`
-      + cleaned
-      + `</div>`
-    );
+
+    // Page separator header
+    allParagraphs.push(new Paragraph({
+      children: [new TextRun({ text: `Page ${pageNum}`, color: '999999', size: 20, font: 'Arial' })],
+      spacing: { after: 240 },
+      alignment: AlignmentType.LEFT,
+    }));
+
+    // Convert HTML elements to docx paragraphs
+    const elements = htmlToElements(html);
+    for (const el of elements) {
+      allParagraphs.push(...elementToParagraphs(el, { Paragraph, TextRun, HeadingLevel, AlignmentType }));
+    }
+
+    // Page break between pages (except last)
+    if (i < sortedKeys.length - 1) {
+      allParagraphs.push(new Paragraph({
+        children: [new PageBreak()],
+      }));
+    }
   }
 
-  const fullHtml = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-  body { font-family: 'Noto Serif Ethiopic', 'Noto Sans Ethiopic', serif; font-size: 12pt; line-height: 1.6; }
-  h1,h2,h3 { font-weight: bold; }
-  p { margin-bottom: 8pt; text-align: justify; }
-</style>
-</head>
-<body>${pages.join('\n')}</body>
-</html>`;
+  const doc = new Document({
+    sections: [{
+      properties: {},
+      children: allParagraphs,
+    }],
+    styles: {
+      default: {
+        document: {
+          run: {
+            font: 'Noto Serif Ethiopic',
+            size: 24, // 12pt
+          },
+          paragraph: {
+            spacing: { line: 384 }, // 1.6x line height (240 * 1.6)
+          },
+        },
+      },
+    },
+  });
 
-  // Create a .doc file (Word can open HTML saved as .doc)
-  const blob = new Blob([fullHtml], { type: 'application/msword' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = fileName.replace(/\.[^.]+$/, '') + '.doc';
-  a.click();
-  URL.revokeObjectURL(url);
+  const blob = await Packer.toBlob(doc);
+  saveAs(blob, fileName.replace(/\.[^.]+$/, '') + '.docx');
 }

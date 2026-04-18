@@ -5,7 +5,9 @@
 import type { CanvasExecutor } from './canvasExecutor';
 
 const WS_URL = 'ws://localhost:3001';
-const RECONNECT_DELAY_MS = 3000;
+const RECONNECT_BASE_MS = 3000;
+const RECONNECT_MAX_MS  = 30_000;
+const RECONNECT_MAX_ATTEMPTS = 10;
 
 type WsToolCall = {
   type: 'tool_call';
@@ -23,6 +25,7 @@ export class WsBridge {
   private listeners: StatusListener[] = [];
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
+  private attempts = 0;
 
   constructor(executor: CanvasExecutor) {
     this.executor = executor;
@@ -56,6 +59,7 @@ export class WsBridge {
       this.ws = ws;
 
       ws.onopen = () => {
+        this.attempts = 0;   // reset backoff on successful connection
         this.emit(true);
         // Keep-alive ping every 20s
         const ping = setInterval(() => {
@@ -100,7 +104,14 @@ export class WsBridge {
 
   private scheduleReconnect() {
     if (this.stopped) return;
-    this.reconnectTimer = setTimeout(() => this.connect(), RECONNECT_DELAY_MS);
+    this.attempts += 1;
+    if (this.attempts > RECONNECT_MAX_ATTEMPTS) {
+      // MCP relay is not running — stop trying to avoid console spam.
+      // Reconnection resumes if the page is reloaded.
+      return;
+    }
+    const delay = Math.min(RECONNECT_BASE_MS * 2 ** (this.attempts - 1), RECONNECT_MAX_MS);
+    this.reconnectTimer = setTimeout(() => this.connect(), delay);
   }
 
   private emit(connected: boolean) {

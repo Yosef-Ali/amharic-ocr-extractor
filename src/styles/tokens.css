@@ -1,0 +1,137 @@
+/* Auto-partitioned from src/index.css by scripts/split_css.py.
+   Original file was 9,391 lines — this slice is scoped to one feature area. */
+
+/* ──────────────────────────────────────────────
+   Fonts — Noto Serif Ethiopic for Amharic text
+   ────────────────────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+Ethiopic:wdth,wght@75..125,100..900&family=Noto+Sans+Ethiopic:wdth,wght@75..125,100..900&display=swap');
+
+
+/* ──────────────────────────────────────────────
+   Theme — CSS custom properties
+   Light: :root  |  Dark: [data-theme="dark"]
+   ────────────────────────────────────────────── */
+
+:root {
+  --t-bg:         #f8fafc;
+  --t-bg-dot:     #e2e8f0;
+  --t-surface:    #ffffff;
+  --t-surface2:   #f8fafc;
+  --t-surface3:   #f1f5f9;
+  --t-border:     #e2e8f0;
+  --t-border2:    #f1f5f9;
+  --t-text:       #0f172a;
+  --t-text2:      #1e293b;
+  --t-text3:      #64748b;
+  --t-text4:      #6b7280;
+  --t-text5:      #cbd5e1;
+  --t-nav-bg:     rgba(255, 255, 255, 0.85);
+  --t-nav-border: rgba(226, 232, 240, 0.8);
+}
+
+
+[data-theme="dark"] {
+  --t-bg:         #080d18;
+  --t-bg-dot:     #111827;
+  --t-surface:    #111827;
+  --t-surface2:   #0d1422;
+  --t-surface3:   #1a2236;
+  --t-border:     #1e2a3a;
+  --t-border2:    #1a2236;
+  --t-text:       #f1f5f9;
+  --t-text2:      #e2e8f0;
+  --t-text3:      #94a3b8;
+  --t-text4:      #64748b;
+  --t-text5:      #334155;
+  --t-nav-bg:     rgba(8, 13, 24, 0.9);
+  --t-nav-border: rgba(30, 42, 58, 0.8);
+}
+
+
+/* ──────────────────────────────────────────────
+   Design System Variables & Global Adjustments
+   ────────────────────────────────────────────── */
+
+@layer base {
+  :root {
+    --app-bg: var(--t-bg);
+    --app-text: var(--t-bg);
+    --accent-red: #ef4444;
+    /* red-500 */
+    --accent-red-hover: #dc2626;
+    /* red-600 */
+  }
+
+  html {
+    scroll-behavior: smooth;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  body {
+    background-color: var(--app-bg);
+    color: var(--app-text);
+    /* Subtle dot pattern for depth */
+    background-image: radial-gradient(var(--t-text2) 1px, transparent 0);
+    background-size: 32px 32px;
+  }
+
+  /* Custom selection color */
+  ::selection {
+    background: rgba(239, 68, 68, 0.2);
+    color: #991b1b;
+  }
+
+  /* Refined scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--t-text2);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--t-text3);
+  }
+}
+
+[data-theme="dark"] .auth-error { color: #fca5a5; }
+
+[data-theme="dark"] .auth-info { color: #86efac; }
+
+[data-theme="dark"] .ap-chip--extract:hover:not(:disabled) { color: #86efac; }
+
+[data-theme="dark"] .ap-chip--ai:hover:not(:disabled) { color: #fdba74; }
+
+[data-theme="dark"] .ap-mode-toggle {
+  background: rgba(255,255,255,.06);
+  border-color: rgba(255,255,255,.08);
+}
+
+[data-theme="dark"] .ap-mode-btn:hover {
+  color: var(--t-text3);
+  background: rgba(255,255,255,.05);
+}
+
+[data-theme="dark"] .ap-mode-btn.active {
+  background: rgba(255,255,255,.12);
+  box-shadow: 0 1px 4px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.08);
+  color: #e0e7ff;
+}
+
+[data-theme="dark"] .ap-mode-btn.active svg { color: #818cf8; }
+
+[data-theme="dark"] .ap-md-code { color: #a5b4fc; background: rgba(99,102,241,.15); }
+
+[data-theme="dark"] .cpg-error {
+  background: rgba(220,38,38,.1); border-color: rgba(220,38,38,.25);
+}
+
+[data-theme="dark"] .cov-chip--on { background: #1e1b4b; color: #a5b4fc; }

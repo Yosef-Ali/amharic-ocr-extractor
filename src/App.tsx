@@ -9,14 +9,15 @@ import AuthScreen    from './components/AuthScreen';
 
 import { pdfToImages, imageFileToBase64, detectFileType, docxToHtmlPages, textToHtmlPages, type PageDimension } from './services/pdfService';
 import { extractPageHTML, autoFillImagePlaceholders, type ImageQuality } from './services/geminiService';
-import { saveDocument, initStorage, initializeSchema, loadDocumentContent, loadDocumentPageImage, QuotaExceededError, type SavedDocument } from './services/storageService';
+import { saveDocument, initializeSchema, loadDocumentContent, loadDocumentPageImage, QuotaExceededError, type SavedDocument } from './services/storageService';
 import { buildDocumentExport, saveDocumentExport, downloadAsText, downloadAsDocx } from './services/exportService';
 import { AI_DATA_EXPORT_KEY } from './components/editor/SettingsPanel';
 import { Loader2 } from 'lucide-react';
 import { CanvasExecutor } from './services/canvasExecutor';
 import { WsBridge }      from './services/wsBridge';
-import { ensureUsersTable, upsertUser, checkUserBlocked } from './services/adminService';
+import { upsertUser } from './services/adminService';
 import { authClient } from './lib/neonAuth';
+import { setAccessToken } from './lib/apiClient';
 import { useTheme } from './hooks/useTheme';
 
 type NeonUser = { id: string; email?: string; name?: string };
@@ -83,14 +84,14 @@ export default function App() {
   const syncAuthState = useCallback(async () => {
     const result = await (authClient as any).getSession();
     const u = result?.data?.user ?? null;
+    // @neondatabase/auth returns data.session.token (not data.accessToken)
+    const accessToken = result?.data?.session?.token ?? null;
     setNeonUser(u);
-    initStorage(u?.id ?? null);
-    if (u?.id) initializeSchema().catch(() => {/* best-effort */});
-    if (u?.id && u?.email) {
+    setAccessToken(accessToken);
+    if (accessToken) initializeSchema().catch(() => {/* best-effort */});
+    if (u?.id && u?.email && accessToken) {
       try {
-        await ensureUsersTable();
-        await upsertUser(u.id, u.email, u.name);
-        const blocked = await checkUserBlocked(u.id);
+        const { blocked } = await upsertUser(u.id, u.email, u.name);
         setIsBlocked(blocked);
       } catch (e) {
         console.error(e);
@@ -112,19 +113,20 @@ export default function App() {
       if (isRestoringSession) setIsRestoringSession(false);
       return;
     }
-    
+
     let isCancelled = false;
     const restoreSession = async () => {
       try {
         const fullDoc = await loadDocumentContent(activeDocId);
         if (isCancelled) return;
+        const images = fullDoc.pageImages ?? new Array(fullDoc.pageCount ?? 0).fill('');
         setActiveDocId(activeDocId);
         setFileName(fullDoc.name);
-        setPageImages(fullDoc.pageImages);
-        setPageResults(fullDoc.pageResults);
-        setPageDimensions(fullDoc.pageImages.map(() => ({ widthMm: 210, heightMm: 297 })));
+        setPageImages(images);
+        setPageResults(fullDoc.pageResults ?? {});
+        setPageDimensions(images.map(() => ({ widthMm: 210, heightMm: 297 })));
         setFromPage(1);
-        setToPage(fullDoc.pageCount);
+        setToPage(fullDoc.pageCount ?? images.length);
       } catch (err) {
         console.warn('Failed to restore document session:', err);
         localStorage.removeItem('aoe_active_doc');
@@ -132,7 +134,7 @@ export default function App() {
         if (!isCancelled) setIsRestoringSession(false);
       }
     };
-    
+
     restoreSession();
     return () => { isCancelled = true; };
   }, [authLoading, neonUser]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -140,7 +142,7 @@ export default function App() {
   const handleSignOut = useCallback(async () => {
     await (authClient as any).signOut();
     setNeonUser(null);
-    initStorage(null);
+    setAccessToken(null);
   }, []);
 
   const handleAuthSuccess = useCallback(async () => {
@@ -167,6 +169,7 @@ export default function App() {
   const [activePage,       setActivePage]       = useState(1);
   const [pendingAutoSave,  setPendingAutoSave]  = useState(false);
   const [showAdmin,        setShowAdmin]        = useState(false);
+  const [showAuthModal,    setShowAuthModal]    = useState(false);
 
   // ── Warn before closing with unsaved changes ──
   useEffect(() => {
@@ -179,9 +182,9 @@ export default function App() {
 
   // ── Auto-save after extraction completes ──
   useEffect(() => {
-    if (!pendingAutoSave) return;
+    if (!pendingAutoSave || isSaving) return;
     setPendingAutoSave(false);
-    // Small delay so the UI settles before save starts
+    if (!neonUser) return;  // skip auto-save if not authenticated
     const timer = setTimeout(() => {
       handleSave();
     }, 500);
@@ -200,7 +203,7 @@ export default function App() {
   useEffect(() => {
     if (!activeDocId || activePage < 1) return;
     const currentImg = pageImages[activePage - 1];
-    
+
     if (currentImg === '') {
       let isCancelled = false;
       const fetchImage = async () => {
@@ -216,7 +219,7 @@ export default function App() {
           console.warn('Failed to lazy-load image:', err);
         }
       };
-      
+
       fetchImage();
       return () => { isCancelled = true; };
     }
@@ -305,6 +308,11 @@ export default function App() {
     ?.split(',').map(e => e.trim().toLowerCase()).filter(Boolean) ?? [];
   const isAdmin = adminEmails.length > 0 && !!neonUser?.email &&
     adminEmails.includes(neonUser.email.toLowerCase());
+
+  // Pro-panel feature flag — cover editor, homophone panel, agent chat,
+  // inspector, selection/hand tool. Default ON; set VITE_ENABLE_PRO_PANELS=false
+  // to hide them for wedge-focused pilots.
+  const proPanelsEnabled = String(import.meta.env.VITE_ENABLE_PRO_PANELS ?? 'true') !== 'false';
 
   const hasFile = !!fileName;
 
@@ -569,6 +577,7 @@ export default function App() {
   // Save to library
   // -------------------------------------------------------------------------
   const handleSave = async () => {
+    if (!neonUser) { setShowAuthModal(true); return; }
     setIsSaving(true);
     try {
       const docId = await saveDocument(activeDocId, fileName, pageImages, pageResults);
@@ -578,7 +587,7 @@ export default function App() {
       setIsDirty(false);
       // Persist AI-data export in the background when the user has opted in
       if (neonUser && docId && localStorage.getItem(AI_DATA_EXPORT_KEY) === 'true') {
-        void saveDocumentExport(docId, neonUser.id, buildDocumentExport(docId, fileName, pageResults))
+        void saveDocumentExport(docId, buildDocumentExport(docId, fileName, pageResults))
           .catch(() => { /* non-critical */ });
       }
     } catch (err) {
@@ -596,25 +605,21 @@ export default function App() {
     }
   };
 
-  // Auto-save after extraction completes
-  useEffect(() => {
-    if (!pendingAutoSave || isSaving) return;
-    setPendingAutoSave(false);
-    handleSave();
-  }, [pendingAutoSave]); // eslint-disable-line react-hooks/exhaustive-deps
+  // (auto-save effect is above, near pendingAutoSave declaration)
 
   // -------------------------------------------------------------------------
   // Load from library
   // -------------------------------------------------------------------------
   const handleLoad = (doc: SavedDocument) => {
+    const images = doc.pageImages ?? new Array(doc.pageCount ?? 0).fill('');
     setActiveDocId(doc.id);
     setFileName(doc.name);
-    setPageImages(doc.pageImages);
-    setPageResults(doc.pageResults);
+    setPageImages(images);
+    setPageResults(doc.pageResults ?? {});
     // Loaded documents don't store dimensions yet — default to A4
-    setPageDimensions(doc.pageImages.map(() => ({ widthMm: 210, heightMm: 297 })));
+    setPageDimensions(images.map(() => ({ widthMm: 210, heightMm: 297 })));
     setFromPage(1);
-    setToPage(doc.pageCount);
+    setToPage(doc.pageCount ?? images.length);
     localStorage.setItem('aoe_active_doc', doc.id);
   };
 
@@ -705,7 +710,11 @@ export default function App() {
   }, [isDirty]);
 
   const handleShowAdmin   = useCallback(() => setShowAdmin(true), []);
-  const handleShowLibrary = useCallback(() => setShowLibrary(true), []);
+  const handleShowLibrary = useCallback(() => {
+    if (!neonUser) { setShowAuthModal(true); return; }
+    setShowLibrary(true);
+  }, [neonUser]);
+  const handleRequestAuth = useCallback(() => setShowAuthModal(true), []);
   const handleCancel      = useCallback(() => { cancelRef.current = true; }, []);
   const handleError       = useCallback((msg: string) => setToast({ id: Date.now().toString(), message: msg, variant: 'error' }), []);
   const handleDismissToast = useCallback(() => setToast(null), []);
@@ -722,10 +731,12 @@ export default function App() {
   if (authLoading) {
     return <div className="auth-splash"><div className="auth-splash-spinner" /></div>;
   }
-  if (!neonUser) {
-    return <AuthScreen onSuccess={handleAuthSuccess} />;
+  // Wedge unlock: guests can upload/extract/export. Save + Library require auth.
+  const isGuest = !neonUser;
+  if (showAuthModal) {
+    return <AuthScreen onSuccess={async () => { await handleAuthSuccess(); setShowAuthModal(false); }} />;
   }
-  if (isBlocked) {
+  if (neonUser && isBlocked) {
     return (
       <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'100vh', gap:'1rem', background:'var(--t-bg)', color:'var(--t-text)' }}>
         <div style={{ fontSize:'2.5rem' }}>🚫</div>
@@ -769,6 +780,7 @@ export default function App() {
           onSignOut={handleSignOut}
           isAdmin={isAdmin}
           onOpenAdmin={handleShowAdmin}
+          onRequestAuth={handleRequestAuth}
         />
         {showAdmin && <Suspense fallback={<div style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.5)',zIndex:999}}><Loader2 size={32} className="animate-spin" style={{color:'#6366f1'}} /></div>}><AdminPanel onClose={() => setShowAdmin(false)} /></Suspense>}
         <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 w-[350px] pointer-events-none">
@@ -785,6 +797,9 @@ export default function App() {
 
       {/* ── Full-viewport editor layout ── */}
       <EditorShell
+        proPanelsEnabled={proPanelsEnabled}
+        isGuest={isGuest}
+        onRequestAuth={handleRequestAuth}
         fileName={fileName}
         pageImages={pageImages}
         pageDimensions={pageDimensions}

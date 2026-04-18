@@ -1,10 +1,10 @@
 import { GoogleGenAI } from '@google/genai';
 import { APPROVAL_REQUIRED_TOOLS } from '../types/a2ui';
-import { 
-  buildOcrPrompt, 
-  buildLayoutPrompt, 
-  verifyLayout, 
-  type ChatTurn, 
+import {
+  buildOcrPrompt,
+  buildLayoutPrompt,
+  verifyLayout,
+  type ChatTurn,
   type CanvasContext,
   type BBox,
   type ImageAspectRatio,
@@ -13,6 +13,7 @@ import {
   type ImageQuality
 } from './aiCommon';
 import { anthropicChat, anthropicExtractPageHTML, anthropicEditPage } from './anthropicService';
+import { authFetch } from '../lib/apiClient';
 
 export type { ChatTurn, CanvasContext, BBox, ImageAspectRatio, ImageSize, ImageGenOptions, ImageQuality };
 
@@ -133,30 +134,42 @@ export async function extractPageHTML(
     return anthropicExtractPageHTML(base64Image, previousPageHTML);
   }
 
-  const imagePart = { inlineData: { mimeType: 'image/jpeg', data: base64Image } };
+  // Use server-side OCR proxy to keep API key secure
+  try {
+    const res = await authFetch('/api/ocr', {
+      method: 'POST',
+      body: JSON.stringify({ base64Image, previousPageHTML }),
+    });
+    const { html } = await res.json();
+    // Resolve image placeholders client-side (needs DOMParser)
+    return resolvePlaceholders(html, base64Image);
+  } catch (err) {
+    // Fallback to client-side extraction if API route unavailable (local dev)
+    console.warn('OCR API route failed, falling back to client-side:', err);
+    const imagePart = { inlineData: { mimeType: 'image/jpeg', data: base64Image } };
 
-  // ── Pass 1: OCR — extract raw text (fast model) ──
-  const ocrResponse = await client.models.generateContent({
-    model: OCR_FAST,
-    contents: [{ role: 'user', parts: [imagePart, { text: buildOcrPrompt() }] }],
-  });
+    // ── Pass 1: OCR — extract raw text (fast model) ──
+    const ocrResponse = await client.models.generateContent({
+      model: OCR_FAST,
+      contents: [{ role: 'user', parts: [imagePart, { text: buildOcrPrompt() }] }],
+    });
 
-  const extractedText = ocrResponse.text ?? '';
-  if (!extractedText.trim()) {
-    return '<p style="color:red;text-align:center;font-weight:bold;">⚠️ OCR returned no text for this page.</p>';
+    const extractedText = ocrResponse.text ?? '';
+    if (!extractedText.trim()) {
+      return '<p style="color:red;text-align:center;font-weight:bold;">⚠️ OCR returned no text for this page.</p>';
+    }
+
+    // ── Pass 2: Layout — reconstruct HTML from text + image reference ──
+    const layoutResponse = await client.models.generateContent({
+      model: OCR_FAST,
+      contents: [{ role: 'user', parts: [imagePart, { text: buildLayoutPrompt(extractedText, previousPageHTML) }] }],
+    });
+
+    const layoutHtml = verifyLayout(layoutResponse.text ?? '');
+
+    // ── Pass 3: resolve image placeholders by cropping directly from the scan ──
+    return resolvePlaceholders(layoutHtml, base64Image);
   }
-
-  // ── Pass 2: Layout — reconstruct HTML from text + image reference ──
-  // Use the fast model for batch extraction; pro is reserved for agent/chat editing
-  const layoutResponse = await client.models.generateContent({
-    model: OCR_FAST,
-    contents: [{ role: 'user', parts: [imagePart, { text: buildLayoutPrompt(extractedText, previousPageHTML) }] }],
-  });
-
-  const layoutHtml = verifyLayout(layoutResponse.text ?? '');
-
-  // ── Pass 3: resolve image placeholders by cropping directly from the scan ──
-  return resolvePlaceholders(layoutHtml, base64Image);
 }
 
 // ---------------------------------------------------------------------------
@@ -376,12 +389,59 @@ COLOR PALETTE (CMYK-safe for print):
   Muted:       #44403c   Captions, footnotes
   Light rule:  #e7e5e4   Dividers, borders
 
-WORKFLOW:
-1. Call getDocumentStructure to get element IDs first.
-2. Use batchEdit for coordinated multi-element changes (preferred).
-3. Use editTextBlock for single-element changes.
-4. Call getPageScreenshot to verify key changes visually.
-5. Return a brief 1–2 sentence summary — no HTML, no raw JSON.
+WORKFLOW — TWO SPEEDS:
+
+FAST PATH (default — use this for ≥80% of edits):
+Simple property changes: color, font-size, font-weight, text-align, letter-spacing,
+line-height, margin, padding, or single-word text fixes.
+- Call getDocumentStructure ONCE if you don't already know the target's id/selector.
+- Make the change with ONE editTextBlock call. Done.
+- DO NOT call getPageScreenshot. DO NOT batchEdit a single element. DO NOT re-verify.
+- Respond in ONE short sentence.
+Example: "change title to blue" → getDocumentStructure → editTextBlock(h1, color #1e40af). Stop.
+
+MINIMAL-DIFF RULE (critical — do not clobber the user's layout):
+- Pass ONLY the properties the user asked for. If they said "color", you
+  send color. Nothing else. Do NOT also set fontSize, fontWeight, textAlign,
+  width, margin, padding, or anything not explicitly requested.
+- The TYPOGRAPHY HIERARCHY below is a REFERENCE for NEW content you create
+  from scratch. It is NOT a template to re-apply on every edit. The user's
+  existing size/position/weight is their choice — preserve it.
+- If the existing element already has inline styles (fontSize, width, etc.),
+  leave those untouched. Your editTextBlock call only patches the keys you
+  pass in; every unspecified key is preserved. Keep it that way.
+- Wrong: user says "make title blue" → you send { color, fontSize, fontWeight, textAlign } (resets the title to hierarchy defaults).
+- Right: user says "make title blue" → you send { color } only.
+
+STRUCTURAL PATH (only when the user asks for layout, reorganisation, or multi-element redesign):
+1. getDocumentStructure to get element IDs.
+2. batchEdit for coordinated multi-element changes.
+3. getPageScreenshot ONLY if the user asked you to verify, or you restructured columns/frames.
+4. One short summary sentence.
+
+Rules that apply to both paths:
+- Never call getPageScreenshot more than once per turn.
+- Never call getDocumentStructure twice in a row.
+- No HTML or raw JSON in your reply — the editor shows the result live.
+
+SELECTOR DISCIPLINE (CRITICAL — scope bugs come from sloppy selectors):
+- IF the project context contains a CURRENT SELECTION block with
+  SELECTED_ELEMENT_ID, that id is the target. Use it directly. Do NOT
+  call getDocumentStructure. Do NOT broaden the scope. The user
+  literally clicked that element — they want THAT one changed.
+- NEVER pass selector="root" or selector="" to editTextBlock with a style
+  patch. CSS inherits from the root to every descendant, so "change title
+  color to blue" on the root paints the WHOLE page blue.
+- Always pick the SPECIFIC element's id from getDocumentStructure's tree.
+  "title" → the <h1> (or first <h2> if no <h1>). "paragraph" / "body" →
+  the specific <p>. "image" → the specific <img> / figure.
+- If the user's word is ambiguous ("change the heading" but there are
+  three h2s), prefer the one matching their content hint ("Chapter 1
+  heading"). If still ambiguous, pick the first visible one and mention
+  which one you targeted in your reply sentence.
+- The target is ONE element unless the user explicitly says "all
+  headings", "every paragraph", etc. — in which case use batchEdit with
+  one operation per specific id, not a root-scoped edit.
 
 AMHARIC-SPECIFIC RULES:
 - Always justify body text (text-align: justify).
@@ -830,8 +890,8 @@ export async function chatWithAI(
         'You help users understand, translate, summarize, and work with their scanned documents. ' +
         'When canvas context is provided you can see the current page image and its extracted HTML — ' +
         'use this to answer questions accurately about what the page contains. ' +
-        'The app has a Cover Page Generator powered by NanoBanana 2 (Gemini 3.1 Flash Image) that can generate, improve, or create covers from reference images. ' +
-        'If users ask about cover pages in chat mode, tell them to switch to Layout mode and say "generate a cover page" or use the Cover Page button in the toolbar menu. ' +
+        'The app has a Cover Page Generator powered by NanoBanana 2 (Gemini 3.1 Flash Image) that can generate professional book covers. ' +
+        'If users ask to generate, create, or design a cover page, simply reply: "Opening cover setup for you!" — the system will immediately show the cover generation form. ' +
         'Format responses with markdown: **bold**, *italic*, `code`, bullet lists with "- ". ' +
         'Be concise, helpful, and direct. Use paragraph breaks for readability.' +
         (projectContext ? `\n\n${projectContext}` : ''),
@@ -846,7 +906,7 @@ export async function chatWithAI(
 // Three modes: generate from scratch, improve existing, generate with reference
 // ---------------------------------------------------------------------------
 
-export type CoverStyle = 'orthodox' | 'modern' | 'classic' | 'minimalist' | 'ornate';
+export type CoverStyle = 'orthodox' | 'modern' | 'classic' | 'minimalist' | 'ornate' | 'heritage' | 'academic' | 'contemporary';
 
 export type BindingType = 'saddle-stitch' | 'perfect-binding';
 
@@ -858,14 +918,16 @@ export type CoverDesignMode = 'full-design' | 'background-only';
 export type TextRemovalMode = 'keep' | 'remove-all' | 'remove-title' | 'remove-author';
 
 export interface CoverPageOptions {
-  title:       string;
-  subtitle?:   string;
-  author?:     string;
-  style:       CoverStyle;
-  binding?:    BindingType;
+  title:        string;
+  subtitle?:    string;
+  author?:      string;
+  style:        CoverStyle;
+  binding?:     BindingType;
   aspectRatio?: ImageAspectRatio;
   imageSize?:   ImageSize;
   designMode?:  CoverDesignMode;
+  /** Free-text description from user — appended to the generation prompt */
+  customPrompt?: string;
 }
 
 const COVER_STYLE_DESCRIPTIONS: Record<CoverStyle, string> = {
@@ -874,21 +936,28 @@ const COVER_STYLE_DESCRIPTIONS: Record<CoverStyle, string> = {
   classic:     'Traditional book cover with elegant serif typography, decorative frames, muted earth tones, and refined borders. Timeless and sophisticated.',
   minimalist:  'Ultra-clean flat design. Solid color background or very subtle texture, generous whitespace, one accent color, and simple geometric element. NO illustrations, NO patterns, NO gradients, NO shadows — just color, space, and simple shapes.',
   ornate:      'Richly decorated with intricate Ethiopian manuscript illumination patterns, vibrant colors, detailed ornamental borders, and fine geometric interlacing. Celebratory and artistic.',
+  heritage:    'Warm Ethiopian heritage aesthetic with aged parchment textures, sepia-toned ink-wash tones, traditional geometric folk-art motifs, and hand-crafted calligraphic flourishes. Timeless and cultural.',
+  academic:    'Scholarly institutional design with deep navy and ivory tones, gold ruled lines, structured layout, and classic serif typography. Authoritative and refined — suitable for liturgical, theological, or academic texts.',
+  contemporary: 'Bold contemporary African design drawing on Ethiopian flag colors — emerald green, solar gold, crimson — with strong geometric graphic elements, dynamic diagonal composition, and confident modern typography.',
 };
 
 /** Prompt for background-only (text-free) mode */
 function buildCoverBackgroundPrompt(options: CoverPageOptions): string {
-  const { style = 'classic', binding = 'saddle-stitch' } = options;
+  const { style = 'classic', binding = 'saddle-stitch', customPrompt } = options;
   const styleDesc = COVER_STYLE_DESCRIPTIONS[style];
 
   const sizeNote = binding === 'perfect-binding'
     ? 'The image is for a BOOK COVER SPREAD: back cover (left half) + front cover (right half), landscape orientation. Leave the right half more visually prominent with open areas for text overlay. The left half should be simpler with space for a description blurb.'
     : 'A4 book cover (210mm × 297mm, portrait 3:4). Leave a clear central area (upper third to middle) and a contrasting lower portion where title and author text will be overlaid.';
 
+  const customNote = customPrompt?.trim()
+    ? `\nUSER VISION: ${customPrompt.trim()}`
+    : '';
+
   return `Generate a beautiful background image for a book cover. Text will be overlaid separately — this is the background layer only.
 
 PAGE SIZE: ${sizeNote}
-DESIGN STYLE: ${styleDesc}
+DESIGN STYLE: ${styleDesc}${customNote}
 
 REQUIREMENTS:
 - NO TEXT: Do not include any letters, words, numbers, or readable characters of any script. The image must be text-free.
@@ -900,8 +969,9 @@ REQUIREMENTS:
 
 /** Prompt for full AI design mode — typography baked into the image */
 function buildFullAICoverPrompt(options: CoverPageOptions): string {
-  const { style = 'classic', binding = 'saddle-stitch', title, subtitle, author } = options;
+  const { style = 'classic', binding = 'saddle-stitch', title, subtitle, author, customPrompt } = options;
   const styleDesc = COVER_STYLE_DESCRIPTIONS[style];
+  const customNote = customPrompt?.trim() ? `\nUSER VISION: ${customPrompt.trim()}` : '';
 
   const textLines = [
     `TITLE: "${title}"`,
@@ -919,7 +989,7 @@ BOOK DETAILS:
 ${textLines}
 
 COVER SIZE: ${sizeNote}
-DESIGN STYLE: ${styleDesc}
+DESIGN STYLE: ${styleDesc}${customNote}
 
 REQUIREMENTS:
 - The title${author ? ' and author name' : ''} must appear as beautiful, legible typography integrated into the design.

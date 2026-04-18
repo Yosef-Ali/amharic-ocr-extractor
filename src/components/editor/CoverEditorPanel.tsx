@@ -7,11 +7,12 @@
  *
  * The canvas stays clean — zero UI overlap.
  */
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  Sparkles, Loader2, Wand2, ImageIcon, Upload, X,
+  Sparkles, Wand2, ImageIcon, Upload, X,
   Bold, Italic, AlignLeft, AlignCenter, AlignRight,
   Trash2, Plus, Minus, Type, Layers, BookOpen, BookMarked, RotateCcw,
+  Camera,
 } from 'lucide-react';
 import DeleteConfirmModal from '../DeleteConfirmModal';
 import { type CoverBlock } from './coverUtils';
@@ -26,88 +27,194 @@ import {
   type CoverDesignMode, type TextRemovalMode,
 } from '../../services/geminiService';
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function autoLabel(blocks: CoverBlock[], index: number): string {
+  const sorted = [...blocks].sort((a, b) => b.size - a.size);
+  const rank = sorted.findIndex(b => b.id === blocks[index].id);
+  const labels = ['Title', 'Subtitle', 'Author', 'Publisher'];
+  return labels[rank] ?? `T${index + 1}`;
+}
+
+// ── Template definitions (8 print-quality Ethiopian styles) ───────────────────
+interface TemplateInfo {
+  value: CoverStyle;
+  label: string;
+  desc: string;
+  bg: string;       // CSS gradient for mini preview swatch
+  accent: string;   // mock title text color in preview
+  dots: [string, string, string];  // 3-swatch palette
+}
+
+const TEMPLATES: TemplateInfo[] = [
+  {
+    value: 'orthodox',
+    label: 'Orthodox',
+    desc: 'Gold crosses, deep reds, Ge\'ez borders',
+    bg: 'linear-gradient(160deg, #140404 0%, #5a1010 50%, #0d0d2e 100%)',
+    accent: '#c9a84c',
+    dots: ['#5a1010', '#0d0d2e', '#c9a84c'],
+  },
+  {
+    value: 'ornate',
+    label: 'Ornate',
+    desc: 'Illuminated manuscript, rich interlacing',
+    bg: 'linear-gradient(155deg, #0d1b3e 0%, #2a0a40 45%, #4a0e20 100%)',
+    accent: '#f0c040',
+    dots: ['#0d1b3e', '#c41e3a', '#f0c040'],
+  },
+  {
+    value: 'heritage',
+    label: 'Heritage',
+    desc: 'Parchment, ink calligraphy, folk patterns',
+    bg: 'linear-gradient(160deg, #c8a96e 0%, #a0722a 50%, #4a2210 100%)',
+    accent: '#fef3c7',
+    dots: ['#f5e6c8', '#c9843c', '#4a2210'],
+  },
+  {
+    value: 'contemporary',
+    label: 'Ethiopian',
+    desc: 'Flag colors, bold graphic, modern energy',
+    bg: 'linear-gradient(145deg, #064e27 0%, #d4a800 50%, #b00f12 100%)',
+    accent: '#ffffff',
+    dots: ['#078930', '#fcdd09', '#da121a'],
+  },
+  {
+    value: 'classic',
+    label: 'Classic',
+    desc: 'Serif elegance, decorative frames',
+    bg: 'linear-gradient(160deg, #2c1810 0%, #6b3d14 55%, #9a7020 100%)',
+    accent: '#f5e6c8',
+    dots: ['#2c1810', '#8b6914', '#f5e6c8'],
+  },
+  {
+    value: 'academic',
+    label: 'Academic',
+    desc: 'Navy & ivory, scholarly, institutional',
+    bg: 'linear-gradient(160deg, #0f1e38 0%, #1e3a5f 60%, #2a4a7a 100%)',
+    accent: '#e8d9a0',
+    dots: ['#0f1e38', '#1e3a5f', '#c9a84c'],
+  },
+  {
+    value: 'modern',
+    label: 'Modern',
+    desc: 'Bold geometry, clean, contemporary',
+    bg: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 55%, #312e81 100%)',
+    accent: '#a5b4fc',
+    dots: ['#0f172a', '#4f46e5', '#818cf8'],
+  },
+  {
+    value: 'minimalist',
+    label: 'Minimal',
+    desc: 'Clean flat, whitespace, single accent',
+    bg: 'linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%)',
+    accent: '#4f46e5',
+    dots: ['#f8fafc', '#6366f1', '#1e293b'],
+  },
+];
+
+// ── Progress phases ───────────────────────────────────────────────────────────
+const PHASES = ['Composing design', 'Generating artwork', 'Refining image', 'Finalizing cover'];
+// Phase advance timing (ms after busy=true)
+const PHASE_TIMES = [0, 1200, 9000, 17000];
+// Progress bar widths per phase
+const PHASE_WIDTHS = ['6%', '28%', '68%', '90%'];
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 const COLOR_PRESETS = ['#ffffff','#000000','#d4a574','#fbbf24','#f87171','#a3e635','#38bdf8','#c084fc','#f8fafc','#1e293b'];
 
-const STYLES: { value: CoverStyle; label: string; emoji: string }[] = [
-  { value: 'classic',    label: 'Classic',    emoji: '📕' },
-  { value: 'modern',     label: 'Modern',     emoji: '🎨' },
-  { value: 'ornate',     label: 'Ornate',     emoji: '📜' },
-  { value: 'orthodox',   label: 'Orthodox',   emoji: '✝️' },
-  { value: 'minimalist', label: 'Minimal',    emoji: '◻️' },
-];
-
-type GenMode = 'new' | 'improve' | 'reference';
+type GenMode = 'new' | 'improve' | 'photo';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 interface Props {
-  // Current cover state
   hasCover:     boolean;
   hasBackCover: boolean;
   bgUrl:        string;
-  backBgUrl:    string;   // back cover image URL (parsed from pageResults[-1])
-  activeCoverSide: 'front' | 'back';  // which side is currently on canvas
+  backBgUrl:    string;
+  activeCoverSide: 'front' | 'back';
   blocks:    CoverBlock[];
   selId:     string | null;
-  firstPageScan?: string;   // data URL of first page scan — used as default reference
-  // Callbacks
   onSelect:    (id: string | null) => void;
   onUpdate:    (id: string, patch: Partial<CoverBlock>) => void;
   onAdd:       () => void;
   onDelete:    (id: string) => void;
   onDeleteCover?: () => void;
-  onApply:     (html: string) => void;   // front cover HTML
-  onApplyBack: (html: string) => void;   // back cover HTML (pageResults[-1])
+  onApply:     (html: string) => void;
+  onApplyBack: (html: string) => void;
   onError:     (msg: string) => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function CoverEditorPanel({
   hasCover, hasBackCover, bgUrl, backBgUrl, activeCoverSide,
-  blocks, selId, firstPageScan,
+  blocks, selId,
   onSelect, onUpdate, onAdd, onDelete, onDeleteCover, onApply, onApplyBack, onError,
 }: Props) {
-  // Which cover side is being edited (synced to canvas via activeCoverSide)
   const [editSide, setEditSide] = useState<'front' | 'back'>(activeCoverSide);
-
-  // Which top-level view
   const [showGenerate, setShowGenerate] = useState(!hasCover);
 
-  // Generation form state
+  // Generation form
   const [genMode,      setGenMode]      = useState<GenMode>('new');
   const [designMode,   setDesignMode]   = useState<CoverDesignMode>('full-design');
   const [textMode,     setTextMode]     = useState<TextRemovalMode>('keep');
   const [title,        setTitle]        = useState('');
   const [subtitle,     setSubtitle]     = useState('');
   const [author,       setAuthor]       = useState('');
-  const [style,        setStyle]        = useState<CoverStyle>('classic');
+  const [style,        setStyle]        = useState<CoverStyle>('orthodox');
   const [binding,      setBinding]      = useState<BindingType>('saddle-stitch');
   const [instruction,  setInstruction]  = useState('');
-  const [refImg,       setRefImg]       = useState<string | null>(firstPageScan ?? null);
+  const [photoImg,     setPhotoImg]     = useState<string | null>(null);
+  const [isDragOver,   setIsDragOver]   = useState(false);
   const [busy,         setBusy]         = useState(false);
+  const [phase,        setPhase]        = useState(0);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const cancelledRef  = useRef(false);
-  const refInputRef   = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   const selBlock = blocks.find(b => b.id === selId);
 
-  // ── Reference upload ────────────────────────────────────────────────────────
-  const handleRefUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // ── Phase advancement while generating ──────────────────────────────────────
+  useEffect(() => {
+    if (!busy) { setPhase(0); return; }
+    setPhase(0);
+    const timers = PHASE_TIMES.slice(1).map((t, i) =>
+      setTimeout(() => setPhase(i + 1), t),
+    );
+    return () => timers.forEach(clearTimeout);
+  }, [busy]);
+
+  // ── Photo upload / drag-drop ─────────────────────────────────────────────────
+  const loadPhotoFile = useCallback((file: File) => {
+    if (!file.type.startsWith('image/')) return;
     const reader = new FileReader();
-    reader.onload = () => { setRefImg(reader.result as string); setGenMode('reference'); };
+    reader.onload = () => setPhotoImg(reader.result as string);
     reader.readAsDataURL(file);
-    e.target.value = '';
   }, []);
+
+  const handlePhotoInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) loadPhotoFile(file);
+    e.target.value = '';
+  }, [loadPhotoFile]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); setIsDragOver(true);
+  }, []);
+  const handleDragLeave = useCallback(() => setIsDragOver(false), []);
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); setIsDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) loadPhotoFile(file);
+  }, [loadPhotoFile]);
 
   // ── Generate ────────────────────────────────────────────────────────────────
   const canGenerate =
     editSide === 'back'
-      ? !!hasCover   // back cover needs the front cover as style reference
-      : (genMode === 'new'       && title.trim()) ||
-        (genMode === 'improve'   && hasCover) ||
-        (genMode === 'reference' && !!refImg && title.trim());
+      ? !!hasCover
+      : genMode === 'new'
+          ? title.trim().length > 0
+          : genMode === 'improve'
+              ? hasCover
+              : !!photoImg; // photo mode: need a photo
 
   const handleGenerate = async () => {
     if (!canGenerate || busy) return;
@@ -115,22 +222,21 @@ export default function CoverEditorPanel({
     setBusy(true);
     try {
       if (editSide === 'back') {
-        // Back cover: generate from front cover as style reference
         const backBg = await generateBackCover(bgUrl, { title: title.trim() || 'Untitled', subtitle: subtitle.trim() || undefined, author: author.trim() || undefined, style, designMode });
         if (!cancelledRef.current) { onApplyBack(buildBackCoverHTML(backBg)); setShowGenerate(false); }
         return;
       }
       const opts: CoverPageOptions = {
-        title: title.trim() || 'Untitled',
+        title:    title.trim() || 'Untitled',
         subtitle: subtitle.trim() || undefined,
         author:   author.trim()   || undefined,
         style, binding,
         designMode: genMode === 'improve' ? undefined : designMode,
       };
       let bgDataUrl: string;
-      if      (genMode === 'new')       bgDataUrl = await generateCoverBackground(opts);
-      else if (genMode === 'improve')   bgDataUrl = await improveCoverBackground(bgUrl, instruction.trim(), undefined, textMode);
-      else                              bgDataUrl = await generateCoverBackgroundFromReference(refImg!, opts);
+      if      (genMode === 'new')     bgDataUrl = await generateCoverBackground(opts);
+      else if (genMode === 'improve') bgDataUrl = await improveCoverBackground(bgUrl, instruction.trim(), undefined, textMode);
+      else                            bgDataUrl = await generateCoverBackgroundFromReference(photoImg!, opts);
       if (!cancelledRef.current) {
         onApply(buildEditableCoverHTML(bgDataUrl, opts));
         setShowGenerate(false);
@@ -142,9 +248,22 @@ export default function CoverEditorPanel({
     }
   };
 
+  // Direct photo placement — no AI, instant
+  const handleUsePhotoDirectly = () => {
+    if (!photoImg) return;
+    const opts: CoverPageOptions = {
+      title:    title.trim() || 'Untitled',
+      subtitle: subtitle.trim() || undefined,
+      author:   author.trim()   || undefined,
+      style, binding,
+      designMode: 'background-only',
+    };
+    onApply(buildEditableCoverHTML(photoImg, opts));
+    setShowGenerate(false);
+  };
+
   const handleCancel = () => { cancelledRef.current = true; setBusy(false); };
 
-  // ── Shared section header ───────────────────────────────────────────────────
   const SectionTitle = ({ children }: { children: React.ReactNode }) => (
     <div className="ce-section-title">{children}</div>
   );
@@ -170,12 +289,7 @@ export default function CoverEditorPanel({
       {/* Front / Back tabs */}
       <div className="ce-section" style={{ paddingBottom: 0 }}>
         <div className="cov-tabs" style={{ maxWidth: '100%' }}>
-          <button
-            className={`cov-tab${editSide === 'front' ? ' cov-tab--on' : ''}`}
-            onClick={() => setEditSide('front')}
-          >
-            Front Cover
-          </button>
+          <button className={`cov-tab${editSide === 'front' ? ' cov-tab--on' : ''}`} onClick={() => setEditSide('front')}>Front Cover</button>
           <button
             className={`cov-tab${editSide === 'back' ? ' cov-tab--on' : ''}`}
             onClick={() => setEditSide('back')}
@@ -187,17 +301,36 @@ export default function CoverEditorPanel({
         </div>
       </div>
 
-      {/* Generating state */}
+      {/* ── Generating state ── */}
       {busy ? (
-        <div className="ce-section" style={{ alignItems: 'center', gap: '1rem', padding: '2rem 1rem' }}>
-          <Loader2 size={24} className="animate-spin" style={{ color: '#818cf8' }} />
-          <span style={{ fontSize: '0.78rem', color: 'var(--t-text3)', textAlign: 'center' }}>
-            {editSide === 'back' ? 'Generating back cover…' : 'Generating cover…'}
-          </span>
+        <div className="cov-progress-wrap">
+          {/* Phase dots + connectors */}
+          <div className="cov-progress-phases">
+            {PHASES.map((p, i) => (
+              <div key={p} style={{ display: 'contents' }}>
+                <div className="cov-progress-phase">
+                  <div className={`cov-progress-dot${i < phase ? ' cov-progress-dot--done' : i === phase ? ' cov-progress-dot--active' : ''}`} />
+                </div>
+                {i < PHASES.length - 1 && (
+                  <div className={`cov-progress-connector${i < phase ? ' cov-progress-connector--done' : ''}`} />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Bar */}
+          <div className="cov-progress-bar-wrap">
+            <div className="cov-progress-bar-fill" style={{ width: PHASE_WIDTHS[phase] }} />
+          </div>
+
+          {/* Label */}
+          <div className="cov-progress-phase-label">{PHASES[phase]}</div>
+          <div className="cov-progress-hint">This usually takes 15–30 seconds</div>
+
           <button className="cov-cancel-btn" onClick={handleCancel}><X size={12} /> Cancel</button>
         </div>
       ) : editSide === 'back' ? (
-        /* ── Back Cover generate panel ── */
+        /* ── Back Cover panel ── */
         <div className="ce-section" style={{ gap: '0.75rem' }}>
           {backBgUrl && (
             <div style={{ width: '100%', aspectRatio: '3/4', maxHeight: '40vh', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--t-border)', flexShrink: 0 }}>
@@ -215,56 +348,33 @@ export default function CoverEditorPanel({
         </div>
       ) : (
         <>
-          {/* Mode tabs — front cover only */}
+          {/* ── Mode tabs ── */}
           <div className="ce-section">
             <div className="cov-tabs" style={{ maxWidth: '100%' }}>
-              <button className={`cov-tab${genMode === 'new'       ? ' cov-tab--on' : ''}`} onClick={() => setGenMode('new')}><Sparkles size={11} /> New</button>
-              <button className={`cov-tab${genMode === 'improve'   ? ' cov-tab--on' : ''}`} onClick={() => setGenMode('improve')} disabled={!hasCover} title={hasCover ? '' : 'Generate a cover first'}><Wand2 size={11} /> Improve</button>
-              <button className={`cov-tab${genMode === 'reference' ? ' cov-tab--on' : ''}`} onClick={() => setGenMode('reference')}><ImageIcon size={11} /> Reference</button>
+              <button className={`cov-tab${genMode === 'new'     ? ' cov-tab--on' : ''}`} onClick={() => setGenMode('new')}><Sparkles size={11} /> New</button>
+              <button className={`cov-tab${genMode === 'improve' ? ' cov-tab--on' : ''}`} onClick={() => setGenMode('improve')} disabled={!hasCover} title={hasCover ? '' : 'Generate a cover first'}><Wand2 size={11} /> Improve</button>
+              <button className={`cov-tab${genMode === 'photo'   ? ' cov-tab--on' : ''}`} onClick={() => setGenMode('photo')}><Camera size={11} /> Photo</button>
             </div>
           </div>
 
-          {/* Fields — new / reference */}
-          {(genMode === 'new' || genMode === 'reference') && (
+          {/* ── NEW mode ── */}
+          {genMode === 'new' && (
             <div className="ce-section" style={{ gap: '0.5rem' }}>
               {/* Design mode toggle */}
               <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.25rem' }}>
                 {([
-                  { v: 'full-design'    as CoverDesignMode, label: '✦ Full AI Design', hint: 'AI renders title & author as typography' },
-                  { v: 'background-only' as CoverDesignMode, label: '◻ Background Only', hint: 'Text-free image; add your own text layers' },
-                ] as const).map(({ v, label, hint }) => (
-                  <button
-                    key={v}
-                    className={`cov-chip${designMode === v ? ' cov-chip--on' : ''}`}
-                    onClick={() => setDesignMode(v)}
-                    title={hint}
-                    style={{ flex: 1, justifyContent: 'center', fontSize: '0.68rem' }}
-                  >
+                  { v: 'full-design'     as CoverDesignMode, label: '✦ Full AI Design' },
+                  { v: 'background-only' as CoverDesignMode, label: '◻ Background Only' },
+                ] as const).map(({ v, label }) => (
+                  <button key={v} className={`cov-chip${designMode === v ? ' cov-chip--on' : ''}`} onClick={() => setDesignMode(v)} style={{ flex: 1, justifyContent: 'center', fontSize: '0.68rem' }}>
                     {label}
                   </button>
                 ))}
               </div>
+
               <input className="cov-input" value={title}    onChange={e => setTitle(e.target.value)}    placeholder="Title *" />
               <input className="cov-input" value={subtitle} onChange={e => setSubtitle(e.target.value)} placeholder="Subtitle (optional)" />
               <input className="cov-input" value={author}   onChange={e => setAuthor(e.target.value)}   placeholder="Author (optional)" />
-
-              {/* Reference image */}
-              {genMode === 'reference' && (
-                refImg ? (
-                  <div style={{ position: 'relative', borderRadius: '6px', overflow: 'hidden' }}>
-                    <img src={refImg} alt="ref" style={{ width: '100%', maxHeight: '90px', objectFit: 'cover' }} />
-                    <div style={{ position: 'absolute', bottom: 4, left: 6, fontSize: '0.6rem', color: 'rgba(255,255,255,0.75)', background: 'rgba(0,0,0,0.4)', borderRadius: 3, padding: '1px 5px' }}>
-                      {refImg === firstPageScan ? 'Page 1 (default)' : 'Custom reference'}
-                    </div>
-                    <button onClick={() => setRefImg(firstPageScan ?? null)} style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Reset to default"><X size={11} /></button>
-                  </div>
-                ) : (
-                  <button className="cov-ref-btn" onClick={() => refInputRef.current?.click()}>
-                    <Upload size={13} /> Upload reference image
-                  </button>
-                )
-              )}
-              <input ref={refInputRef} type="file" accept="image/*" onChange={handleRefUpload} style={{ display: 'none' }} />
 
               {/* Binding */}
               <div className="cov-row">
@@ -273,35 +383,42 @@ export default function CoverEditorPanel({
                 ))}
               </div>
 
-              {/* Style */}
-              <div className="cov-row cov-row--wrap">
-                {STYLES.map(s => (
-                  <button key={s.value} className={`cov-chip${style === s.value ? ' cov-chip--on' : ''}`} onClick={() => setStyle(s.value)}>{s.emoji} {s.label}</button>
+              {/* ── Template grid ── */}
+              <div style={{ fontSize: '0.68rem', color: 'var(--t-text3)', fontWeight: 600, marginTop: '0.25rem', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Style</div>
+              <div className="cov-template-grid">
+                {TEMPLATES.map(t => (
+                  <button
+                    key={t.value}
+                    className={`cov-template-card${style === t.value ? ' cov-template-card--on' : ''}`}
+                    onClick={() => setStyle(t.value)}
+                  >
+                    {/* Mini cover preview */}
+                    <div className="cov-template-preview" style={{ background: t.bg }}>
+                      <div className="cov-template-title-mock" style={{ color: t.accent }}>
+                        {title || t.label}
+                      </div>
+                      <div className="cov-template-dots">
+                        {t.dots.map(d => (
+                          <div key={d} className="cov-template-dot" style={{ background: d }} />
+                        ))}
+                      </div>
+                    </div>
+                    <div className="cov-template-label">{t.label}</div>
+                    <div className="cov-template-desc">{t.desc}</div>
+                  </button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Improve mode */}
+          {/* ── IMPROVE mode ── */}
           {genMode === 'improve' && hasCover && (
             <div className="ce-section" style={{ gap: '0.75rem' }}>
-              {/* Full-proportion cover preview */}
               {bgUrl && (
-                <div style={{
-                  width: '100%',
-                  aspectRatio: '3 / 4',
-                  maxHeight: '52vh',
-                  borderRadius: '8px',
-                  overflow: 'hidden',
-                  border: '1px solid var(--t-border)',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-                  flexShrink: 0,
-                }}>
+                <div style={{ width: '100%', aspectRatio: '3 / 4', maxHeight: '52vh', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--t-border)', boxShadow: '0 2px 8px rgba(0,0,0,0.12)', flexShrink: 0 }}>
                   <img src={bgUrl} alt="current cover" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                 </div>
               )}
-
-              {/* Text removal options */}
               <div>
                 <div style={{ fontSize: '0.68rem', color: 'var(--t-text3)', fontWeight: 600, marginBottom: '0.35rem', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Text handling</div>
                 <div className="cov-row cov-row--wrap" style={{ gap: '0.3rem' }}>
@@ -311,18 +428,12 @@ export default function CoverEditorPanel({
                     { v: 'remove-title'  as TextRemovalMode, label: 'Remove title' },
                     { v: 'remove-author' as TextRemovalMode, label: 'Remove author' },
                   ] as const).map(({ v, label }) => (
-                    <button
-                      key={v}
-                      className={`cov-chip${textMode === v ? ' cov-chip--on' : ''}`}
-                      onClick={() => setTextMode(v)}
-                      style={{ fontSize: '0.67rem' }}
-                    >
+                    <button key={v} className={`cov-chip${textMode === v ? ' cov-chip--on' : ''}`} onClick={() => setTextMode(v)} style={{ fontSize: '0.67rem' }}>
                       {label}
                     </button>
                   ))}
                 </div>
               </div>
-
               <textarea
                 className="cov-input cov-textarea"
                 value={instruction}
@@ -333,12 +444,73 @@ export default function CoverEditorPanel({
             </div>
           )}
 
-          {/* Generate button */}
-          <div className="ce-section">
-            <button className="cov-generate-btn" onClick={handleGenerate} disabled={!canGenerate}>
-              <Sparkles size={13} /> {genMode === 'improve' ? 'Regenerate Background' : 'Generate Cover'}
-            </button>
-          </div>
+          {/* ── PHOTO mode ── */}
+          {genMode === 'photo' && (
+            <div className="ce-section" style={{ gap: '0.6rem' }}>
+              {/* Drop zone / preview */}
+              {photoImg ? (
+                <div className="cov-photo-preview">
+                  <img src={photoImg} alt="photo" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                  <div className="cov-photo-preview-overlay">
+                    <button className="cov-photo-change-btn" onClick={() => photoInputRef.current?.click()}>
+                      <Upload size={11} /> Change photo
+                    </button>
+                    <button className="cov-photo-change-btn" style={{ color: '#fca5a5', borderColor: 'rgba(239,68,68,0.5)' }} onClick={() => setPhotoImg(null)}>
+                      <X size={11} /> Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className={`cov-photo-drop${isDragOver ? ' cov-photo-drop--drag' : ''}`}
+                  onClick={() => photoInputRef.current?.click()}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                >
+                  <Camera size={22} style={{ opacity: 0.5 }} />
+                  <span style={{ fontWeight: 600 }}>Drop a photo here</span>
+                  <span style={{ fontSize: '0.68rem', opacity: 0.6 }}>or click to browse</span>
+                </div>
+              )}
+              <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoInput} style={{ display: 'none' }} />
+
+              {/* Text fields */}
+              <input className="cov-input" value={title}    onChange={e => setTitle(e.target.value)}    placeholder="Title" />
+              <input className="cov-input" value={subtitle} onChange={e => setSubtitle(e.target.value)} placeholder="Subtitle (optional)" />
+              <input className="cov-input" value={author}   onChange={e => setAuthor(e.target.value)}   placeholder="Author (optional)" />
+
+              {/* Two actions */}
+              <button
+                className="cov-generate-btn"
+                onClick={handleUsePhotoDirectly}
+                disabled={!photoImg}
+                style={{ background: 'linear-gradient(135deg,#0ea5e9,#6366f1)' }}
+              >
+                <ImageIcon size={13} /> Use Photo as Cover
+              </button>
+              <button
+                className="cov-generate-btn"
+                onClick={handleGenerate}
+                disabled={!canGenerate}
+                style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', opacity: photoImg ? undefined : 0.45 }}
+              >
+                <Sparkles size={13} /> Generate AI Cover from Photo
+              </button>
+              <p style={{ fontSize: '0.65rem', color: 'var(--t-text3)', margin: 0, textAlign: 'center', lineHeight: 1.4 }}>
+                "Use Photo" places your image directly.<br />"Generate AI" uses it as style reference.
+              </p>
+            </div>
+          )}
+
+          {/* Generate button — shown for new / improve */}
+          {(genMode === 'new' || genMode === 'improve') && (
+            <div className="ce-section">
+              <button className="cov-generate-btn" onClick={handleGenerate} disabled={!canGenerate}>
+                <Sparkles size={13} /> {genMode === 'improve' ? 'Regenerate Background' : 'Generate Cover'}
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -357,7 +529,6 @@ export default function CoverEditorPanel({
         />
       )}
 
-      {/* Regenerate background button */}
       <div className="ce-section" style={{ gap: '0.4rem' }}>
         <button
           className="ce-add-btn"
@@ -377,7 +548,6 @@ export default function CoverEditorPanel({
         )}
       </div>
 
-      {/* Layers */}
       <div className="ce-section">
         <SectionTitle><Layers size={12} /> Layers</SectionTitle>
         <div className="ce-layers">
@@ -387,7 +557,8 @@ export default function CoverEditorPanel({
               className={`ce-layer${b.id === selId ? ' ce-layer--sel' : ''}`}
               onClick={() => onSelect(b.id)}
             >
-              <span className="ce-layer-name">T{i + 1} — {b.text.slice(0, 20) || '…'}</span>
+              <span className="ce-layer-swatch" style={{ background: b.color }} />
+              <span className="ce-layer-name">{autoLabel(blocks, i)} — {b.text.slice(0, 20) || '…'}</span>
               <button className="ce-layer-del" onClick={e => { e.stopPropagation(); onDelete(b.id); }} title="Delete">
                 <Trash2 size={10} />
               </button>
@@ -397,7 +568,6 @@ export default function CoverEditorPanel({
         <button className="ce-add-btn" onClick={onAdd}><Plus size={11} /> Add Text Block</button>
       </div>
 
-      {/* Properties */}
       {selBlock ? (
         <div className="ce-section">
           <SectionTitle>Properties</SectionTitle>

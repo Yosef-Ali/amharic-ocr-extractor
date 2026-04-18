@@ -9,10 +9,10 @@ import {
 import {
   Bot, Send, X, Paperclip, Trash2, ChevronDown,
   Check, ImageIcon, Loader2, Zap, Sparkles,
-  AlertTriangle, ListOrdered, Cpu, KeyRound,
+  AlertTriangle, AlertCircle, ListOrdered, Cpu, KeyRound,
   MessageCircle, Wrench,
 } from 'lucide-react';
-import { editPageWithTools, chatWithAI, setApiKey, isApiKeyError, setActiveModel, type ChatTurn, type CanvasContext } from '../../services/geminiService';
+import { editPageWithTools, chatWithAI, setApiKey, isApiKeyError, setActiveModel, generateCoverBackground, buildEditableCoverHTML, type ChatTurn, type CanvasContext, type CoverStyle as CoverStyle_, type BindingType as BindingType_, type CoverDesignMode as CoverDesignMode_ } from '../../services/geminiService';
 import {
   getProjectMemory, saveProjectMemory, buildProjectContext, appendAgentSummary,
   type ProjectMemory,
@@ -52,23 +52,26 @@ interface Props {
   executor?:       CanvasExecutor;
   onClose?:        () => void;
   onNavigatePage?: (page: number) => void;
+  onApplyCover?:   (html: string) => void;
   onSave?:         () => void;
   onDownloadPDF?:  () => void;
   /** Document file name — used as the per-project memory key */
   fileName?:       string;
+  /** Currently selected element on the canvas — fed into the agent's
+   *  system context so edit requests are scoped to this element. */
+  selection?:      { id: string; tag: string } | null;
+  /** Clear the current canvas selection (called when user clicks ✕ on
+   *  the Target pill). */
+  onClearSelection?: () => void;
 }
 
-// ── Shimmer skeleton ──────────────────────────────────────────────────────
-function Shimmer({ lines = 3 }: { lines?: number }) {
+// ── Thinking dots (replaces shimmer skeleton) ─────────────────────────────
+function ThinkingDots() {
   return (
-    <div className="ap-shimmer">
-      {Array.from({ length: lines }).map((_, i) => (
-        <div
-          key={i}
-          className="ap-shimmer-line"
-          style={{ width: `${65 + (i % 3) * 12}%` }}
-        />
-      ))}
+    <div className="ap-thinking">
+      <span className="ap-thinking-dot" style={{ animationDelay: '0ms' }} />
+      <span className="ap-thinking-dot" style={{ animationDelay: '180ms' }} />
+      <span className="ap-thinking-dot" style={{ animationDelay: '360ms' }} />
     </div>
   );
 }
@@ -79,36 +82,154 @@ type CoverStyle = 'orthodox' | 'ornate' | 'classic' | 'modern' | 'minimalist';
 type CoverDesignMode = 'full-design' | 'background-only';
 type CoverBinding = 'saddle-stitch' | 'perfect-binding';
 
-const COVER_STYLES: { value: CoverStyle; label: string; emoji: string }[] = [
-  { value: 'classic',    label: 'Classic',   emoji: '📕' },
-  { value: 'modern',     label: 'Modern',    emoji: '🎨' },
-  { value: 'ornate',     label: 'Ornate',    emoji: '📜' },
-  { value: 'orthodox',   label: 'Orthodox',  emoji: '✝️' },
-  { value: 'minimalist', label: 'Minimal',   emoji: '◻️' },
+interface CoverTemplate {
+  label:    string;
+  labelAm:  string;   // Amharic label
+  desc:     string;
+  style:    CoverStyle;
+  prompt:   string;
+  bg:       string;   // mini preview background
+  accent:   string;   // mini preview accent element color
+  layout:   'cross' | 'band-top' | 'solid' | 'band-left' | 'emblem';
+}
+
+// Print-quality, commonly used Ethiopian book/booklet covers — simple enough for any printer
+const COVER_TEMPLATES: CoverTemplate[] = [
+  {
+    label: 'Church Bulletin',  labelAm: 'ቤተ ክርስቲያን ዜና',
+    desc: 'Dark solid + Ethiopian cross — works on B&W printers',
+    style: 'orthodox', layout: 'cross',
+    bg: '#1a0a00', accent: '#c9a84c',
+    prompt: 'Simple Ethiopian Lalibela cross centered on a deep dark burgundy background, single gold cross, clean solid color — no complex patterns, print-ready design',
+  },
+  {
+    label: 'Prayer Book',      labelAm: 'ፀሎት መጽሐፍ',
+    desc: 'Navy + gold cross — classic liturgical booklet',
+    style: 'orthodox', layout: 'cross',
+    bg: '#0f1f3d', accent: '#e8c96d',
+    prompt: 'Navy blue prayer book cover, centered Orthodox cross in gold, simple clean layout, suitable for printing, minimal ornamentation',
+  },
+  {
+    label: 'Textbook',         labelAm: 'የትምህርት መጽሐፍ',
+    desc: 'Colored top band + clean white body — Ethiopian school standard',
+    style: 'classic', layout: 'band-top',
+    bg: '#f5f5f5', accent: '#1a56a0',
+    prompt: 'Ethiopian school textbook cover, bold blue horizontal band across the top third, clean white background below, professional academic look, print-ready',
+  },
+  {
+    label: 'Amharic Novel',    labelAm: 'ልቦለድ',
+    desc: 'Warm solid color, bold title — standard paperback',
+    style: 'classic', layout: 'solid',
+    bg: '#7c3a1a', accent: '#f5c06d',
+    prompt: 'Ethiopian novel book cover, warm deep terracotta background, clean minimal composition, bold centered title area, simple and elegant — easy to print',
+  },
+  {
+    label: 'Church Program',   labelAm: 'ፕሮግራም',
+    desc: 'Light background + red accent band — event handout',
+    style: 'minimalist', layout: 'band-top',
+    bg: '#ffffff', accent: '#b91c1c',
+    prompt: 'Ethiopian church event program cover, white or cream background, red accent band, clean minimal layout, suitable for home or office printing',
+  },
+  {
+    label: 'Research / Report', labelAm: 'ምርምር / ሪፖርት',
+    desc: 'Formal navy with left accent — university/NGO style',
+    style: 'classic', layout: 'band-left',
+    bg: '#1e3a5f', accent: '#38bdf8',
+    prompt: 'Formal Ethiopian academic report cover, deep navy background, thin bright accent stripe on left margin, clean professional typography layout',
+  },
+  {
+    label: 'Church Magazine',  labelAm: 'መጽሔት',
+    desc: 'Clean white + green header — bi-weekly/monthly bulletin',
+    style: 'minimalist', layout: 'band-top',
+    bg: '#f8f8f4', accent: '#166534',
+    prompt: 'Ethiopian church magazine cover, clean off-white background, forest green header band, simple elegant layout, easy to photocopy or print',
+  },
+  {
+    label: "Children's Book",  labelAm: 'ለልጆች',
+    desc: 'Bright solid + playful — easy to print in color',
+    style: 'modern', layout: 'emblem',
+    bg: '#fbbf24', accent: '#7c3aed',
+    prompt: 'Ethiopian children\'s book cover, bright sunny yellow background, simple playful illustration in purple, clean bold colors that print well, welcoming and fun',
+  },
 ];
 
-const COVER_BINDINGS: { value: CoverBinding; label: string; emoji: string }[] = [
-  { value: 'saddle-stitch',   label: 'Saddle Stitch',   emoji: '📖' },
-  { value: 'perfect-binding', label: 'Perfect Binding', emoji: '📚' },
+const COVER_STYLES: { value: CoverStyle; label: string }[] = [
+  { value: 'orthodox',   label: 'Orthodox'   },
+  { value: 'classic',    label: 'Classic'    },
+  { value: 'modern',     label: 'Modern'     },
+  { value: 'ornate',     label: 'Ornate'     },
+  { value: 'minimalist', label: 'Minimal'    },
+];
+
+const COVER_BINDINGS: { value: CoverBinding; label: string; sub: string }[] = [
+  { value: 'saddle-stitch',   label: 'Single Page',      sub: 'Front cover only (A4)' },
+  { value: 'perfect-binding', label: 'Full Spread',      sub: 'Front + spine + back' },
+];
+
+const TITLE_MAX = 80;
+
+const GENERATING_STEPS = [
+  'Writing the art prompt…',
+  'Generating your cover image…',
+  'Laying out title and typography…',
 ];
 
 function CoverSetupCard({ msg, onSubmit, onCancel }: {
   msg: import('../../types/a2ui').A2UICoverSetupMessage;
-  onSubmit: (opts: { title: string; author: string; style: CoverStyle; designMode: CoverDesignMode; binding: CoverBinding }) => void;
+  onSubmit: (opts: { title: string; subtitle: string; author: string; style: CoverStyle; designMode: CoverDesignMode; binding: CoverBinding; customPrompt: string }) => void;
   onCancel: () => void;
 }) {
-  const [title,      setTitle]      = useState(msg.suggestedTitle ?? '');
-  const [author,     setAuthor]     = useState('');
-  const [style,      setStyle]      = useState<CoverStyle>('classic');
-  const [designMode, setDesignMode] = useState<CoverDesignMode>('full-design');
-  const [binding,    setBinding]    = useState<CoverBinding>('saddle-stitch');
+  const [title,        setTitle]        = useState(msg.suggestedTitle ?? '');
+  const [subtitle,     setSubtitle]     = useState('');
+  const [author,       setAuthor]       = useState('');
+  const [style,        setStyle]        = useState<CoverStyle>('classic');
+  const [designMode,   setDesignMode]   = useState<CoverDesignMode>('full-design');
+  const [binding,      setBinding]      = useState<CoverBinding>('saddle-stitch');
+  const [customPrompt, setCustomPrompt] = useState('');
+  const [activeTemplate, setActiveTemplate] = useState<number | null>(null);
+  const [touched,      setTouched]      = useState(false);
+
+  const titleRef = useRef<HTMLInputElement>(null);
+
+  const applyTemplate = (idx: number) => {
+    const t = COVER_TEMPLATES[idx];
+    setStyle(t.style);
+    setCustomPrompt(t.prompt);
+    setActiveTemplate(idx);
+  };
+
+  const handleSubmit = () => {
+    setTouched(true);
+    if (!title.trim()) {
+      titleRef.current?.focus();
+      return;
+    }
+    onSubmit({ title: title.trim(), subtitle: subtitle.trim(), author: author.trim(), style, designMode, binding, customPrompt: customPrompt.trim() });
+  };
+
+  // Keyboard shortcuts: Escape → cancel, Enter on title input → submit
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCancel]);
 
   if (msg.status === 'generating') {
+    const step = msg.generatingStep ?? GENERATING_STEPS[0];
     return (
       <div className="ap-cover-card">
         <div className="ap-cover-card-header"><Sparkles size={13} /> Generating cover…</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 0', color: 'var(--t-text3)', fontSize: '0.78rem' }}>
-          <Loader2 size={14} className="animate-spin" /> Creating your cover page…
+        <div className="ap-cover-generating">
+          <div className="ap-cover-generating-track">
+            <div className="ap-cover-generating-bar" />
+          </div>
+          <div className="ap-cover-generating-step">
+            <Loader2 size={12} className="animate-spin" />
+            <span>{step}</span>
+          </div>
+          <p className="ap-cover-generating-hint">This usually takes 10–20 seconds. The AI is composing your cover from scratch.</p>
         </div>
       </div>
     );
@@ -122,38 +243,118 @@ function CoverSetupCard({ msg, onSubmit, onCancel }: {
     );
   }
 
+  // 'pending' or 'error' — show the form (local state is preserved on retry)
+  const titleInvalid = touched && !title.trim();
+  const titleNearLimit = title.length > TITLE_MAX * 0.85;
+
   return (
     <div className="ap-cover-card">
-      <div className="ap-cover-card-header"><Sparkles size={13} /> Cover Page Setup</div>
-      <p className="ap-cover-card-hint">Fill in the details and I'll generate your cover.</p>
+      <div className="ap-cover-card-header"><Sparkles size={13} /> Cover Page Generator</div>
+      <p className="ap-cover-card-hint">Pick a template or describe your own vision.</p>
 
+      {/* ── Error banner (shown on retry after failure) ── */}
+      {msg.status === 'error' && msg.errorMsg && (
+        <div className="ap-cover-error-banner">
+          <span className="ap-cover-error-icon"><AlertCircle size={12} /></span>
+          {msg.errorMsg} — adjust your settings and try again.
+        </div>
+      )}
+
+      {/* ── Quick templates ── */}
+      <div className="ap-cover-section-label">Quick Templates</div>
+      <div className="ap-cover-templates">
+        {COVER_TEMPLATES.map((t, i) => (
+          <button
+            key={i}
+            className={`ap-cover-template${activeTemplate === i ? ' ap-cover-template--on' : ''}`}
+            onClick={() => applyTemplate(i)}
+            title={t.prompt}
+          >
+            <span className="ap-cover-template-swatch" style={{ background: t.bg }} />
+            <span className="ap-cover-template-label">{t.label}</span>
+            <span className="ap-cover-template-desc">{t.desc}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Book details ── */}
+      <div className="ap-cover-section-label" style={{ marginTop: '0.4rem' }}>Book Details</div>
+      <div className="ap-cover-input-wrap">
+        <input
+          ref={titleRef}
+          className={`ap-cover-input${titleInvalid ? ' ap-cover-input--invalid' : ''}`}
+          placeholder="Title *"
+          value={title}
+          maxLength={TITLE_MAX}
+          onChange={e => { setTitle(e.target.value); setTouched(false); }}
+          onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
+        />
+        <span className={`ap-cover-char-count${titleNearLimit ? ' ap-cover-char-count--warn' : ''}`}>
+          {title.length}/{TITLE_MAX}
+        </span>
+        {!titleInvalid && (
+          <span className="ap-cover-field-hint">
+            The title is printed on the cover and used in the AI prompt.
+          </span>
+        )}
+        {titleInvalid && <span className="ap-cover-field-error">Title is required to generate a cover.</span>}
+      </div>
       <input
         className="ap-cover-input"
-        placeholder="Title *"
-        value={title}
-        onChange={e => setTitle(e.target.value)}
+        placeholder="Subtitle (optional)"
+        value={subtitle}
+        onChange={e => setSubtitle(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
       />
       <input
         className="ap-cover-input"
         placeholder="Author (optional)"
         value={author}
         onChange={e => setAuthor(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
       />
 
+      {/* ── Style ── */}
       <div className="ap-cover-section-label">Style</div>
       <div className="ap-cover-chips">
         {COVER_STYLES.map(s => (
           <button
             key={s.value}
             className={`ap-cover-chip${style === s.value ? ' ap-cover-chip--on' : ''}`}
-            onClick={() => setStyle(s.value)}
+            onClick={() => { setStyle(s.value); setActiveTemplate(null); }}
           >
-            {s.emoji} {s.label}
+            {s.label}
           </button>
         ))}
       </div>
 
-      <div className="ap-cover-section-label">Design mode</div>
+      {/* ── Custom prompt ── */}
+      <div className="ap-cover-section-label">Describe Your Vision <span style={{ fontWeight: 400, textTransform: 'none', opacity: 0.7 }}>(optional)</span></div>
+      <textarea
+        className="ap-cover-textarea"
+        placeholder="e.g. Dark mountain landscape at dusk, golden stars, traditional Ethiopian patterns along the border…"
+        value={customPrompt}
+        rows={3}
+        onChange={e => { setCustomPrompt(e.target.value); setActiveTemplate(null); }}
+      />
+
+      {/* ── Layout ── */}
+      <div className="ap-cover-section-label">Layout</div>
+      <div className="ap-cover-chips" style={{ flexDirection: 'column', gap: '0.3rem' }}>
+        {COVER_BINDINGS.map(b => (
+          <button
+            key={b.value}
+            className={`ap-cover-chip ap-cover-chip--layout${binding === b.value ? ' ap-cover-chip--on' : ''}`}
+            onClick={() => setBinding(b.value)}
+          >
+            <span style={{ fontWeight: 600 }}>{b.label}</span>
+            <span style={{ opacity: 0.65, marginLeft: '0.35rem', fontWeight: 400 }}>— {b.sub}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Design mode ── */}
+      <div className="ap-cover-section-label">AI Mode</div>
       <div className="ap-cover-chips">
         <button className={`ap-cover-chip${designMode === 'full-design' ? ' ap-cover-chip--on' : ''}`} onClick={() => setDesignMode('full-design')}>
           ✦ Full AI Design
@@ -163,29 +364,16 @@ function CoverSetupCard({ msg, onSubmit, onCancel }: {
         </button>
       </div>
 
-      <div className="ap-cover-section-label">Binding</div>
-      <div className="ap-cover-chips">
-        {COVER_BINDINGS.map(b => (
-          <button
-            key={b.value}
-            className={`ap-cover-chip${binding === b.value ? ' ap-cover-chip--on' : ''}`}
-            onClick={() => setBinding(b.value)}
-          >
-            {b.emoji} {b.label}
-          </button>
-        ))}
-      </div>
-
       <div className="ap-cover-actions">
-        <button className="ap-cover-cancel" onClick={onCancel}>Cancel</button>
+        <button className="ap-cover-cancel" onClick={onCancel} title="Cancel (Esc)">Cancel</button>
         <button
           className="ap-cover-generate"
-          onClick={() => onSubmit({ title: title.trim() || 'Untitled', author: author.trim(), style, designMode, binding })}
-          disabled={!title.trim()}
+          onClick={handleSubmit}
         >
           <Sparkles size={12} /> Generate Cover
         </button>
       </div>
+      <p className="ap-cover-kbd-hint">Press <kbd>Enter</kbd> to generate · <kbd>Esc</kbd> to cancel</p>
     </div>
   );
 }
@@ -201,7 +389,7 @@ function MessageCard({
   msg: A2UIMessage;
   onApprove?: (id: string) => void;
   onReject?:  (id: string) => void;
-  onCoverSetupSubmit?: (id: string, opts: { title: string; author: string; style: CoverStyle; designMode: CoverDesignMode; binding: CoverBinding }) => void;
+  onCoverSetupSubmit?: (id: string, opts: { title: string; subtitle: string; author: string; style: CoverStyle; designMode: CoverDesignMode; binding: CoverBinding; customPrompt: string }) => void;
   onCoverSetupCancel?: (id: string) => void;
 }) {
   if (msg.type === 'user') {
@@ -222,7 +410,7 @@ function MessageCard({
           <Cpu size={11} className="ap-msg-icon" />
           <span className="ap-msg-label">{msg.label ?? 'Thinking…'}</span>
         </div>
-        <Shimmer lines={3} />
+        <ThinkingDots />
       </div>
     );
   }
@@ -410,10 +598,10 @@ function ModelSelector({
               key={m.id}
               className={`ap-model-option${m.id === model ? ' active' : ''}${m.note ? ' ap-model-option--disabled' : ''}`}
               onClick={() => {
-                if (!m.note || m.id === 'minimax-m27') { 
-                  onChange(m.id); 
+                if (!m.note || m.id === 'minimax-m27') {
+                  onChange(m.id);
                   setActiveModel(m.id);
-                  setOpen(false); 
+                  setOpen(false);
                 }
               }}
               title={m.note}
@@ -432,11 +620,16 @@ function ModelSelector({
 }
 
 // ── Process indicator ─────────────────────────────────────────────────────
-function ProcessBar({ label }: { label: string }) {
+function ProcessBar({ label, step, total }: { label: string; step?: number; total?: number }) {
   return (
     <div className="ap-process-bar">
       <div className="ap-process-shimmer" />
-      <span className="ap-process-label">{label}</span>
+      <div className="ap-process-content">
+        {step != null && total != null && (
+          <span className="ap-process-step">{step}<span className="ap-process-step-sep">/</span>{total}</span>
+        )}
+        <span className="ap-process-label">{label}</span>
+      </div>
     </div>
   );
 }
@@ -487,6 +680,13 @@ function DocumentStatus({
   );
 }
 
+// ── Detect cover generation intent ────────────────────────────────────────
+function parseCoverIntent(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  return /\b(generate|create|make|design|build|add)\b.{0,20}\bcover\b/.test(t)
+    || /\bcover\b.{0,20}\b(page|image|design|art)\b/.test(t);
+}
+
 // ── Detect navigation intent — "go to page 3", "show page 2" ─────────────
 function parseNavigateIntent(text: string): { page: number } | null {
   const t = text.trim().toLowerCase();
@@ -514,10 +714,24 @@ function parseExtractionIntent(text: string): { type: 'page'; page: number; forc
 export default function AgentPanel({
   context, activePage = 1, pageImage = '',
   totalPages = 0, extractedPages = new Set<number>(),
-  executor, onClose, onNavigatePage, onSave, onDownloadPDF,
+  executor, onClose, onNavigatePage, onApplyCover, onSave, onDownloadPDF,
   fileName = '',
+  selection = null,
+  onClearSelection,
 }: Props) {
-  const [panelMode,  setPanelMode]  = useState<'chat' | 'agent'>('chat');
+  // Panel mode is auto-derived from executor availability + per-message intent.
+  // UI affordances (refs, model selector, chips) follow this default; per-send
+  // routing in `send()` re-checks the message so "what's on this page?" always
+  // goes through chat even in agent mode.
+  const [panelMode,  setPanelMode]  = useState<'chat' | 'agent'>(() => executor ? 'agent' : 'chat');
+  // Keep panelMode in sync if executor arrives late (e.g. after first extraction).
+  useEffect(() => {
+    setPanelMode(executor ? 'agent' : 'chat');
+  }, [executor]);
+
+  // Detect "edit intent" — verbs that imply manipulating the document.
+  const EDIT_INTENT_RE = /\b(make|change|set|update|edit|fix|bold|italic|underline|align|center|left|right|justify|insert|add|remove|delete|move|resize|larger|smaller|bigger|font|color|heading|header|title|column|columns|layout|margin|padding|style|rewrite|reflow|paragraph|extract|fill|replace|crop|regenerate|generate\s+cover|cover\s+page|two\s+column|single\s+column)\b/i;
+  const routeToChat = (text: string) => !EDIT_INTENT_RE.test(text);
   const [messages,   setMessages]   = useState<A2UIMessage[]>([]);
   const [chatHistory, setChatHistory] = useState<ChatTurn[]>([]);
   const [input,      setInput]      = useState('');
@@ -563,6 +777,7 @@ export default function AgentPanel({
     extractedPages,
     activePage,
     memory:         memoryRef.current,
+    selection,
   });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -650,36 +865,49 @@ export default function AgentPanel({
 
   const handleCoverSetupSubmit = async (
     id: string,
-    opts: { title: string; author: string; style: CoverStyle; designMode: CoverDesignMode; binding: CoverBinding },
+    opts: { title: string; subtitle: string; author: string; style: CoverStyle; designMode: CoverDesignMode; binding: CoverBinding; customPrompt: string },
   ) => {
-    if (!executor) return;
-    updateMsg(id, { status: 'generating' } as Partial<A2UIMessage>);
+    updateMsg(id, { status: 'generating', generatingStep: 'Writing the art prompt…' } as Partial<A2UIMessage>);
     try {
-      const result = JSON.parse(await executor.execute('_generateCover', {
-        mode: 'generate',
-        title: opts.title,
-        author: opts.author || undefined,
-        style: opts.style,
-        designMode: opts.designMode,
-        binding: opts.binding,
-      }) as string);
-      if (result.error) {
-        updateMsg(id, {
-          status: 'done',
-          result: `❌ ${result.error}`,
-        } as Partial<A2UIMessage>);
+      if (executor) {
+        // Agent mode — use executor (keeps ctx.onEdit in sync)
+        updateMsg(id, { status: 'generating', generatingStep: 'Generating your cover image…' } as Partial<A2UIMessage>);
+        const result = JSON.parse(await executor.execute('_generateCover', {
+          mode: 'generate',
+          title: opts.title,
+          subtitle: opts.subtitle || undefined,
+          author: opts.author || undefined,
+          style: opts.style,
+          designMode: opts.designMode,
+          binding: opts.binding,
+          customPrompt: opts.customPrompt || undefined,
+        }) as string);
+        if (result.error) {
+          updateMsg(id, { status: 'error', errorMsg: result.error } as Partial<A2UIMessage>);
+          return;
+        }
       } else {
-        updateMsg(id, {
-          status: 'done',
-          result: '✅ Cover page generated and applied.',
-        } as Partial<A2UIMessage>);
-        // Auto-navigate to cover page so user sees the result
-        onNavigatePage?.(0);
+        // Chat mode — call geminiService directly, apply via onApplyCover
+        const coverOpts = {
+          title:        opts.title,
+          subtitle:     opts.subtitle || undefined,
+          author:       opts.author || undefined,
+          style:        opts.style as CoverStyle_,
+          binding:      opts.binding as BindingType_,
+          designMode:   opts.designMode as CoverDesignMode_,
+          customPrompt: opts.customPrompt || undefined,
+        };
+        const bgDataUrl = await generateCoverBackground(coverOpts);
+        updateMsg(id, { status: 'generating', generatingStep: 'Laying out title and typography…' } as Partial<A2UIMessage>);
+        const coverHtml = buildEditableCoverHTML(bgDataUrl, coverOpts);
+        onApplyCover?.(coverHtml);
       }
+      updateMsg(id, { status: 'done', result: 'Cover page generated and applied.' } as Partial<A2UIMessage>);
+      onNavigatePage?.(0);
     } catch (err) {
       updateMsg(id, {
-        status: 'done',
-        result: `❌ ${(err as Error).message ?? 'Cover generation failed.'}`,
+        status: 'error',
+        errorMsg: (err as Error).message || 'Cover generation failed.',
       } as Partial<A2UIMessage>);
     }
   };
@@ -698,6 +926,13 @@ export default function AgentPanel({
     setAttachment(null);
     setAttachName('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
+
+    // ── Cover intent fast-path: inject setup card instead of calling AI ──
+    if (parseCoverIntent(text)) {
+      const setupId = uid();
+      addMsg({ type: 'cover-setup', id: setupId, status: 'pending' } as A2UIMessage);
+      return;
+    }
 
     // Build chat history
     const newHistory: ChatTurn[] = [
@@ -729,11 +964,31 @@ export default function AgentPanel({
   };
 
   const send = async (overrideText?: string) => {
-    // Chat mode — simple conversational AI (no tools)
-    if (panelMode === 'chat') return sendChat(overrideText);
-
     const text = overrideText ?? input.trim();
-    if (!text || loading || !executor) return;
+    if (!text || loading) return;
+
+    // Auto-route: if panel is in chat mode (no executor yet) OR the message
+    // reads as conversational (no edit verbs), go through chat. Otherwise
+    // fall through to the agent/tool pipeline below.
+    if (panelMode === 'chat' || !executor || routeToChat(text)) {
+      return sendChat(overrideText);
+    }
+
+    // Guard: if the user references a selection ("selected", "this one",
+    // "make it blue") but nothing is actually selected on the canvas,
+    // refuse up-front with an actionable message. Prevents the agent
+    // from guessing and scope-bleeding to the whole page.
+    const refsSelection = /\b(selected|this element|this one|this text|this paragraph|this heading|this title|make it|color it)\b/i.test(text);
+    if (refsSelection && !selection?.id) {
+      addMsg({ type: 'user', id: uid(), text });
+      addMsg({
+        type: 'error', id: uid(),
+        message: 'No element is selected. Click the element on the canvas first (use the arrow/select tool in the header), then send your instruction.',
+      });
+      setInput('');
+      if (textareaRef.current) textareaRef.current.style.height = 'auto';
+      return;
+    }
 
     // Add user message
     addMsg({
@@ -1050,29 +1305,16 @@ export default function AgentPanel({
       {/* ── Header ── */}
       <div className="ap-header">
         <div className="ap-header-icon">
-          {panelMode === 'chat' ? <MessageCircle size={12} /> : <Sparkles size={12} />}
+          <Sparkles size={12} />
         </div>
-        <span className="ap-header-title">{panelMode === 'chat' ? 'Chat' : 'Agent'}</span>
-
-        {/* Mode toggle pill */}
-        <div className="ap-mode-toggle">
-          <button
-            className={`ap-mode-btn${panelMode === 'chat' ? ' active' : ''}`}
-            onClick={() => setPanelMode('chat')}
-            title="Simple chat — ask questions about your document"
-          >
-            <MessageCircle size={10} />
-            Chat
-          </button>
-          <button
-            className={`ap-mode-btn${panelMode === 'agent' ? ' active' : ''}`}
-            onClick={() => setPanelMode('agent')}
-            title="MCP Agent — edit layout with AI tools"
-          >
-            <Wrench size={10} />
-            Agent
-          </button>
-        </div>
+        <span className="ap-header-title">AI</span>
+        <span className="ap-header-hint" title="AI routes questions to chat and edit requests to tools automatically">
+          {panelMode === 'agent' ? (
+            <><Wrench size={10} /> tools on</>
+          ) : (
+            <><MessageCircle size={10} /> chat only</>
+          )}
+        </span>
 
         {panelMode === 'agent' && <ModelSelector model={model} onChange={setModel} />}
 
@@ -1135,10 +1377,12 @@ export default function AgentPanel({
       <div className="ap-messages">
         {messages.length === 0 && (
           <div className="ap-empty">
-            {panelMode === 'chat'
-              ? <MessageCircle size={24} className="ap-empty-icon" />
-              : <Bot size={24} className="ap-empty-icon" />
-            }
+            <div className="ap-empty-icon">
+              {panelMode === 'chat'
+                ? <MessageCircle size={18} />
+                : <Bot size={18} />
+              }
+            </div>
             <p className="ap-empty-title">
               {panelMode === 'chat'
                 ? (hasResult ? `Chat about page ${context!.pageNumber}` : 'Document Chat')
@@ -1215,6 +1459,34 @@ export default function AgentPanel({
         </div>
       )}
 
+      {/* ── Selection indicator — shows the user exactly which element
+           the agent will target. Without this users typed "selected
+           element" with nothing selected and the agent guessed. ── */}
+      {selection?.id && (
+        <div className="ap-selection-pill" title="The agent will scope edits to this element">
+          <span className="ap-selection-dot" />
+          <span className="ap-selection-label">Target:</span>
+          <code className="ap-selection-tag">&lt;{selection.tag}&gt;</code>
+          <span className="ap-selection-id">{selection.id}</span>
+          {onClearSelection && (
+            <button
+              className="ap-selection-clear"
+              onClick={onClearSelection}
+              title="Clear selection (Esc)"
+              aria-label="Clear selection"
+            >
+              <X size={10} />
+            </button>
+          )}
+        </div>
+      )}
+      {!selection?.id && executor && hasResult && (
+        <div className="ap-selection-pill ap-selection-pill--empty">
+          <span className="ap-selection-dot ap-selection-dot--warn" />
+          <span>No element selected — edits apply to the whole page</span>
+        </div>
+      )}
+
       {/* ── Input row ── */}
       <div className="ap-input-row">
         <input
@@ -1245,7 +1517,9 @@ export default function AgentPanel({
               : (!executor
                 ? 'Open a document first…'
                 : hasResult
-                ? `Instruct agent for page ${context!.pageNumber}…`
+                ? (selection?.id
+                    ? `Edit <${selection.tag}>…`
+                    : `Instruct agent for page ${context!.pageNumber}…`)
                 : `Ask agent to extract page ${activePage}…`)
           }
           value={input}
