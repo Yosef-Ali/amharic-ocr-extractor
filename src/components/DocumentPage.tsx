@@ -255,14 +255,28 @@ export default function DocumentPage({
       // yields selection.id === undefined, so the agent can't target it.
       // Keep ids that already exist (AI-annotated HTML round-trips).
       let nextId = Date.now() % 1_000_000;
+      let addedAny = false;
       el.querySelectorAll('*').forEach(node => {
         if (!node.getAttribute('data-canvas-id')) {
           node.setAttribute('data-canvas-id', `ce-${nextId++}`);
+          addedAny = true;
         }
       });
-      lastSnapshotRef.current = html;
+      // If we stamped any new ids, commit the annotated HTML back to
+      // React state immediately. Otherwise the AI agent reads the
+      // unannotated html from pageResults, findById fails on the id the
+      // user just selected, and the model falls back to a full-page
+      // batchEdit — which is exactly the scope-bleed bug we're chasing.
+      if (addedAny) {
+        const annotated = el.innerHTML;
+        lastSnapshotRef.current = annotated;
+        // Defer to avoid re-entering the effect during the same tick.
+        queueMicrotask(() => onEdit(pageNumber, annotated));
+      } else {
+        lastSnapshotRef.current = html;
+      }
     }
-  }, [html]);
+  }, [html, onEdit, pageNumber]);
 
   // ── Expose handle via docHandle prop ─────────────────────────────────────
   useEffect(() => {
