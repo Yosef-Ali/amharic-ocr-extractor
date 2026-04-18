@@ -2,8 +2,13 @@
   "mcpServers": {
     "amharic-ocr": {
       "command": "node",
-      "args": ["./mcp-server/dist/index.js"],
+      "args": [
+        "./mcp-server/dist/index.js"
+      ],
       "cwd": "/Users/mekdesyared/amharic-ocr-extractor"
     }
+  },
+  "enabledPlugins": {
+    "promo-video@buildatscale-claude-code": true
   }
 }
