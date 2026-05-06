@@ -21,7 +21,9 @@ export default function LibraryModal({ onLoad, onClose }: Props) {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadAllDocuments().then((d) => { setDocs(d); setLoading(false); });
+    loadAllDocuments()
+      .then((d) => { setDocs(d); setLoading(false); })
+      .catch(() => setLoading(false));
   }, []);
 
   const handleConfirmDelete = async () => {

@@ -35,6 +35,7 @@ interface Props {
   onCancel?:           () => void;
   onImageQualityChange: (q: ImageQuality) => void;
   onCoverPage?:        () => void;
+  isGuest?:            boolean;
 }
 
 export default function BottomToolbar({
@@ -46,6 +47,7 @@ export default function BottomToolbar({
   onRegenerate, onDeletePage,
   onSave, onShowLibrary, onDownloadPDF, onDownloadTxt, onDownloadDocx, onCopyAllText, onCancel,
   onImageQualityChange, onCoverPage,
+  isGuest = false,
 }: Props) {
   const [moreOpen,  setMoreOpen]  = useState(false);
   const [showHelp,  setShowHelp]  = useState(false);
@@ -77,21 +79,6 @@ export default function BottomToolbar({
       <div className="bt-row">
         {/* Center — Primary actions */}
         <div className="bt-group">
-          {/* Quality toggle */}
-          <button
-            className="bt-mode"
-            onClick={() => onImageQualityChange(imageQuality === 'fast' ? 'pro' : 'fast')}
-            disabled={isProcessing}
-            title={imageQuality === 'fast' ? 'Fast mode: quicker, good for most documents. Click for Pro.' : 'Pro mode: higher accuracy, slower. Click for Fast.'}
-          >
-            <span className={`bt-mode-opt${imageQuality === 'fast' ? ' bt-mode-opt--on' : ''}`}>
-              <Zap size={10} /> Fast
-            </span>
-            <span className={`bt-mode-opt${imageQuality === 'pro' ? ' bt-mode-opt--on' : ''}`}>
-              <Sparkles size={10} /> Pro
-            </span>
-          </button>
-
           {/* Extract */}
           <button className="bt-btn bt-btn--primary" onClick={onExtract} disabled={isProcessing} title={`Extract ${totalPages} page${totalPages !== 1 ? 's' : ''} with AI OCR`}>
             {isProcessing ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />}
@@ -112,55 +99,20 @@ export default function BottomToolbar({
             </button>
           )}
 
-          {/* Re-extract current page */}
-          {hasResult && hasImage && (
-            <button
-              className="bt-btn bt-btn--regen"
-              onClick={onRegenerate}
-              disabled={isRegenerating || isProcessing}
-              title={`Re-extract page ${activePage}`}
-            >
-              {isRegenerating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-              <span className="bt-label-desktop">Re-extract</span>
-            </button>
-          )}
         </div>
 
-        {/* Right — Save + Export + overflow */}
+        {/* Right — Export PDF + overflow */}
         <div className="bt-group">
           {hasAnyResults && (
-            <>
-              <button className="bt-btn bt-btn--save" onClick={onSave} disabled={isProcessing || isSaving} title="Save to library (Ctrl+S)" style={{ position: 'relative' }}>
-                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                <span className="bt-label-desktop">{isSaving ? 'Saving…' : 'Save'}</span>
-                {isDirty && !isSaving && <span className="bt-dirty-dot" />}
-              </button>
-
-              {/* Export group — all visible */}
-              <div className="bt-export-group">
-                <button
-                  className="bt-btn bt-btn--pdf"
-                  onClick={onDownloadPDF}
-                  disabled={isPdfExporting || isProcessing}
-                  title="Download PDF"
-                >
-                  {isPdfExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-                  <span className="bt-label-desktop">PDF</span>
-                </button>
-                {onDownloadTxt && (
-                  <button className="bt-btn bt-btn--export" onClick={onDownloadTxt} disabled={isProcessing} title="Download as plain text">
-                    <FileText size={14} />
-                    <span className="bt-label-desktop">.txt</span>
-                  </button>
-                )}
-                {onDownloadDocx && (
-                  <button className="bt-btn bt-btn--export" onClick={onDownloadDocx} disabled={isProcessing} title="Download as Word document">
-                    <FileDown size={14} />
-                    <span className="bt-label-desktop">.doc</span>
-                  </button>
-                )}
-              </div>
-            </>
+            <button
+              className="bt-btn bt-btn--pdf"
+              onClick={onDownloadPDF}
+              disabled={isPdfExporting || isProcessing}
+              title="Export as PDF"
+            >
+              {isPdfExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              <span className="bt-label-desktop">Export</span>
+            </button>
           )}
 
           {/* Overflow menu */}
@@ -172,17 +124,53 @@ export default function BottomToolbar({
               <>
                 <div className="bt-overflow-scrim" onClick={() => setMoreOpen(false)} />
                 <div className="bt-overflow">
-                  <button onClick={() => { onShowLibrary(); setMoreOpen(false); }}>
-                    <BookOpen size={14} /> Library
+                  {hasAnyResults && (
+                    <button
+                      onClick={() => { onSave(); setMoreOpen(false); }}
+                      disabled={isSaving}
+                      title={isGuest ? 'Sign in to save your work' : 'Save to library (Ctrl+S)'}
+                      style={{ position: 'relative' }}
+                    >
+                      {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                      {isSaving ? 'Saving…' : isGuest ? 'Sign in to save' : 'Save'}
+                      {isDirty && !isSaving && !isGuest && <span className="bt-dirty-dot" />}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { onShowLibrary(); setMoreOpen(false); }}
+                    title={isGuest ? 'Sign in to access your library' : 'Open your saved library'}
+                  >
+                    <BookOpen size={14} /> {isGuest ? 'Sign in for library' : 'Library'}
                   </button>
-                  {onCoverPage && (
-                    <button onClick={() => { onCoverPage(); setMoreOpen(false); }}>
-                      <ImageIcon size={14} /> Cover Page
+                  {hasResult && hasImage && (
+                    <button onClick={() => { onRegenerate(); setMoreOpen(false); }} disabled={isRegenerating || isProcessing}>
+                      {isRegenerating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                      Re-extract page
+                    </button>
+                  )}
+                  {hasAnyResults && (
+                    <button onClick={() => { onImageQualityChange(imageQuality === 'fast' ? 'pro' : 'fast'); setMoreOpen(false); }}>
+                      {imageQuality === 'fast' ? <><Sparkles size={14} /> Try higher accuracy</> : <><Zap size={14} /> Use fast mode</>}
+                    </button>
+                  )}
+                  {hasAnyResults && onDownloadTxt && (
+                    <button onClick={() => { onDownloadTxt(); setMoreOpen(false); }}>
+                      <FileText size={14} /> Download .txt
+                    </button>
+                  )}
+                  {hasAnyResults && onDownloadDocx && (
+                    <button onClick={() => { onDownloadDocx(); setMoreOpen(false); }}>
+                      <FileDown size={14} /> Download .doc
                     </button>
                   )}
                   {hasAnyResults && onCopyAllText && (
                     <button onClick={() => { onCopyAllText(); setMoreOpen(false); }}>
                       <ClipboardCopy size={14} /> Copy all text
+                    </button>
+                  )}
+                  {onCoverPage && (
+                    <button onClick={() => { onCoverPage(); setMoreOpen(false); }}>
+                      <ImageIcon size={14} /> Cover Page
                     </button>
                   )}
                   {hasAnyResults && (

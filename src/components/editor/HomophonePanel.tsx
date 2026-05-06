@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { CheckCircle2, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronRight, RotateCcw, Undo2, AlertTriangle } from 'lucide-react';
 
 // ── Amharic homophone / look-alike groups ──────────────────────────────────
 // Each group contains characters that are phonetically identical or visually
@@ -84,9 +84,26 @@ function replaceCharsInHtml(html: string, fromChars: string[], toChar: string): 
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
+// Pending bulk action awaiting confirmation
+interface PendingSwap {
+  group:   typeof HOMOPHONE_GROUPS[0];
+  toRoot:  string;
+  scope:   'page' | 'all';
+  count:   number;     // pre-computed affected char count
+  pages:   number[];   // pages that would change
+}
+
+// Snapshot of a destructive edit — used to offer one-step undo
+interface Snapshot {
+  label:  string;
+  edits:  { pageNumber: number; priorHtml: string }[];
+}
+
 export default function HomophonePanel({ pageResults, activePage, onEdit }: Props) {
   const [expanded,   setExpanded]   = useState<Record<string, boolean>>({ ha: true });
   const [lastAction, setLastAction] = useState('');
+  const [pending,    setPending]    = useState<PendingSwap | null>(null);
+  const [lastSnap,   setLastSnap]   = useState<Snapshot | null>(null);
 
   const pageNums = useMemo(
     () => Object.keys(pageResults).map(Number).filter(n => n > 0).sort((a, b) => a - b),
@@ -109,7 +126,40 @@ export default function HomophonePanel({ pageResults, activePage, onEdit }: Prop
     setTimeout(() => setLastAction(''), 2800);
   };
 
-  // Replace one base-root set with another, e.g. all ሐ-series → ሀ-series
+  // Step 1: compute what a swap *would* change — user confirms before we apply.
+  const previewSwap = (group: typeof HOMOPHONE_GROUPS[0], toRoot: string, scope: 'page' | 'all') => {
+    const roots = group.roots;
+    const fromRoots = roots.filter(r => r !== toRoot);
+    if (fromRoots.length === 0) return;
+
+    const seriesSize = 7;
+    const targetPages = scope === 'page' ? [activePage] : pageNums;
+    let count = 0;
+    const pagesChanged: number[] = [];
+    for (const pn of targetPages) {
+      const text = stripTags(pageResults[pn] ?? '');
+      let pageCount = 0;
+      for (const fromRoot of fromRoots) {
+        const fromRootIdx = group.chars.indexOf(fromRoot);
+        const fromSeriesStart = fromRootIdx - (fromRootIdx % seriesSize);
+        for (let i = 0; i < seriesSize; i++) {
+          const fc = group.chars[fromSeriesStart + i];
+          if (fc) pageCount += countChar(text, fc);
+        }
+      }
+      if (pageCount > 0) {
+        count += pageCount;
+        pagesChanged.push(pn);
+      }
+    }
+    if (count === 0) {
+      flash('No occurrences found to replace');
+      return;
+    }
+    setPending({ group, toRoot, scope, count, pages: pagesChanged });
+  };
+
+  // Step 2: actually apply a previewed swap (snapshots prior HTML for undo).
   const applySwap = (group: typeof HOMOPHONE_GROUPS[0], toRoot: string, scope: 'page' | 'all') => {
     // Build the mapping: every char in the group that shares the same vowel order
     // with toRoot gets mapped. E.g. if toRoot='ሀ' (order 1 of series ሀ),
@@ -125,10 +175,12 @@ export default function HomophonePanel({ pageResults, activePage, onEdit }: Prop
 
     let totalReplaced = 0;
     const targetPages = scope === 'page' ? [activePage] : pageNums;
+    const snapEdits: { pageNumber: number; priorHtml: string }[] = [];
 
     for (const pn of targetPages) {
       const html = pageResults[pn];
       if (!html) continue;
+      const priorForUndo = html;
 
       // Count replacements
       const text = stripTags(html);
@@ -171,26 +223,50 @@ export default function HomophonePanel({ pageResults, activePage, onEdit }: Prop
       }
 
       if (newHtml !== html) {
+        snapEdits.push({ pageNumber: pn, priorHtml: priorForUndo });
         onEdit(pn, newHtml);
         totalReplaced += replaced;
       }
     }
 
+    if (snapEdits.length > 0) {
+      setLastSnap({
+        label: `${totalReplaced} character${totalReplaced !== 1 ? 's' : ''} standardized → ${toRoot}`,
+        edits: snapEdits,
+      });
+    }
+    setPending(null);
     flash(totalReplaced > 0
       ? `Replaced ${totalReplaced} character${totalReplaced !== 1 ? 's' : ''} ${scope === 'page' ? 'on page ' + activePage : 'across all pages'}`
       : 'No occurrences found to replace');
+  };
+
+  // Revert the most recent destructive action
+  const undoLast = () => {
+    if (!lastSnap) return;
+    for (const e of lastSnap.edits) onEdit(e.pageNumber, e.priorHtml);
+    flash('Reverted last change');
+    setLastSnap(null);
   };
 
   // Remove all chars from a set (e.g. wipe out ኀ-series entirely)
   const applyDelete = (chars: string[], scope: 'page' | 'all') => {
     const targetPages = scope === 'page' ? [activePage] : pageNums;
     let total = 0;
+    const snapEdits: { pageNumber: number; priorHtml: string }[] = [];
     for (const pn of targetPages) {
       const html = pageResults[pn];
       if (!html) continue;
       const newHtml = replaceCharsInHtml(html, chars, '');
       const n = chars.reduce((s, c) => s + countChar(stripTags(html), c), 0);
-      if (n > 0) { onEdit(pn, newHtml); total += n; }
+      if (n > 0) {
+        snapEdits.push({ pageNumber: pn, priorHtml: html });
+        onEdit(pn, newHtml);
+        total += n;
+      }
+    }
+    if (snapEdits.length > 0) {
+      setLastSnap({ label: `Removed ${total} character${total !== 1 ? 's' : ''}`, edits: snapEdits });
     }
     flash(total > 0 ? `Removed ${total} character${total !== 1 ? 's' : ''}` : 'None found');
   };
@@ -205,6 +281,38 @@ export default function HomophonePanel({ pageResults, activePage, onEdit }: Prop
       {lastAction && (
         <div className="hp-toast">
           <CheckCircle2 size={13} /> {lastAction}
+          {lastSnap && (
+            <button className="hp-undo-inline" onClick={undoLast} title="Revert the last change">
+              <Undo2 size={12} /> Undo
+            </button>
+          )}
+        </div>
+      )}
+
+      {pending && (
+        <div className="hp-confirm">
+          <div className="hp-confirm-hd">
+            <AlertTriangle size={13} />
+            <strong>Confirm bulk change</strong>
+          </div>
+          <p className="hp-confirm-body">
+            Replace <strong>{pending.count}</strong> character{pending.count !== 1 ? 's' : ''} with{' '}
+            <strong>{pending.toRoot}</strong>
+            {pending.scope === 'page'
+              ? ` on page ${activePage}`
+              : ` across ${pending.pages.length} page${pending.pages.length !== 1 ? 's' : ''}`}.
+            <br />
+            <span className="hp-confirm-hint">You can undo this right after applying.</span>
+          </p>
+          <div className="hp-confirm-actions">
+            <button className="hp-btn" onClick={() => setPending(null)}>Cancel</button>
+            <button
+              className="hp-btn hp-btn--all"
+              onClick={() => applySwap(pending.group, pending.toRoot, pending.scope)}
+            >
+              Apply {pending.count}
+            </button>
+          </div>
         </div>
       )}
 
@@ -272,7 +380,7 @@ export default function HomophonePanel({ pageResults, activePage, onEdit }: Prop
                           <button
                             className="hp-btn"
                             disabled={fromCount === 0}
-                            onClick={() => applySwap(group, toRoot, 'page')}
+                            onClick={() => previewSwap(group, toRoot, 'page')}
                             title={`Replace on page ${activePage} only`}
                           >
                             Page
@@ -280,7 +388,7 @@ export default function HomophonePanel({ pageResults, activePage, onEdit }: Prop
                           <button
                             className="hp-btn hp-btn--all"
                             disabled={fromCount === 0}
-                            onClick={() => applySwap(group, toRoot, 'all')}
+                            onClick={() => previewSwap(group, toRoot, 'all')}
                             title="Replace across all pages"
                           >
                             All pages

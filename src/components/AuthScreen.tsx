@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ScanSearch, Sparkles, Mail, Lock, Loader2 } from 'lucide-react';
+import { ScanSearch, Mail, Lock, Loader2 } from 'lucide-react';
 import { authClient } from '../lib/neonAuth';
 
 interface Props {
@@ -56,9 +56,6 @@ export default function AuthScreen({ onSuccess }: Props) {
         <div className="auth-brand">
           <div className="auth-brand-icon">
             <ScanSearch size={22} />
-            <span className="auth-brand-sparkle">
-              <Sparkles size={10} />
-            </span>
           </div>
           <div>
             <div className="auth-brand-name">

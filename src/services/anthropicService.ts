@@ -1,41 +1,17 @@
 import { buildOcrPrompt, buildLayoutPrompt, verifyLayout, type ChatTurn, type CanvasContext } from './aiCommon';
-
-const BASE_URL = import.meta.env.VITE_ANTHROPIC_BASE_URL || 'https://api.anthropic.com/v1';
-const API_KEY  = import.meta.env.VITE_ANTHROPIC_API_KEY  || '';
-const DEFAULT_MODEL = import.meta.env.VITE_ANTHROPIC_MODEL || 'claude-3-sonnet-20240229';
-
-/** Response from Anthropic Messages API */
-interface AnthropicResponse {
-  content: Array<{ type: 'text'; text: string }>;
-  role: 'assistant';
-  model: string;
-}
+import { authFetch } from '../lib/apiClient';
 
 async function callAnthropic(messages: any[], system?: string, model?: string) {
-  if (!API_KEY) throw new Error('Anthropic/MiniMax API key is missing. Please set VITE_ANTHROPIC_API_KEY in .env');
-
-  const res = await fetch(`${BASE_URL}/messages`, {
+  // Always use server-side proxy to keep API key secure
+  const res = await authFetch('/api/ai-proxy', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: model || DEFAULT_MODEL,
-      max_tokens: 4096,
-      system,
-      messages,
-    }),
+    body: JSON.stringify({ messages, system, model }),
   });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: { message: res.statusText } }));
-    throw new Error(`Anthropic API Error: ${err.error?.message || res.statusText}`);
-  }
-
-  const data: AnthropicResponse = await res.json();
-  return data.content[0]?.text || '';
+  const data = await res.json();
+  // Server proxy returns the full response; extract text
+  if (typeof data === 'string') return data;
+  if (data.content?.[0]?.text) return data.content[0].text;
+  return data.text || '';
 }
 
 /** OCR Extraction via MiniMax/Anthropic */

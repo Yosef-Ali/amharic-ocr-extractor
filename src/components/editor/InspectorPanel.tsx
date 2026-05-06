@@ -292,13 +292,12 @@ export default function InspectorPanel({
     window.dispatchEvent(new CustomEvent('insp-crop-action', { detail: { action, desc } }));
   }, []);
 
-  // ── Tabs ──────────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<InspTab>('page');
-  useEffect(() => {
-    if (crop.active) setActiveTab('image');
-    else if (hasElement) setActiveTab('paragraph');
-    else setActiveTab('page');
-  }, [hasElement, crop.active]);
+  // ── Sections are contextual (no tabs): Text section appears when an
+  // element is selected; Image section appears when crop is active;
+  // Page settings always appear below. `activeTab` kept as a derived
+  // value for the legacy tab-gated render blocks — it is no longer a
+  // user-controlled knob.
+  const activeTab: InspTab = crop.active ? 'image' : hasElement ? 'paragraph' : 'page';
 
   // ── Accordion ─────────────────────────────────────────────────────────
   const [sections, setSections] = useState<Record<string, boolean>>({});
@@ -326,28 +325,27 @@ export default function InspectorPanel({
   return (
     <aside className="inspector-panel">
 
-      {/* ── Tab bar ─────────────────────────────────────────────────── */}
-      <div className="insp-tab-bar">
-        <button className={`insp-tab${activeTab === 'page' ? ' insp-tab--active' : ''}`}
-          onClick={() => setActiveTab('page')} title="Page Layout">
-          <FileText size={12} /><span>Page</span>
-        </button>
-        <button
-          className={`insp-tab${activeTab === 'paragraph' ? ' insp-tab--active' : ''}${!hasElement ? ' insp-tab--disabled' : ''}`}
-          onClick={() => hasElement && setActiveTab('paragraph')}
-          title={hasElement ? `Text — <${elementStyles.tag}>` : 'Select a text element first'}
-        >
-          <Pilcrow size={12} /><span>Text</span>
-          {hasElement && <code className="insp-tab-tag">{elementStyles.tag}</code>}
-        </button>
-        <button
-          className={`insp-tab${activeTab === 'image' ? ' insp-tab--active' : ''}${!crop.active ? ' insp-tab--disabled' : ''}`}
-          onClick={() => crop.active && setActiveTab('image')}
-          title={crop.active ? 'Image crop' : 'Draw a selection on the scan'}
-        >
-          <Image size={12} /><span>Image</span>
-          {crop.active && <span className="insp-tab-dot" />}
-        </button>
+      {/* ── Contextual selection header (replaces tab bar) ──────────── */}
+      <div className="insp-ctx-bar">
+        {crop.active ? (
+          <>
+            <Image size={13} className="insp-ctx-icon" />
+            <span className="insp-ctx-name">Image crop</span>
+            <span className="insp-ctx-dot" />
+          </>
+        ) : hasElement ? (
+          <>
+            <Pilcrow size={13} className="insp-ctx-icon" />
+            <span className="insp-ctx-name">Text element</span>
+            <code className="insp-ctx-tag">{elementStyles.tag}</code>
+          </>
+        ) : (
+          <>
+            <FileText size={13} className="insp-ctx-icon" />
+            <span className="insp-ctx-name">Page settings</span>
+            <span className="insp-ctx-hint">Click text on the page to edit it</span>
+          </>
+        )}
       </div>
 
       {/* ════════════════════════════ PAGE TAB ═══════════════════════════ */}

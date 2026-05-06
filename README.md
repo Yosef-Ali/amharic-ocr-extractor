@@ -1,220 +1,109 @@
 # Amharic OCR Extractor
 
-A modern web application that extracts and digitizes Amharic (Ethiopian) text from PDF and image files using Google Gemini AI. Features a full document editor, AI chat assistant, dark/light theme, and an admin panel for user management.
+> Upload scanned Amharic pages. Get accurate, editable text with original layout. Export as PDF, DOCX, or TXT.
 
----
+![App screenshot](screenshot.jpg)
 
-## Screenshots
+## Why this exists
 
-### Home Screen — Project Library
-![Home Screen](./docs/screenshots/home.png)
+Ethiopic script OCR is an unsolved problem for most tools. Google Docs misses fidel distinctions (ሀ vs ሐ), Adobe Acrobat has no Amharic support, and Tesseract requires local setup with poor accuracy. This app is a purpose-built, one-click solution for Ethiopian publishers, scholars, and church archivists who need to digitize Amharic documents without retyping them.
 
-### Editor — Extracted Document with Floating Dock
-![Editor](./docs/screenshots/editor.png)
+## What it does
 
-### Admin Panel — User Management
-![Admin Panel](./docs/screenshots/admin.png)
+- **OCR pipeline** — Two-pass extraction (raw text recognition, then HTML layout reconstruction) using Gemini 3.1 Flash with Amharic-specific prompts. Preserves fidel distinctions, two-column layout, and embedded images.
+- **A4 document editor** — contentEditable canvas with Noto Serif Ethiopic, page-by-page navigation, find-and-replace, homophone correction (common fidel confusion pairs).
+- **AI chat assistant** — Canvas-aware agent that can answer questions about the current page or apply edits (change font size, recolor, restructure). No mode toggle — routes chat vs. tool use automatically.
+- **Cover generator** — AI-generated cover pages with template grid, photo upload, custom prompt, and binding-type selection.
+- **Document library** — Projects saved to Neon PostgreSQL with page images on Vercel Blob. Search, filter, re-open, or download any saved document.
+- **Admin panel** — User management, document browsing across all users, block/unblock. Only visible to specified admin emails.
+- **Export** — PDF (jsPDF + html2canvas), DOCX (typed with Noto Serif Ethiopic font), plain text, and structured JSON for downstream pipelines (RAG/embedding).
 
-### Dark Mode
-![Dark Mode](./docs/screenshots/dark-mode.png)
+## Tech stack
 
----
+| Layer | Choice | Why |
+|---|---|---|
+| Framework | React 19 + TypeScript + Vite 7 | Fastest dev iteration speed for a single-page app; Vite 7's native Tailwind v4 plugin eliminates build config |
+| Styling | Tailwind CSS v4 + CSS custom properties | Dark/light mode via a single `data-theme` attribute; no runtime CSS-in-JS overhead |
+| OCR | Gemini 3.1 Flash Image Preview | Best accuracy-to-latency ratio for Ethiopic script; two-pass pipeline (raw text → styled HTML) beats single-shot approaches |
+| AI Chat | Gemini 3 Flash Preview | Function calling model for canvas manipulation (edit, select, style) |
+| Image Gen | Gemini 3 Pro Image Preview | Cover page and illustration generation with Amharic-compatible text |
+| Database | Neon PostgreSQL (serverless) | Auto-scaling to zero; Neon Auth provides built-in email auth with JWTs |
+| File Storage | Vercel Blob | Direct upload from serverless functions; public URLs for page images |
+| Auth | Neon Auth | Email-based sign in/up with zero-config DB-backed sessions |
+| PDF Export | jsPDF + html2canvas | Entirely client-side; no server PDF rendering cost |
+| Icons | Lucide React | Consistent, tree-shakable icon set |
 
-## Features
+## Repo layout
 
-### OCR & Document Extraction
-- Upload PDF or image files (PNG, JPEG, WebP)
-- Gemini 2.5 Flash AI extracts Amharic text with original layout
-- Two-column layout detection and preservation
-- Page-by-page extraction with rate-limit handling
-- Re-extract individual pages or force-regenerate all
+```
+api/                  # 13 Vercel serverless routes (OCR, auth, DB, Blob, admin)
+docs/
+  screenshots/        # Drop hero images here (see below)
+  OUTREACH.md         # User outreach templates (Amharic + English)
+  sample-output-*.pdf # Example OCR output
+mcp-server/           # MCP server for Claude Code CLI → canvas bridge
+src/
+  App.tsx             # Root: auth, process pipeline, screen routing
+  components/         # AuthScreen, HomeScreen, AdminPanel, FloatingChat, editor/
+  services/           # geminiService.ts (OCR+chat), storageService.ts (DB+Blob)
+  lib/                # neon.ts (SQL client), neonAuth.ts, apiClient.ts
+  hooks/              # useTheme
+  types/              # A2UI, canvas types
+  styles/             # Split CSS modules (tokens, base, features)
+tests/                # OCR accuracy suite (Python + Node), Vitest unit tests
+video/                # Remotion project for promo video
+```
 
-### Editor
-- A4 contentEditable pages with Noto Serif Ethiopic font
-- Figma-inspired floating dock (bottom-center) with grouped tools:
-  - **Tools** — Select mode, Inspector
-  - **OCR** — Fast/Pro quality toggle, Extract, Re-extract All
-  - **Page** — Re-extract page, Delete page
-  - **Export** — Save to library, Open library, Download PDF
-  - **AI** — AI Chat assistant
-- Real-time processing status bubble above the dock
-
-### AI Chat Assistant
-- Canvas-aware: reads the current page as context
-- Two modes: **Chat** (ask questions) and **Edit** (apply changes to page HTML)
-- Image attachment support (paste, drag & drop, file picker)
-- Suggestion chips for common queries
-- Markdown rendering with copy button
-
-### Document Library
-- Projects saved to Neon PostgreSQL database
-- Page images stored on Vercel Blob
-- Download any saved project as PDF directly from the home screen
-- Search, recent vs. all projects views
-
-### Theme
-- Dark / Light mode toggle in every screen
-- CSS custom properties for consistent theming
-- Anti-flicker inline script prevents flash on load
-
-### Admin Panel
-- Visible only to the email set in `VITE_ADMIN_EMAIL`
-- **Overview** — total users, documents, pages
-- **Users** — list with join date, doc count, block/unblock button
-- **Documents** — full document list across all users, filterable by user, with delete
-- Blocked users see a "Account Suspended" screen instead of the app
-
-### Authentication
-- Neon Auth (email-based sign in / sign up)
-- User profile menu with sign out in every screen
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Framework | React 18 + TypeScript + Vite |
-| Styling | Tailwind CSS v4 + CSS custom properties |
-| AI — OCR | Gemini 2.5 Flash (`gemini-2.5-flash`) |
-| AI — Chat | Gemini 2.5 Flash with canvas context |
-| AI — Images | Gemini 2.0 Flash image generation |
-| Database | Neon PostgreSQL (serverless) |
-| File Storage | Vercel Blob |
-| Auth | Neon Auth |
-| PDF Export | jsPDF + html2canvas |
-| Icons | Lucide React |
-| Fonts | Noto Serif Ethiopic, Noto Sans Ethiopic |
-
----
-
-## Getting Started
-
-### Prerequisites
-- Node.js 18+
-- Google Gemini API key
-- Neon database (with Auth enabled)
-- Vercel Blob storage (optional — falls back to base64 in local dev)
-
-### Installation
+## Run it locally
 
 ```bash
+# Prerequisites: Node.js 18+
 git clone https://github.com/Yosef-Ali/amharic-ocr-extractor.git
 cd amharic-ocr-extractor
 npm install
 ```
 
-### Environment Variables
-
-Create a `.env` file in the project root:
+Create a `.env` file:
 
 ```env
-# Google Gemini AI
 VITE_GEMINI_API_KEY=your_gemini_api_key
-
-# Neon Database
 VITE_DATABASE_URL=postgresql://...
-
-# Neon Auth
-VITE_NEON_AUTH_URL=https://...neonauth...
-
-# Admin panel access (only this email sees the Admin button)
+VITE_NEON_AUTH_URL=https://...
 VITE_ADMIN_EMAIL=your@email.com
 ```
 
-### Database Setup
-
-The app auto-creates required tables on first login:
-
-```sql
--- Auto-created on first login
-CREATE TABLE IF NOT EXISTS users (
-  id         TEXT PRIMARY KEY,
-  email      TEXT NOT NULL,
-  name       TEXT,
-  blocked    BOOLEAN NOT NULL DEFAULT FALSE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  last_seen  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- Required — create manually or via migration
-CREATE TABLE IF NOT EXISTS documents (
-  id         TEXT PRIMARY KEY,
-  user_id    TEXT NOT NULL,
-  name       TEXT NOT NULL,
-  page_count INT NOT NULL,
-  saved_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS document_content (
-  document_id  TEXT PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
-  page_images  JSONB NOT NULL,
-  page_results JSONB NOT NULL
-);
-```
-
-### Run
+The app auto-creates the required DB tables on first login. Start the dev server:
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173)
+Open http://localhost:5173. Upload a PDF or image to begin.
 
-### Build
+## Deploy
 
-```bash
-npm run build
-```
-
----
-
-## Project Structure
-
-```
-src/
-├── App.tsx                        # Root — auth, state, orchestration
-├── index.css                      # Theme tokens + all component styles
-├── hooks/
-│   └── useTheme.ts                # Dark/light mode hook
-├── services/
-│   ├── geminiService.ts           # OCR, chat, image generation
-│   ├── storageService.ts          # Neon DB + Vercel Blob CRUD
-│   └── adminService.ts            # Admin queries (users, block/unblock)
-├── utils/
-│   └── downloadPDF.ts             # Off-screen PDF export utility
-├── lib/
-│   ├── neon.ts                    # Neon SQL client
-│   └── neonAuth.ts                # Neon Auth client
-└── components/
-    ├── HomeScreen.tsx             # Landing / project library
-    ├── AuthScreen.tsx             # Sign in / sign up
-    ├── AdminPanel.tsx             # Admin panel modal
-    ├── FloatingChat.tsx           # AI chat panel (controlled + self-managed)
-    ├── ThemeToggleButton.tsx      # Shared Sun/Moon toggle
-    ├── UserMenu.tsx               # Avatar dropdown with sign out
-    ├── LibraryModal.tsx           # Document library browser
-    ├── Toast.tsx                  # Notification toasts
-    └── editor/
-        ├── EditorShell.tsx        # Full editor layout + floating dock
-        ├── DocumentPage.tsx       # A4 contentEditable page
-        └── PageThumbnailSidebar.tsx
-```
-
----
-
-## Deployment
-
-The app is configured for Vercel deployment. The `/api/blob-upload` serverless function handles image uploads to Vercel Blob.
+This app deploys to Vercel with a single command:
 
 ```bash
 vercel deploy
 ```
 
-Set all `VITE_*` environment variables in your Vercel project settings.
+Set the same `VITE_*` environment variables in your Vercel project settings. The `/api/blob-upload` serverless function handles image uploads to Vercel Blob automatically.
 
----
+## Status
+
+OCR accuracy passes at 88% on modern Amharic print (novels, Bibles, prayer books). Fidel distinctions (ሀ/ሐ/ኀ, ሰ/ሠ, ጸ/ፀ) verified working. Two-column layout and embedded image placement preserved. The wedge workflow (upload → accurate text → export) is complete and tested on 10 real documents. Old Ge'ez manuscript OCR is explicitly deferred to a future version.
+
+## Screenshots
+
+Drop these into `docs/screenshots/`:
+
+| File | Content |
+|---|---|
+| `docs/screenshots/home.png` | Home screen — document library |
+| `docs/screenshots/editor.png` | Editor — extracted document with floating dock |
+| `docs/screenshots/admin.png` | Admin panel — user management |
+| `docs/screenshots/dark-mode.png` | Editor in dark mode |
 
 ## License
 

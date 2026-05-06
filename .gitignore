@@ -1,5 +1,10 @@
 .env
+.env.local
 node_modules
 dist
 .vercel
 lighthouse/
+.gstack/
+.claude/
+.DS_Store
+*.DS_Store

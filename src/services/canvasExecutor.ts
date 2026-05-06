@@ -134,6 +134,24 @@ export class CanvasExecutor {
     const html = this.ctx.getPageHTML(page);
     console.log(`[CanvasExecutor] editTextBlock page=${page}, selector="${p.selector}", htmlLength=${html?.length ?? 0}`);
     if (!html) return JSON.stringify({ error: `Page ${page} has no content to edit.` });
+
+    // Guard: applying style patches to the root container leaks via CSS
+    // inheritance (e.g. `color: blue` on the root div paints every descendant).
+    // The model sometimes passes selector='root' or '' as a shortcut — reject
+    // that for style edits and force it to pick the specific child id returned
+    // by getDocumentStructure.
+    const isRootSelector = !p.selector || p.selector === 'root' || p.selector === '__root__';
+    const hasStylePatch = !!(p.fontSize || p.lineHeight || p.color || p.textAlign || p.fontWeight ||
+      p.fontStyle || p.marginTop || p.marginBottom || p.letterSpacing || p.textTransform ||
+      p.border || p.borderRadius || p.padding !== undefined || p.background || p.display || p.width);
+    if (isRootSelector && hasStylePatch) {
+      return JSON.stringify({
+        error: 'Refusing to apply style to the page root — it would inherit to every element. ' +
+               'Call getDocumentStructure first, then pass the specific child id ' +
+               '(e.g. the <h1> id for a title color change).',
+      });
+    }
+
     const { root } = this.parse(html);
     const el = findById(root, p.selector) as HTMLElement | null;
     if (!el) {
@@ -319,13 +337,14 @@ export class CanvasExecutor {
 
   // ── Cover page generation via NanoBanana 2 ──────────────────────────
   async generateCover(args: Record<string, unknown>): Promise<string> {
-    const mode        = (args.mode as string) ?? 'generate';
-    const title       = (args.title as string) ?? '';
-    const subtitle    = (args.subtitle as string) ?? undefined;
-    const author      = (args.author as string) ?? undefined;
-    const style       = ((args.style as string) ?? 'classic') as CoverStyle;
-    const binding     = ((args.binding as string) ?? 'saddle-stitch') as BindingType;
-    const instruction = (args.instruction as string) ?? '';
+    const mode         = (args.mode as string) ?? 'generate';
+    const title        = (args.title as string) ?? '';
+    const subtitle     = (args.subtitle as string) ?? undefined;
+    const author       = (args.author as string) ?? undefined;
+    const style        = ((args.style as string) ?? 'classic') as CoverStyle;
+    const binding      = ((args.binding as string) ?? 'saddle-stitch') as BindingType;
+    const customPrompt = (args.customPrompt as string) ?? undefined;
+    const instruction  = (args.instruction as string) ?? '';
 
     try {
       let bgDataUrl: string;
@@ -340,11 +359,11 @@ export class CanvasExecutor {
         bgDataUrl = await improveCoverBackground(match[1], instruction || 'Improve the design quality, colors, and visual appeal of the background.');
       } else {
         if (!title) return JSON.stringify({ error: 'Title is required for cover generation.' });
-        bgDataUrl = await generateCoverBackground({ title, subtitle, author, style, binding });
+        bgDataUrl = await generateCoverBackground({ title, subtitle, author, style, binding, customPrompt });
       }
 
       // Build editable HTML and apply as page 0
-      const coverHtml = buildEditableCoverHTML(bgDataUrl, { title, subtitle, author, style, binding });
+      const coverHtml = buildEditableCoverHTML(bgDataUrl, { title, subtitle, author, style, binding, customPrompt });
       this.ctx.onEdit(0, coverHtml);
       this.ctx.onSetActivePage(0);
 

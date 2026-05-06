@@ -63,8 +63,11 @@ export interface A2UICoverSetupMessage {
   type:          'cover-setup';
   id:            string;
   suggestedTitle?: string;
-  status:        'pending' | 'generating' | 'done' | 'cancelled';
-  result?:       string;   // success / error text after generation
+  status:        'pending' | 'generating' | 'done' | 'cancelled' | 'error';
+  result?:       string;   // success text after generation
+  errorMsg?:     string;   // error message when status === 'error' (form stays open for retry)
+  generatingStep?:    string; // progress label shown during generation
+  generatingStepIdx?: number; // 0-based step index (0,1,2) for dot indicator
 }
 
 export type A2UIMessage =
@@ -143,7 +146,11 @@ export const AGENT_MODELS: ModelDef[] = [
 ];
 
 // ── Tools that require human approval before execution ────────────────────
-export const APPROVAL_REQUIRED_TOOLS = new Set(['deleteElement', 'batchEdit']);
+// Keep the approval gate tight: only truly destructive ops ask the user.
+// batchEdit for property-only changes (color, font-size, alignment) is the
+// hot path for quick AI edits — gating it behind a modal made "change title
+// to blue" feel slower than Figma/Pencil. A single delete still prompts.
+export const APPROVAL_REQUIRED_TOOLS = new Set(['deleteElement']);
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 export const toolIcon: Record<string, string> = {

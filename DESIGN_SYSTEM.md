@@ -48,19 +48,20 @@ Text Secondary:     #6B7280   (labels, hints, metadata)
 Text Muted:         #9CA3AF   (placeholders, disabled)
 
 -- Brand --
-Primary:            #2563EB   (confident blue — trust, precision)
-Primary Hover:      #1D4ED8
-Primary Light:      #EFF6FF   (selected states, highlights)
+Primary:            #EF4444   (brand red — urgency, precision, Amharic energy)
+Primary Hover:      #DC2626
+Primary Light:      #FEF2F2   (selected states, highlights)
+Primary Gradient:   linear-gradient(135deg, #EF4444, #DC2626)
 
 -- Functional --
 Success:            #059669   (confirmed OCR, high confidence text)
 Warning:            #D97706   (low confidence characters, needs review)
-Error:              #DC2626   (OCR failure, rate limit, errors)
+Error:              #DC2626   (OCR failure, rate limit, errors — same as brand)
 Error Light:        #FEF2F2   (error backgrounds)
 
 -- Editor --
-Selection Blue:     #2563EB20 (12% opacity — selected elements)
-Bounding Box:       #2563EB   (solid 2px — element outlines)
+Selection Red:      #EF444420 (12% opacity — selected elements)
+Bounding Box:       #EF4444   (solid 2px — element outlines)
 Grid Lines:         #D1D5DB   (subtle, non-distracting)
 ```
 
@@ -77,9 +78,9 @@ Text Secondary:     #A1A1AA
 Text Muted:         #71717A
 
 -- Brand --
-Primary:            #3B82F6
-Primary Hover:      #60A5FA
-Primary Light:      #1E3A5F
+Primary:            #F87171   (brand red — dark theme variant)
+Primary Hover:      #EF4444
+Primary Light:      #450A0A
 
 -- Functional --
 (Same hues, slightly adjusted for dark backgrounds)

@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "amharic-ocr": {
-      "command": "node",
-      "args": ["./mcp-server/dist/index.js"],
-      "cwd": "/Users/mekdesyared/amharic-ocr-extractor"
-    }
-  }
-}

@@ -138,3 +138,11 @@ VITE_ADMIN_EMAIL=...          # Admin panel access email
 - `DESIGN_SYSTEM.md` — Colors, typography, component patterns
 - `WORKFLOW.md` — YC 5-phase development plan & action items
 - `PLAN.md` — (Legacy) InDesign-style expansion plan
+
+## Testing
+
+- **Framework:** Vitest with jsdom environment
+- **Run:** `npm run test` (headless), `npm run test:watch` (watch mode)
+- **Files:** `src/services/__tests__/`, `src/lib/__tests__/`
+- **Coverage goal:** 100% test coverage for new code paths
+- **Conventions:** Unit tests for services, integration tests for API routes

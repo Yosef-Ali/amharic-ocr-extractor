@@ -18,12 +18,23 @@ interface Props {
   onTextChange: (id: string, text: string) => void;
 }
 
+// Handle positions for the 8-point InDesign-style selection
+const HANDLES = ['tl','tc','tr','ml','mr','bl','bc','br'] as const;
+
 export default function CoverEditor({ bgUrl, blocks, selId, onSelect, onMove, onTextChange }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editRefs     = useRef<Record<string, HTMLDivElement | null>>({});
 
-  const [editId,   setEditId]   = useState<string | null>(null);
-  const [dragging, setDragging] = useState<{ id: string; sx: number; sy: number; ox: number; oy: number } | null>(null);
+  const [editId,    setEditId]    = useState<string | null>(null);
+  const [tooltipId, setTooltipId] = useState<string | null>(null);
+  const [dragging,  setDragging]  = useState<{ id: string; sx: number; sy: number; ox: number; oy: number } | null>(null);
+
+  // Auto-hide tooltip after 2 seconds
+  useEffect(() => {
+    if (!tooltipId) return;
+    const t = setTimeout(() => setTooltipId(null), 2000);
+    return () => clearTimeout(t);
+  }, [tooltipId]);
 
   // ── Drag ──────────────────────────────────────────────────────────────────
   const onBlockMouseDown = useCallback((e: React.MouseEvent, id: string) => {
@@ -82,10 +93,12 @@ export default function CoverEditor({ bgUrl, blocks, selId, onSelect, onMove, on
               e.stopPropagation();
               if (isSel && !isEdit) {
                 setEditId(b.id);
+                setTooltipId(null);
                 setTimeout(() => editRefs.current[b.id]?.focus(), 0);
               } else if (!isSel) {
                 onSelect(b.id);
                 setEditId(null);
+                setTooltipId(b.id);
               }
             }}
             className={`ce-block${isSel ? ' ce-block--sel' : ''}`}
@@ -97,6 +110,16 @@ export default function CoverEditor({ bgUrl, blocks, selId, onSelect, onMove, on
               zIndex: isSel ? 10 : 2,
             }}
           >
+            {/* 8-point InDesign-style resize handles (visual affordance) */}
+            {isSel && HANDLES.map(h => (
+              <div key={h} className={`ce-handle ce-handle--${h}`} onMouseDown={e => e.stopPropagation()} />
+            ))}
+
+            {/* Double-click tooltip */}
+            {tooltipId === b.id && !isEdit && (
+              <div className="ce-tooltip">Double-click to edit text</div>
+            )}
+
             <div
               ref={el => { editRefs.current[b.id] = el; }}
               contentEditable={isEdit}
