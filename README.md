@@ -96,13 +96,13 @@ OCR accuracy passes at 88% on modern Amharic print (novels, Bibles, prayer books
 
 ## Screenshots
 
-Drop these into `docs/screenshots/`:
+Screenshots are in `docs/screenshots/`:
 
 | File | Content |
 |---|---|
 | `docs/screenshots/home.png` | Home screen — document library |
 | `docs/screenshots/editor.png` | Editor — extracted document with floating dock |
-| `docs/screenshots/admin.png` | Admin panel — user management |
+| `docs/screenshots/scanning.png` | Scanning / OCR extraction in progress |
 | `docs/screenshots/dark-mode.png` | Editor in dark mode |
 
 ## License
