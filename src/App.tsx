@@ -8,7 +8,7 @@ import Toast, { type ToastMessage } from './components/Toast';
 import AuthScreen    from './components/AuthScreen';
 
 import { pdfToImages, imageFileToBase64, detectFileType, docxToHtmlPages, textToHtmlPages, type PageDimension } from './services/pdfService';
-import { extractPageHTML, autoFillImagePlaceholders, setOcrConversionId, GuestRateLimitError, type ImageQuality } from './services/geminiService';
+import { extractPageHTML, autoFillImagePlaceholders, setOcrConversionId, GuestRateLimitError } from './services/geminiService';
 import { saveDocument, initializeSchema, loadDocumentContent, loadDocumentPageImage, QuotaExceededError, type SavedDocument } from './services/storageService';
 import { buildDocumentExport, saveDocumentExport, downloadAsText, downloadAsDocx } from './services/exportService';
 import { AI_DATA_EXPORT_KEY } from './components/editor/SettingsPanel';
@@ -54,7 +54,7 @@ const RATE_LIMIT_ERROR_HTML = `
       The API needs a moment to cool down. Wait about 60 seconds, then use the <strong>↻ Re-extract</strong> button in the toolbar above.
     </p>
     <div style="display:inline-block;padding:6px 16px;background:#fee2e2;border-radius:8px;font-size:0.75rem;color:#b91c1c;font-weight:600;">
-      Tip: Use <strong>Fast</strong> mode for fewer rate limits
+      Tip: extract a few pages at a time rather than a whole book at once
     </div>
   </div>
 `.trim();
@@ -170,7 +170,6 @@ export default function App() {
   const [isDirty,          setIsDirty]          = useState(false);
   const [showLibrary,      setShowLibrary]      = useState(false);
   const [toast,            setToast]            = useState<ToastMessage | null>(null);
-  const [imageQuality,     setImageQuality]     = useState<ImageQuality>('fast');
   const [regeneratingPages, setRegeneratingPages] = useState<Set<number>>(new Set());
   const [activePage,       setActivePage]       = useState(1);
   const [pendingAutoSave,  setPendingAutoSave]  = useState(false);
@@ -860,7 +859,6 @@ export default function App() {
         pageImages={pageImages}
         pageDimensions={pageDimensions}
         pageResults={pageResults}
-        imageQuality={imageQuality}
         isProcessing={isProcessing}
         processingStatus={processingStatus}
         regeneratingPages={regeneratingPages}
@@ -895,7 +893,6 @@ export default function App() {
             setToast({ id: Date.now().toString(), message: 'Failed to copy — try downloading instead', variant: 'error' });
           });
         }}
-        onImageQualityChange={setImageQuality}
         onActivePageChange={setActivePage}
         canvasExecutor={executorRef.current ?? undefined}
         mcpConnected={mcpConnected}

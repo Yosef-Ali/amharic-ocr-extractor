@@ -10,12 +10,11 @@ import {
   type ImageAspectRatio,
   type ImageSize,
   type ImageGenOptions,
-  type ImageQuality
 } from './aiCommon';
 import { anthropicChat, anthropicExtractPageHTML, anthropicEditPage } from './anthropicService';
 import { getAccessToken } from '../lib/apiClient';
 
-export type { ChatTurn, CanvasContext, BBox, ImageAspectRatio, ImageSize, ImageGenOptions, ImageQuality };
+export type { ChatTurn, CanvasContext, BBox, ImageAspectRatio, ImageSize, ImageGenOptions };
 
 const MODEL       = 'gemini-3-flash-preview';          // agent chat — function calling (tools in config.tools)
 const OCR_FAST    = 'gemini-3.1-flash-image-preview';  // Pass 1 & 2 batch extraction (fast model — DO NOT CHANGE)
@@ -35,8 +34,6 @@ export function setActiveModel(modelId: string) {
 export function getActiveModelId() {
   return currentModelId;
 }
-
-// (ImageQuality is now imported from aiCommon)
 
 const LS_KEY = 'gemini_api_key';
 

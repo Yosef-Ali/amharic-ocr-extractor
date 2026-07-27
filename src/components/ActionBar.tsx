@@ -3,7 +3,6 @@ import {
   Eraser, Zap, Save, RefreshCw,
   BookOpen, Download, Loader2, ScanSearch,
 } from 'lucide-react';
-import type { ImageQuality } from '../services/geminiService';
 
 interface Props {
   disabled:       boolean;
@@ -13,7 +12,6 @@ interface Props {
   toPage:         number;
   totalPages:     number;
   isPdfExporting: boolean;
-  imageQuality:   ImageQuality;
   onFromChange:    (v: number) => void;
   onToChange:      (v: number) => void;
   onClear:         () => void;
@@ -22,7 +20,6 @@ interface Props {
   onSave:          () => void;
   onLibrary:       () => void;
   onDownloadPDF:   () => void;
-  onImageQualityChange: (q: ImageQuality) => void;
 }
 
 // ── Primary action button ──────────────────────────────────────────────────
@@ -59,35 +56,6 @@ function Btn({
       {icon}
       <span>{label}</span>
     </button>
-  );
-}
-
-// ── Labeled select — tiny label stacked above dropdown ─────────────────────
-function LabeledSelect<T extends string>({
-  label, value, options, onChange, disabled,
-}: {
-  label:    string;
-  value:    T;
-  options:  { value: T; label: string }[];
-  onChange: (v: T) => void;
-  disabled: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[9px] font-bold text-teal-500 uppercase tracking-wider text-center leading-none px-0.5">
-        {label}
-      </span>
-      <select
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value as T)}
-        className="bg-white border border-teal-200 text-gray-700 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-400 transition-all disabled:opacity-50 cursor-pointer hover:border-teal-400 min-w-[72px]"
-      >
-        {options.map(o => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
-    </div>
   );
 }
 
@@ -205,7 +173,7 @@ export default function ActionBar(p: Props) {
         </div>
       </div>
 
-      {/* ══ Row 2: AI Restoration quality — shown when results exist ══════ */}
+      {/* ══ Row 2: crop hint — shown when results exist ══════════════════ */}
       {p.hasResults && (
         <div className="flex flex-wrap items-center gap-3 px-4 py-2 bg-slate-50/80 border-t border-gray-100">
           <div className="flex items-center gap-1.5 shrink-0">
@@ -213,19 +181,9 @@ export default function ActionBar(p: Props) {
               <ScanSearch size={12} className="text-cyan-600" />
             </div>
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-              Image Restoration Quality
+              Image Restoration
             </span>
           </div>
-          <LabeledSelect<ImageQuality>
-            label="Model"
-            value={p.imageQuality}
-            disabled={p.disabled}
-            onChange={p.onImageQualityChange}
-            options={[
-              { value: 'fast', label: '⚡ Fast — Nano Banana 2' },
-              { value: 'pro',  label: '✨ Pro  — Nano Banana Pro' },
-            ]}
-          />
           <p className="ml-auto text-[10px] text-slate-400 hidden lg:block">
             Draw a selection on the original scan (left panel) to crop &amp; restore images
           </p>

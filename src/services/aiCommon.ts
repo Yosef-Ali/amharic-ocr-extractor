@@ -15,12 +15,9 @@ export interface CanvasContext {
 
 export type ImageAspectRatio = '1:1' | '4:3' | '3:4' | '16:9' | '9:16';
 export type ImageSize       = '512px' | '1K' | '2K';
-export type ImageQuality    = 'fast' | 'pro';
-
 export interface ImageGenOptions {
   aspectRatio?: ImageAspectRatio;
   imageSize?:   ImageSize;
-  quality?:     ImageQuality;
 }
 
 /** Bounding box expressed as percentages of the full page (0–100) */
