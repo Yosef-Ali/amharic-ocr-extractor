@@ -1,0 +1,29 @@
+{
+  "note": "Static, synthetic demo data — no real user documents. Each sample pairs an 'original' page (styled to read like a scanned book page) with the clean, editable HTML the OCR pipeline produces. Rendered inline in the DOM so the app's Ethiopic fonts apply.",
+  "samples": [
+    {
+      "id": "brana-book",
+      "title": "የብራና መጽሐፍ",
+      "subtitle": "Single-column book page",
+      "tag": "Accurate OCR",
+      "originalHtml": "<div style=\"font-family:'Noto Serif Ethiopic',serif;color:#2b2620;line-height:1.9;transform:rotate(-0.4deg);\"><h2 style=\"text-align:center;font-weight:900;font-size:1.15rem;margin:0 0 0.2rem;\">ምዕራፍ ፩</h2><h3 style=\"text-align:center;font-weight:800;font-size:0.98rem;margin:0 0 1rem;color:#4a4136;\">የጥንት መጻሕፍት</h3><p style=\"text-align:justify;margin:0 0 0.85rem;\">በጥንት ዘመን በኢትዮጵያ ምድር ብዙ የተማሩ ሰዎች ነበሩ። እነርሱም መጻሕፍትን በግእዝ ቋንቋ ጽፈዋል። እነዚህ መጻሕፍት ዛሬም ድረስ በገዳማት ተጠብቀው ይገኛሉ።</p><p style=\"text-align:justify;margin:0 0 0.85rem;\">ይህ ጽሑፍ የተወሰደው ከጥንታዊ የብራና መጽሐፍ ነው። ፊደሎቹ በእጅ የተጻፉ ሲሆኑ ውበታቸው ልዩ ነው። አንባቢው እያንዳንዱን ቃል በጥንቃቄ ሊያነብ ይገባል።</p><p style=\"text-align:justify;margin:0;\">መምህራኑ ተማሪዎቻቸውን ንባብና ጽሕፈትን ያስተምሩ ነበር።</p></div>",
+      "extractedHtml": "<h2 style=\"text-align:center;font-weight:900;font-size:1.2rem;margin:0 0 0.25rem;\">ምዕራፍ ፩</h2><h3 style=\"text-align:center;font-weight:700;font-size:1rem;margin:0 0 1.1rem;color:#475569;\">የጥንት መጻሕፍት</h3><p style=\"line-height:1.9;text-align:justify;margin:0 0 0.9rem;\">በጥንት ዘመን በኢትዮጵያ ምድር ብዙ የተማሩ ሰዎች ነበሩ። እነርሱም መጻሕፍትን በግእዝ ቋንቋ ጽፈዋል። እነዚህ መጻሕፍት ዛሬም ድረስ በገዳማት ተጠብቀው ይገኛሉ።</p><p style=\"line-height:1.9;text-align:justify;margin:0 0 0.9rem;\">ይህ ጽሑፍ የተወሰደው ከጥንታዊ የብራና መጽሐፍ ነው። ፊደሎቹ በእጅ የተጻፉ ሲሆኑ ውበታቸው ልዩ ነው። አንባቢው እያንዳንዱን ቃል በጥንቃቄ ሊያነብ ይገባል።</p><p style=\"line-height:1.9;text-align:justify;margin:0;\">መምህራኑ ተማሪዎቻቸውን ንባብና ጽሕፈትን ያስተምሩ ነበር።</p>"
+    },
+    {
+      "id": "two-column-news",
+      "title": "የሀገር ዜና",
+      "subtitle": "Two-column newspaper layout",
+      "tag": "Preserved layout",
+      "originalHtml": "<div style=\"font-family:'Noto Serif Ethiopic',serif;color:#2b2620;transform:rotate(0.3deg);\"><h2 style=\"text-align:center;font-weight:900;font-size:1.1rem;margin:0 0 0.75rem;border-bottom:2px solid #6b5f4d;padding-bottom:0.35rem;\">የሀገር ዜና</h2><div style=\"display:grid;grid-template-columns:1fr 1fr;gap:1.1rem;line-height:1.75;font-size:0.9rem;\"><div><h4 style=\"font-weight:800;margin:0 0 0.35rem;\">አዲስ ትምህርት ቤት</h4><p style=\"text-align:justify;margin:0;\">በክፍለ ሀገሩ አዲስ ትምህርት ቤት ተከፈተ። ብዙ ተማሪዎች በደስታ ተመዘገቡ። መምህራኑም ዝግጁ ሆነዋል።</p></div><div><h4 style=\"font-weight:800;margin:0 0 0.35rem;\">የገበያ ሁኔታ</h4><p style=\"text-align:justify;margin:0;\">በዚህ ሳምንት የእህል ዋጋ በመጠኑ ቀንሷል። ነጋዴዎች ገበያው እንደተረጋጋ ተናገሩ።</p></div></div></div>",
+      "extractedHtml": "<h2 style=\"text-align:center;font-weight:900;font-size:1.15rem;margin:0 0 0.9rem;\">የሀገር ዜና</h2><div style=\"display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;\"><div><h4 style=\"font-weight:800;margin:0 0 0.4rem;\">አዲስ ትምህርት ቤት</h4><p style=\"line-height:1.8;text-align:justify;margin:0;\">በክፍለ ሀገሩ አዲስ ትምህርት ቤት ተከፈተ። ብዙ ተማሪዎች በደስታ ተመዘገቡ። መምህራኑም ዝግጁ ሆነዋል።</p></div><div><h4 style=\"font-weight:800;margin:0 0 0.4rem;\">የገበያ ሁኔታ</h4><p style=\"line-height:1.8;text-align:justify;margin:0;\">በዚህ ሳምንት የእህል ዋጋ በመጠኑ ቀንሷል። ነጋዴዎች ገበያው እንደተረጋጋ ተናገሩ።</p></div></div>"
+    },
+    {
+      "id": "illustrated-page",
+      "title": "ቅዱስ ገብርኤል",
+      "subtitle": "Page with an embedded illustration",
+      "tag": "Embedded images",
+      "originalHtml": "<div style=\"font-family:'Noto Serif Ethiopic',serif;color:#2b2620;line-height:1.85;text-align:center;transform:rotate(-0.25deg);\"><h2 style=\"font-weight:900;font-size:1.15rem;margin:0 0 0.9rem;\">ቅዱስ ገብርኤል</h2><svg viewBox=\"0 0 120 120\" width=\"110\" height=\"110\" style=\"margin:0 auto 0.4rem;display:block;\"><rect x=\"4\" y=\"4\" width=\"112\" height=\"112\" fill=\"#efe7d6\" stroke=\"#7a6a4f\" stroke-width=\"2\"/><path d=\"M60 24 v72 M36 48 h48 M44 60 h32 M40 72 h40\" stroke=\"#8a5a2b\" stroke-width=\"5\" stroke-linecap=\"round\" fill=\"none\"/><circle cx=\"60\" cy=\"60\" r=\"3\" fill=\"#8a5a2b\"/></svg><p style=\"font-size:0.78rem;color:#6b5f4d;margin:0 0 0.9rem;\">ሥዕል ፩ — የቤተ ክርስቲያን መስቀል</p><p style=\"text-align:justify;margin:0;\">ይህ ሥዕል የጥንታዊ ቤተ ክርስቲያንን ጌጥ ያሳያል። ሠዓሊው በእጅ ስለሳለው እያንዳንዱ መስመር ልዩ ነው።</p></div>",
+      "extractedHtml": "<h2 style=\"text-align:center;font-weight:900;font-size:1.2rem;margin:0 0 1rem;\">ቅዱስ ገብርኤል</h2><figure style=\"margin:0 0 1rem;text-align:center;\"><svg viewBox=\"0 0 120 120\" width=\"120\" height=\"120\" style=\"margin:0 auto;display:block;border-radius:8px;\"><rect x=\"4\" y=\"4\" width=\"112\" height=\"112\" fill=\"#f8fafc\" stroke=\"#cbd5e1\" stroke-width=\"2\"/><path d=\"M60 24 v72 M36 48 h48 M44 60 h32 M40 72 h40\" stroke=\"#b45309\" stroke-width=\"5\" stroke-linecap=\"round\" fill=\"none\"/><circle cx=\"60\" cy=\"60\" r=\"3\" fill=\"#b45309\"/></svg><figcaption style=\"font-size:0.8rem;color:#64748b;margin-top:0.4rem;\">ሥዕል ፩ — የቤተ ክርስቲያን መስቀል</figcaption></figure><p style=\"line-height:1.85;text-align:justify;margin:0;\">ይህ ሥዕል የጥንታዊ ቤተ ክርስቲያንን ጌጥ ያሳያል። ሠዓሊው በእጅ ስለሳለው እያንዳንዱ መስመር ልዩ ነው።</p>"
+    }
+  ]
+}

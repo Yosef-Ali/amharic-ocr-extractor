@@ -12,6 +12,7 @@ import {
 } from '../services/storageService';
 import { downloadDocumentAsPDF } from '../utils/downloadPDF';
 import DeleteConfirmModal from './DeleteConfirmModal';
+import SampleGallery from './SampleGallery';
 
 interface Props {
   onFile:           (file: File) => void;
@@ -133,6 +134,12 @@ export default function HomeScreen({
     handleFilePick(e.dataTransfer.files);
   };
 
+  const scrollToUpload = () => {
+    document.getElementById('home-upload')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+  // "Try as Guest" = start using the tool immediately (no account needed).
+  const startAsGuest = () => fileInputRef.current?.click();
+
   const filtered = docs.filter(d => d.name.toLowerCase().includes(search.toLowerCase()));
   const recent   = filtered.slice(0, 3);
   const older    = filtered.slice(3);
@@ -169,10 +176,17 @@ export default function HomeScreen({
             )}
             {user
               ? <UserMenu user={user} onSignOut={onSignOut} />
-              : onRequestAuth && (
-                  <button className="home-admin-btn" onClick={onRequestAuth}>
-                    <span>Sign In</span>
-                  </button>
+              : (
+                  <>
+                    <button className="home-guest-btn" onClick={startAsGuest}>
+                      <span>Try as Guest</span>
+                    </button>
+                    {onRequestAuth && (
+                      <button className="home-admin-btn" onClick={onRequestAuth}>
+                        <span>Sign In</span>
+                      </button>
+                    )}
+                  </>
                 )}
           </div>
         </div>
@@ -200,6 +214,7 @@ export default function HomeScreen({
 
           {/* Upload zone */}
           <label
+            id="home-upload"
             className={`home-upload-zone${isDragging ? ' home-upload-zone--drag' : ''}${isProcessing ? ' home-upload-zone--busy' : ''}`}
             onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
             onDragLeave={() => setIsDragging(false)}
@@ -236,6 +251,10 @@ export default function HomeScreen({
 
       {/* ── Main content ── */}
       <main className="home-main">
+
+        {/* Public sample gallery — shown to everyone; sits at the top for
+            new visitors (guests / empty library) so the value is immediate. */}
+        {!hasAny && <SampleGallery onTryYourOwn={scrollToUpload} />}
 
         {/* Search */}
         {hasAny && (
@@ -274,8 +293,8 @@ export default function HomeScreen({
           </div>
         )}
 
-        {/* Empty state */}
-        {!loadingDocs && docs.length === 0 && (
+        {/* Empty state — signed-in users only; guests get the sample gallery above. */}
+        {!loadingDocs && docs.length === 0 && user && (
           <div className="home-empty">
             <p className="home-empty-title">No projects yet</p>
             <p className="home-empty-hint">Drop a scanned PDF or image above to get started.</p>
@@ -333,6 +352,9 @@ export default function HomeScreen({
             <p className="home-empty-title">No results for "{search}"</p>
           </div>
         )}
+
+        {/* For users with a library, keep the gallery available lower down. */}
+        {hasAny && <SampleGallery onTryYourOwn={scrollToUpload} />}
 
       </main>
     </div>
