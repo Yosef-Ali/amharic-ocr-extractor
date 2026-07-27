@@ -10,12 +10,11 @@ import {
   type ImageAspectRatio,
   type ImageSize,
   type ImageGenOptions,
-  type ImageQuality
 } from './aiCommon';
 import { anthropicChat, anthropicExtractPageHTML, anthropicEditPage } from './anthropicService';
-import { authFetch } from '../lib/apiClient';
+import { getAccessToken } from '../lib/apiClient';
 
-export type { ChatTurn, CanvasContext, BBox, ImageAspectRatio, ImageSize, ImageGenOptions, ImageQuality };
+export type { ChatTurn, CanvasContext, BBox, ImageAspectRatio, ImageSize, ImageGenOptions };
 
 const MODEL       = 'gemini-3-flash-preview';          // agent chat — function calling (tools in config.tools)
 const OCR_FAST    = 'gemini-3.1-flash-image-preview';  // Pass 1 & 2 batch extraction (fast model — DO NOT CHANGE)
@@ -35,8 +34,6 @@ export function setActiveModel(modelId: string) {
 export function getActiveModelId() {
   return currentModelId;
 }
-
-// (ImageQuality is now imported from aiCommon)
 
 const LS_KEY = 'gemini_api_key';
 
@@ -122,6 +119,41 @@ Output the improved HTML now:`.trim();
 // ---------------------------------------------------------------------------
 // Extract HTML from a page image (two-pass: OCR → Layout)
 // ---------------------------------------------------------------------------
+/**
+ * Raised when a guest exceeds the per-hour conversion cap enforced by /api/ocr.
+ * Deliberately NOT caught by the client-side fallback — surfacing it prompts the
+ * visitor to sign in rather than silently bypassing the limit.
+ */
+export class GuestRateLimitError extends Error {
+  retryAfterMinutes: number;
+  constructor(message: string, retryAfterMinutes: number) {
+    super(message);
+    this.name = 'GuestRateLimitError';
+    this.retryAfterMinutes = retryAfterMinutes;
+  }
+}
+
+const GUEST_ID_KEY = 'aoe_guest_id';
+
+/** Stable per-browser id used to attribute guest OCR usage for rate limiting. */
+function getGuestId(): string {
+  let id = localStorage.getItem(GUEST_ID_KEY);
+  if (!id) {
+    id = (crypto.randomUUID?.() ?? `g_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+    localStorage.setItem(GUEST_ID_KEY, id);
+  }
+  return id;
+}
+
+// The current document's conversion id — set by the app when a file is opened so
+// that every page of one upload counts as a single guest "conversion".
+let currentConversionId: string | null = null;
+
+/** Set the conversion id for the document currently being processed. */
+export function setOcrConversionId(id: string): void {
+  currentConversionId = id;
+}
+
 export async function extractPageHTML(
   base64Image: string,
   previousPageHTML?: string,
@@ -136,14 +168,38 @@ export async function extractPageHTML(
 
   // Use server-side OCR proxy to keep API key secure
   try {
-    const res = await authFetch('/api/ocr', {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-Guest-Id': getGuestId(),
+    };
+    const token = getAccessToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/ocr', {
       method: 'POST',
-      body: JSON.stringify({ base64Image, previousPageHTML }),
+      headers,
+      body: JSON.stringify({
+        base64Image,
+        previousPageHTML,
+        conversionId: currentConversionId ?? getGuestId(),
+      }),
     });
+
+    if (res.status === 429) {
+      const data = await res.json().catch(() => ({} as { message?: string; retryAfterMinutes?: number }));
+      throw new GuestRateLimitError(
+        data.message ?? 'Guest limit reached. Sign in to continue.',
+        data.retryAfterMinutes ?? 60,
+      );
+    }
+    if (!res.ok) throw new Error(`OCR request failed (HTTP ${res.status})`);
+
     const { html } = await res.json();
     // Resolve image placeholders client-side (needs DOMParser)
     return resolvePlaceholders(html, base64Image);
   } catch (err) {
+    // Guest cap is authoritative — never fall back to the client-side key.
+    if (err instanceof GuestRateLimitError) throw err;
     // Fallback to client-side extraction if API route unavailable (local dev)
     console.warn('OCR API route failed, falling back to client-side:', err);
     const imagePart = { inlineData: { mimeType: 'image/jpeg', data: base64Image } };

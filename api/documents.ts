@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { sql } from './_db';
 import { getAuthUser } from './_auth';
+import { ensureDocumentSchema } from './_docSchema';
 import { v4 as uuidv4 } from 'uuid';
 
 
@@ -20,19 +21,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'POST') {
-      const { docId, name, pageCount, storedImages, pageResults, thumbnailUrl } =
+      const { docId, name, pageCount, storedImages, pageResults, pageDimensions, thumbnailUrl } =
         req.body as {
           docId: string | null;
           name: string;
           pageCount: number;
           storedImages: string[];
           pageResults: Record<number, string>;
+          pageDimensions?: { widthMm: number; heightMm: number }[];
           thumbnailUrl: string | null;
         };
 
       if (!name || pageCount == null) {
         return res.status(400).json({ error: 'Missing required fields' });
       }
+
+      await ensureDocumentSchema();
+      const dimsJson = JSON.stringify(pageDimensions ?? []);
 
       if (docId) {
         // ── Update existing document — must verify ownership first ──
@@ -50,7 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           SELECT page_images FROM document_content WHERE document_id = ${docId}
         `;
         const existingImages = (existingResult[0]?.page_images as string[]) || [];
-        
+
         // Merge missing images: if the updated array has empty strings, keep the existing image for that page
         const finalImages = storedImages.map(
           (img, i) => (img === null || img === '') ? (existingImages[i] || '') : img
@@ -58,8 +63,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         await sql`
           UPDATE document_content
-          SET page_images  = ${JSON.stringify(finalImages)}::jsonb,
-              page_results = ${JSON.stringify(pageResults)}::jsonb
+          SET page_images     = ${JSON.stringify(finalImages)}::jsonb,
+              page_results    = ${JSON.stringify(pageResults)}::jsonb,
+              page_dimensions = ${dimsJson}::jsonb
           WHERE document_id = ${docId}
         `;
         return res.json({ id: docId });
@@ -90,8 +96,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
         }
         await sql`
-          INSERT INTO document_content (document_id, page_images, page_results)
-          VALUES (${id}, ${JSON.stringify(storedImages)}::jsonb, ${JSON.stringify(pageResults)}::jsonb)
+          INSERT INTO document_content (document_id, page_images, page_results, page_dimensions)
+          VALUES (
+            ${id},
+            ${JSON.stringify(storedImages)}::jsonb,
+            ${JSON.stringify(pageResults)}::jsonb,
+            ${dimsJson}::jsonb
+          )
         `;
         return res.json({ id });
       }

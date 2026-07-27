@@ -13,6 +13,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`;
+    // Also applied lazily by api/_docSchema.ts, since this route is admin-only.
+    await sql`ALTER TABLE document_content ADD COLUMN IF NOT EXISTS page_dimensions JSONB`;
 
     await sql`
       CREATE TABLE IF NOT EXISTS users (

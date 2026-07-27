@@ -105,6 +105,31 @@ Two-pass extraction in `geminiService.ts`:
 **Amharic fidel preservation is critical:** The prompt explicitly forbids character
 substitution (ሀ≠ሐ≠ኀ, ሰ≠ሠ, ጸ≠ፀ). Never modify these prompts without testing.
 
+## Page State Invariant
+
+A document is three parallel structures that MUST stay index-aligned:
+
+```
+pageImages[i]      → base64 scan for page i+1
+pageDimensions[i]  → physical size of page i+1 (drives layout AND PDF export)
+pageResults[n]     → extracted HTML for page n (1-based, SPARSE)
+```
+
+Anything that adds, removes or reorders pages must apply the **same** transform to
+all three. Use the helpers in `src/lib/pageOps.ts` (`removeAt` / `insertAt` /
+`moveItem` / `remapPageResults`) rather than hand-rolling splices — that is what
+keeps them aligned.
+
+Two traps, both of which were live bugs:
+- `pageResults` is **sparse** — only extracted pages appear. Never derive the page
+  count from its key count; pass `pageImages.length` in explicitly.
+- Keys `0` (front cover) and `-1` (back cover) are not part of the page sequence
+  and must survive every operation. `remapPageResults` handles this.
+
+`pageDimensions` is persisted in `document_content.page_dimensions` (JSONB).
+Documents saved before that column existed read back `NULL` — always pass loaded
+dimensions through `normalizePageDimensions()`, which pads/repairs to A4.
+
 ## Known Issues
 
 - `contentEditable` + React: always set `innerHTML` via `useEffect` + direct DOM, read
@@ -130,7 +155,24 @@ VITE_GEMINI_API_KEY=...       # Google Gemini API key
 VITE_DATABASE_URL=...         # Neon PostgreSQL connection string
 VITE_NEON_AUTH_URL=...        # Neon Auth URL
 VITE_ADMIN_EMAIL=...          # Admin panel access email
+GUEST_IP_SALT=...             # Optional; salts guest IP hashes in the OCR rate limiter
 ```
+
+## Guest Rate Limiting
+
+`api/ocr.ts` lets signed-out visitors run OCR, capped in two tiers (logic in
+`api/_guestLimit.ts`, unit-tested in `src/services/__tests__/guestLimit.test.ts`):
+
+| Tier | Key | Cap / hour |
+|---|---|---|
+| Per browser | `X-Guest-Id` header (localStorage) | 3 conversions |
+| Per network | salted hash of client IP | 30 conversions |
+
+One *conversion* = one uploaded document; every page shares a `conversionId`, so
+a 40-page PDF counts once. **Do not collapse this back to an IP-only limit** —
+carrier-grade NAT is normal in Ethiopia, so one visitor would lock out everyone
+else on their network. Signed-in users skip both tiers. Both fail open if the
+database is unreachable.
 
 ## Related Documents
 

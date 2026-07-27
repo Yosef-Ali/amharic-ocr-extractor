@@ -8,10 +8,11 @@ import Toast, { type ToastMessage } from './components/Toast';
 import AuthScreen    from './components/AuthScreen';
 
 import { pdfToImages, imageFileToBase64, detectFileType, docxToHtmlPages, textToHtmlPages, type PageDimension } from './services/pdfService';
-import { extractPageHTML, autoFillImagePlaceholders, type ImageQuality } from './services/geminiService';
+import { extractPageHTML, autoFillImagePlaceholders, setOcrConversionId, GuestRateLimitError } from './services/geminiService';
 import { saveDocument, initializeSchema, loadDocumentContent, loadDocumentPageImage, QuotaExceededError, type SavedDocument } from './services/storageService';
 import { buildDocumentExport, saveDocumentExport, downloadAsText, downloadAsDocx } from './services/exportService';
 import { AI_DATA_EXPORT_KEY } from './components/editor/SettingsPanel';
+import { removeAt, insertAt, moveItem, remapPageResults, normalizePageDimensions, FRONT_COVER } from './lib/pageOps';
 import { Loader2 } from 'lucide-react';
 import { CanvasExecutor } from './services/canvasExecutor';
 import { WsBridge }      from './services/wsBridge';
@@ -21,6 +22,13 @@ import { setAccessToken } from './lib/apiClient';
 import { useTheme } from './hooks/useTheme';
 
 type NeonUser = { id: string; email?: string; name?: string };
+
+/** An interrupted action that should resume once the user has an account. */
+type AuthPrompt = {
+  /** Re-run this once sign-in succeeds. `null` = the user asked to sign in directly. */
+  action: 'save' | 'library' | null;
+  reason?: string;
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -46,7 +54,7 @@ const RATE_LIMIT_ERROR_HTML = `
       The API needs a moment to cool down. Wait about 60 seconds, then use the <strong>↻ Re-extract</strong> button in the toolbar above.
     </p>
     <div style="display:inline-block;padding:6px 16px;background:#fee2e2;border-radius:8px;font-size:0.75rem;color:#b91c1c;font-weight:600;">
-      Tip: Use <strong>Fast</strong> mode for fewer rate limits
+      Tip: extract a few pages at a time rather than a whole book at once
     </div>
   </div>
 `.trim();
@@ -124,7 +132,7 @@ export default function App() {
         setFileName(fullDoc.name);
         setPageImages(images);
         setPageResults(fullDoc.pageResults ?? {});
-        setPageDimensions(images.map(() => ({ widthMm: 210, heightMm: 297 })));
+        setPageDimensions(normalizePageDimensions(fullDoc.pageDimensions, images.length));
         setFromPage(1);
         setToPage(fullDoc.pageCount ?? images.length);
       } catch (err) {
@@ -145,9 +153,7 @@ export default function App() {
     setAccessToken(null);
   }, []);
 
-  const handleAuthSuccess = useCallback(async () => {
-    await syncAuthState();
-  }, [syncAuthState]);
+  // (handleAuthComplete lives below handleSave — it needs to resume the save.)
 
   // ── Document state ──────────────────────────────────────────────────────
   const [activeDocId,      setActiveDocId]      = useState<string | null>(null);
@@ -164,12 +170,13 @@ export default function App() {
   const [isDirty,          setIsDirty]          = useState(false);
   const [showLibrary,      setShowLibrary]      = useState(false);
   const [toast,            setToast]            = useState<ToastMessage | null>(null);
-  const [imageQuality,     setImageQuality]     = useState<ImageQuality>('fast');
   const [regeneratingPages, setRegeneratingPages] = useState<Set<number>>(new Set());
   const [activePage,       setActivePage]       = useState(1);
   const [pendingAutoSave,  setPendingAutoSave]  = useState(false);
   const [showAdmin,        setShowAdmin]        = useState(false);
-  const [showAuthModal,    setShowAuthModal]    = useState(false);
+  // What the user was trying to do when we interrupted them for sign-in, so we
+  // can finish it for them afterwards instead of dropping them on a blank app.
+  const [authPrompt,       setAuthPrompt]       = useState<AuthPrompt | null>(null);
 
   // ── Warn before closing with unsaved changes ──
   useEffect(() => {
@@ -320,6 +327,9 @@ export default function App() {
   // File ingestion
   // -------------------------------------------------------------------------
   const handleFile = async (file: File) => {
+    // New upload → new guest "conversion" id (shared across all its pages for
+    // rate-limiting; ignored for signed-in users).
+    setOcrConversionId(crypto.randomUUID?.() ?? `c_${Date.now()}_${Math.random().toString(36).slice(2)}`);
     setPageResults({});
     setFileName(file.name);
     setProcessingStatus('Reading file…');
@@ -424,6 +434,12 @@ export default function App() {
           setPageResults((prev) => ({ ...prev, [p]: finalHtml }));
           extractedCount++;
         } catch (err: unknown) {
+          // Guest conversion cap — stop, tell the visitor, invite sign-in.
+          if (err instanceof GuestRateLimitError) {
+            setToast({ id: Date.now().toString(), message: err.message, variant: 'error' });
+            setProcessingStatus('Guest limit reached.');
+            break;
+          }
           const error = err as Error & { status?: number };
           const errHtml = is429Error(err)
             ? RATE_LIMIT_ERROR_HTML
@@ -451,7 +467,12 @@ export default function App() {
         const msg = errorCount > 0
           ? `Extracted ${extractedCount} page${extractedCount > 1 ? 's' : ''} in ${timeStr} (${errorCount} failed)`
           : `${extractedCount} page${extractedCount > 1 ? 's' : ''} extracted in ${timeStr}`;
-        setToast({ id: Date.now().toString(), message: msg, variant: errorCount > 0 ? 'error' : 'success' });
+        // Guests have nowhere for this to auto-save to — say so at the moment
+        // the work is most obviously worth keeping, rather than staying silent.
+        const guestHint = !neonUser
+          ? ' — sign in to save it to your library before you close this tab.'
+          : '';
+        setToast({ id: Date.now().toString(), message: msg + guestHint, variant: errorCount > 0 ? 'error' : 'success' });
         // Auto-save after extraction
         setPendingAutoSave(true);
       }
@@ -459,7 +480,7 @@ export default function App() {
       setIsProcessing(false);
       setProcessingStatus('');
     },
-    [fromPage, toPage, pageImages, pageResults],
+    [fromPage, toPage, pageImages, pageResults, neonUser],
   );
 
   // -------------------------------------------------------------------------
@@ -489,6 +510,11 @@ export default function App() {
       setPageResults((prev) => ({ ...prev, [pageNumber]: finalHtml }));
       setToast({ id: Date.now().toString(), message: `Page ${pageNumber} re-extracted.`, variant: 'success' });
     } catch (err: unknown) {
+      if (err instanceof GuestRateLimitError) {
+        setToast({ id: Date.now().toString(), message: err.message, variant: 'error' });
+        setRegeneratingPages((prev) => { const next = new Set(prev); next.delete(pageNumber); return next; });
+        return;
+      }
       const error = err as Error & { status?: number };
       const errHtml = is429Error(err)
         ? RATE_LIMIT_ERROR_HTML
@@ -504,89 +530,92 @@ export default function App() {
   }, [pageImages, pageResults]);
 
   // -------------------------------------------------------------------------
-  // Delete a single page from results
+  // Page list operations — delete / insert / reorder
+  //
+  // Each one applies the SAME transform to pageImages, pageDimensions and
+  // pageResults. Dimensions used to be left out, which silently desynced them
+  // from the pages after any edit and made the PDF export lay pages out at the
+  // wrong physical size. Keep all three together.
   // -------------------------------------------------------------------------
   const handleDeletePage = useCallback((pageNumber: number) => {
-    // Remove the scan image and shift all subsequent page results down by 1
-    setPageImages(prev => prev.filter((_, i) => i !== pageNumber - 1));
-    setPageResults(prev => {
-      const next: Record<number, string> = {};
-      if (prev[0]) next[0] = prev[0]; // keep cover
-      Object.entries(prev).forEach(([k, v]) => {
-        const n = Number(k);
-        if (n === 0) return;
-        if (n < pageNumber) next[n] = v;
-        else if (n > pageNumber) next[n - 1] = v;
-        // n === pageNumber is deleted
-      });
-      return next;
-    });
-  }, []);
+    const idx = pageNumber - 1;
+    const total = pageImages.length;
+    if (idx < 0 || idx >= total) return;
+
+    setPageImages(prev => removeAt(prev, idx));
+    setPageDimensions(prev => removeAt(prev, idx));
+    setPageResults(prev => remapPageResults(prev, total, pages => removeAt(pages, idx)));
+    // Keep the extraction range inside the shortened document.
+    setFromPage(f => Math.max(1, Math.min(f, total - 1)));
+    setToPage(t => Math.max(1, Math.min(t, total - 1)));
+    setIsDirty(true);
+  }, [pageImages.length]);
 
   const handleDeleteCover = useCallback(() => {
     setPageResults(prev => {
       const next = { ...prev };
-      delete next[0];
+      delete next[FRONT_COVER];
       return next;
     });
+    setIsDirty(true);
   }, []);
 
-  // Reorder pages: move page at fromPage to toPage position (1-indexed)
-  const handleReorderPages = useCallback((fromPage: number, toPage: number) => {
-    if (fromPage === toPage) return;
-    setPageImages(prev => {
-      const next = [...prev];
-      const [moved] = next.splice(fromPage - 1, 1);
-      next.splice(toPage - 1, 0, moved);
-      return next;
-    });
-    setPageResults(prev => {
-      // Build ordered array of [pageNum, html] for pages 1..n, reorder, re-key
-      const cover = prev[0];
-      const total = Object.keys(prev).filter(k => Number(k) > 0).length;
-      const arr: (string | undefined)[] = Array.from({ length: total }, (_, i) => prev[i + 1]);
-      const [moved] = arr.splice(fromPage - 1, 1);
-      arr.splice(toPage - 1, 0, moved);
-      const next: Record<number, string> = {};
-      if (cover) next[0] = cover;
-      arr.forEach((html, i) => { if (html) next[i + 1] = html; });
-      return next;
-    });
-  }, []);
+  // Move the page at `from` to position `to` (both 1-indexed page numbers).
+  const handleReorderPages = useCallback((from: number, to: number) => {
+    if (from === to) return;
+    const total = pageImages.length;
+    const fromIdx = from - 1;
+    const toIdx   = to - 1;
+    if (fromIdx < 0 || fromIdx >= total || toIdx < 0 || toIdx >= total) return;
 
-  // Insert a blank page after the given page number (0 = insert before page 1)
-  const handleInsertPage = useCallback((afterPage: number) => {
-    setPageImages(prev => {
-      const next = [...prev];
-      next.splice(afterPage, 0, '');   // blank image
-      return next;
-    });
-    setPageResults(prev => {
-      const cover = prev[0];
-      const total = pageImages.length;
-      const arr: (string | undefined)[] = Array.from({ length: total }, (_, i) => prev[i + 1]);
-      arr.splice(afterPage, 0, undefined);  // blank page result
-      const next: Record<number, string> = {};
-      if (cover) next[0] = cover;
-      arr.forEach((html, i) => { if (html) next[i + 1] = html; });
-      return next;
-    });
+    setPageImages(prev => moveItem(prev, fromIdx, toIdx));
+    setPageDimensions(prev => moveItem(prev, fromIdx, toIdx));
+    setPageResults(prev => remapPageResults(prev, total, pages => moveItem(pages, fromIdx, toIdx)));
+    setIsDirty(true);
   }, [pageImages.length]);
+
+  // Insert a blank page after the given page number (0 = insert before page 1).
+  const handleInsertPage = useCallback((afterPage: number) => {
+    const total = pageImages.length;
+    const idx = Math.max(0, Math.min(afterPage, total));
+    // A blank page inherits the size of the page it follows, so inserting into
+    // a non-A4 book doesn't produce one odd-sized page.
+    const dim = pageDimensions[Math.max(0, idx - 1)] ?? { widthMm: 210, heightMm: 297 };
+
+    setPageImages(prev => insertAt(prev, idx, ''));
+    setPageDimensions(prev => insertAt(prev, idx, dim));
+    setPageResults(prev => remapPageResults(prev, total, pages => insertAt(pages, idx, undefined)));
+    // Pages after the insertion point shift up; extend the range if it covered them.
+    setToPage(t => (t > idx ? t + 1 : t));
+    setIsDirty(true);
+  }, [pageImages.length, pageDimensions]);
 
   // -------------------------------------------------------------------------
   // Save to library
   // -------------------------------------------------------------------------
-  const handleSave = async () => {
-    if (!neonUser) { setShowAuthModal(true); return; }
+  const handleSave = async (opts?: { skipAuthGate?: boolean }) => {
+    // `skipAuthGate` is set when we're resuming a save immediately after
+    // sign-in — the `neonUser` state hasn't re-rendered yet, but the access
+    // token is already installed, so the request will authenticate fine.
+    if (!opts?.skipAuthGate && !neonUser) {
+      setAuthPrompt({
+        action: 'save',
+        reason: fileName
+          ? `Sign in to save "${fileName}" to your library. Your extracted pages stay open while you do.`
+          : 'Sign in to save your work to your library.',
+      });
+      return;
+    }
     setIsSaving(true);
     try {
-      const docId = await saveDocument(activeDocId, fileName, pageImages, pageResults);
+      const docId = await saveDocument(activeDocId, fileName, pageImages, pageResults, pageDimensions);
       setActiveDocId(docId);
       localStorage.setItem('aoe_active_doc', docId);
       setToast({ id: Date.now().toString(), message: `"${fileName}" saved to library.`, variant: 'success' });
       setIsDirty(false);
       // Persist AI-data export in the background when the user has opted in
-      if (neonUser && docId && localStorage.getItem(AI_DATA_EXPORT_KEY) === 'true') {
+      // Reaching here means we're authenticated (gate passed or just signed in).
+      if (docId && localStorage.getItem(AI_DATA_EXPORT_KEY) === 'true') {
         void saveDocumentExport(docId, buildDocumentExport(docId, fileName, pageResults))
           .catch(() => { /* non-critical */ });
       }
@@ -608,6 +637,21 @@ export default function App() {
   // (auto-save effect is above, near pendingAutoSave declaration)
 
   // -------------------------------------------------------------------------
+  // Sign-in finished — close the prompt and finish what the user was doing.
+  // Deliberately not memoised: it must see the current handleSave closure.
+  // -------------------------------------------------------------------------
+  const handleAuthComplete = async () => {
+    const resume = authPrompt?.action ?? null;
+    const user   = await syncAuthState();
+    setAuthPrompt(null);
+    if (!user) return;
+    if (resume === 'save')    void handleSave({ skipAuthGate: true });
+    if (resume === 'library') setShowLibrary(true);
+  };
+
+  const handleCancelAuth = useCallback(() => setAuthPrompt(null), []);
+
+  // -------------------------------------------------------------------------
   // Load from library
   // -------------------------------------------------------------------------
   const handleLoad = (doc: SavedDocument) => {
@@ -616,8 +660,7 @@ export default function App() {
     setFileName(doc.name);
     setPageImages(images);
     setPageResults(doc.pageResults ?? {});
-    // Loaded documents don't store dimensions yet — default to A4
-    setPageDimensions(images.map(() => ({ widthMm: 210, heightMm: 297 })));
+    setPageDimensions(normalizePageDimensions(doc.pageDimensions, images.length));
     setFromPage(1);
     setToPage(doc.pageCount ?? images.length);
     localStorage.setItem('aoe_active_doc', doc.id);
@@ -711,10 +754,13 @@ export default function App() {
 
   const handleShowAdmin   = useCallback(() => setShowAdmin(true), []);
   const handleShowLibrary = useCallback(() => {
-    if (!neonUser) { setShowAuthModal(true); return; }
+    if (!neonUser) {
+      setAuthPrompt({ action: 'library', reason: 'Sign in to open your saved documents.' });
+      return;
+    }
     setShowLibrary(true);
   }, [neonUser]);
-  const handleRequestAuth = useCallback(() => setShowAuthModal(true), []);
+  const handleRequestAuth = useCallback(() => setAuthPrompt({ action: null }), []);
   const handleCancel      = useCallback(() => { cancelRef.current = true; }, []);
   const handleError       = useCallback((msg: string) => setToast({ id: Date.now().toString(), message: msg, variant: 'error' }), []);
   const handleDismissToast = useCallback(() => setToast(null), []);
@@ -733,9 +779,17 @@ export default function App() {
   }
   // Wedge unlock: guests can upload/extract/export. Save + Library require auth.
   const isGuest = !neonUser;
-  if (showAuthModal) {
-    return <AuthScreen onSuccess={async () => { await handleAuthSuccess(); setShowAuthModal(false); }} />;
-  }
+
+  // Rendered as a dismissible overlay on top of whatever screen is showing, so
+  // a guest interrupted mid-document keeps their pages and can always back out.
+  const authOverlay = authPrompt && (
+    <AuthScreen
+      onSuccess={handleAuthComplete}
+      onCancel={handleCancelAuth}
+      reason={authPrompt.reason}
+    />
+  );
+
   if (neonUser && isBlocked) {
     return (
       <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'100vh', gap:'1rem', background:'var(--t-bg)', color:'var(--t-text)' }}>
@@ -783,6 +837,7 @@ export default function App() {
           onRequestAuth={handleRequestAuth}
         />
         {showAdmin && <Suspense fallback={<div style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.5)',zIndex:999}}><Loader2 size={32} className="animate-spin" style={{color:'#6366f1'}} /></div>}><AdminPanel onClose={() => setShowAdmin(false)} /></Suspense>}
+        {authOverlay}
         <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 w-[350px] pointer-events-none">
           {toast && <Toast key={toast.id} toast={toast} onDismiss={handleDismissToast} />}
         </div>
@@ -804,7 +859,6 @@ export default function App() {
         pageImages={pageImages}
         pageDimensions={pageDimensions}
         pageResults={pageResults}
-        imageQuality={imageQuality}
         isProcessing={isProcessing}
         processingStatus={processingStatus}
         regeneratingPages={regeneratingPages}
@@ -839,7 +893,6 @@ export default function App() {
             setToast({ id: Date.now().toString(), message: 'Failed to copy — try downloading instead', variant: 'error' });
           });
         }}
-        onImageQualityChange={setImageQuality}
         onActivePageChange={setActivePage}
         canvasExecutor={executorRef.current ?? undefined}
         mcpConnected={mcpConnected}
@@ -909,6 +962,9 @@ export default function App() {
           onClose={() => setShowLibrary(false)}
         />
       )}
+
+      {/* Sign-in overlay — document stays mounted behind it */}
+      {authOverlay}
 
       {/* Toast notifications */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 w-[350px] pointer-events-none">

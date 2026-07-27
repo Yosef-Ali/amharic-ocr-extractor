@@ -4,7 +4,7 @@ import {
 import { CropIcon, Loader2 } from 'lucide-react';
 
 import DocumentPage, { type DocumentPageHandle, type ElementStyles } from './DocumentPage';
-import { cropPageRegion, restoreImage, type ImageQuality } from '../services/geminiService';
+import { cropPageRegion, restoreImage } from '../services/geminiService';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 /** Selection expressed as 0-1 fractions of the canvas size */
@@ -14,7 +14,6 @@ interface Props {
   pageNumber:     number;
   pageImage:      string;          // raw base64 JPEG of original scan
   html:           string;
-  imageQuality:   ImageQuality;
   isRegenerating?: boolean;        // true while this page is being re-extracted
   styleOverride?:  React.CSSProperties;
   selectionMode?:  boolean;
@@ -33,7 +32,7 @@ const SEL_SHADOW  = 'rgba(34,211,238,0.35)';
 
 // ── Component ──────────────────────────────────────────────────────────────
 export default function SplitPageView({
-  pageNumber, pageImage, html, imageQuality,
+  pageNumber, pageImage, html,
   isRegenerating = false, styleOverride, selectionMode = false,
   onElementSelect, onExitSelectionMode, styleApply,
   onEdit, onError, docHandle, zoom = 100,
@@ -258,7 +257,7 @@ export default function SplitPageView({
       setCropUrl(dataUrl);
       setGhosting(true);
     }
-  }, [cropUrl, rect, imageQuality, desc, clearSel]);
+  }, [cropUrl, rect, desc, clearSel]);
 
   // Auto-dismiss the insert toast after 5s
   useEffect(() => {

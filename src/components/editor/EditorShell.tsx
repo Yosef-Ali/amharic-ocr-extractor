@@ -22,7 +22,6 @@ import ViewModeTabs, { type ViewMode } from './ViewModeTabs';
 import BottomToolbar         from './BottomToolbar';
 import DocumentPage          from '../DocumentPage';
 import { type ElementStyles, type DocumentPageHandle } from '../DocumentPage';
-import { type ImageQuality }  from '../../services/geminiService';
 import { type CanvasExecutor } from '../../services/canvasExecutor';
 import { type PageDimension }  from '../../services/pdfService';
 import UserMenu               from '../UserMenu';
@@ -39,7 +38,6 @@ interface Props {
   pageImages:        string[];
   pageDimensions:    PageDimension[];
   pageResults:       Record<number, string>;
-  imageQuality:      ImageQuality;
   isProcessing:      boolean;
   processingStatus:  string;
   regeneratingPages: Set<number>;
@@ -64,7 +62,6 @@ interface Props {
   onCopyAllText?:     () => void;
   onCancel?:          () => void;
   onRename?:          (name: string) => void;
-  onImageQualityChange:    (q: ImageQuality) => void;
   onActivePageChange?: (page: number) => void;
   onError:  (msg: string) => void;
   canvasExecutor?: CanvasExecutor;
@@ -82,14 +79,13 @@ type DrawerPanel = 'agent' | 'inspector' | 'cover' | 'homophone' | null;
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function EditorShell({
-  fileName, pageImages, pageDimensions, pageResults, imageQuality,
+  fileName, pageImages, pageDimensions, pageResults,
   isProcessing, processingStatus, regeneratingPages,
   isPdfExporting, isSaving, isDirty,
   onEdit, onRegenerate, onDeletePage, onDeleteCover,
   onReorderPages, onInsertPage,
   onExtract, onForceExtract, onSave, onClear,
   onShowLibrary, onDownloadPDF, onDownloadTxt, onDownloadDocx, onCopyAllText, onCancel, onRename,
-  onImageQualityChange,
   onActivePageChange,
   onError,
   canvasExecutor,
@@ -923,7 +919,6 @@ export default function EditorShell({
                         pageNumber={p}
                         pageImage={img}
                         html={currentHtml}
-                        imageQuality={imageQuality}
                         isRegenerating={pIsRegen}
                         styleOverride={layoutToStyle(pageLayout)}
                         selectionMode={selectionMode}
@@ -1035,7 +1030,6 @@ export default function EditorShell({
             isPdfExporting={isPdfExporting}
             isSaving={isSaving}
             isDirty={isDirty}
-            imageQuality={imageQuality}
             processingStatus={processingStatus}
             hasImage={activePage > 0 ? !!pageImages[activePage - 1] : false}
             onPrev={() => changePage(Math.max(navMin, activePage - 1))}
@@ -1051,7 +1045,6 @@ export default function EditorShell({
             onDownloadDocx={onDownloadDocx}
             onCopyAllText={onCopyAllText}
             onCancel={onCancel}
-            onImageQualityChange={onImageQualityChange}
             onCoverPage={proPanelsEnabled ? () => { changePage(0); setRightDrawer('cover'); } : undefined}
             isGuest={isGuest}
           />

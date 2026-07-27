@@ -43,9 +43,26 @@
 }
 
 
+/* Dismissible overlay variant — the document stays visible behind, so a guest
+   asked to sign in mid-edit keeps their context and can back out. */
+
+.auth-screen--modal {
+  /* Above the editor chrome (max 1001) and the help/admin modals (9000). */
+  z-index: 9500;
+  background: rgba(15, 23, 42, .55);
+  background-image: none;
+  backdrop-filter: blur(3px);
+}
+
+[data-theme="dark"] .auth-screen--modal {
+  background: rgba(0, 0, 0, .65);
+}
+
+
 /* Glass card */
 
 .auth-card {
+  position: relative;
   width: 100%;
   max-width: 400px;
   background: var(--t-surface);
@@ -55,6 +72,47 @@
   backdrop-filter: blur(20px);
   box-shadow: 0 8px 32px rgba(0,0,0,.12);
   animation: auth-card-in .35s cubic-bezier(.22,1,.36,1) both;
+}
+
+
+/* Close button (dismissible variant only) */
+
+.auth-close {
+  position: absolute;
+  top: .875rem;
+  right: .875rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--t-text3);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+
+.auth-close:hover:not(:disabled) {
+  background: var(--t-surface2, rgba(148,163,184,.15));
+  color: var(--t-text);
+}
+
+.auth-close:disabled { opacity: .4; cursor: not-allowed; }
+
+
+/* Contextual reason banner */
+
+.auth-reason {
+  margin-bottom: 1rem;
+  padding: .625rem .75rem;
+  border-radius: 10px;
+  border: 1px solid var(--t-border);
+  background: var(--t-surface2, rgba(148,163,184,.1));
+  color: var(--t-text2);
+  font-size: .8rem;
+  line-height: 1.45;
 }
 
 

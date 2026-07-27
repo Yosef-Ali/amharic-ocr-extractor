@@ -470,3 +470,136 @@
 .home-feat-card-label { font-size: 0.82rem; font-weight: 800; color: var(--t-text2); margin-bottom: 0.3rem; }
 
 .home-feat-card-desc { font-size: 0.72rem; color: var(--t-text4); line-height: 1.45; }
+
+
+/* ──────────────────────────────────────────────
+   "Try as Guest" nav button
+   ────────────────────────────────────────────── */
+
+.home-guest-btn {
+  display: flex; align-items: center; gap: 0.35rem;
+  padding: 0.3rem 0.85rem; border-radius: 0.5rem;
+  font-size: 0.75rem; font-weight: 700; color: #fff;
+  background: linear-gradient(135deg, #ef4444, #ea580c);
+  border: 1px solid transparent;
+  box-shadow: 0 2px 8px rgba(239,68,68,0.25);
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+}
+
+.home-guest-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(239,68,68,0.3); }
+
+
+/* ──────────────────────────────────────────────
+   Public sample gallery
+   ────────────────────────────────────────────── */
+
+.sample-gallery { margin-bottom: 3rem; }
+
+.sample-gallery-head { margin-bottom: 1rem; }
+
+.sample-gallery-sub {
+  font-size: 0.85rem; color: var(--t-text3); font-weight: 500;
+  margin: 0.5rem 0 0;
+}
+
+.sample-tabs { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1.25rem; }
+
+.sample-tab {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem;
+  padding: 0.5rem 0.9rem; border-radius: 0.75rem;
+  background: var(--t-surface); border: 1px solid var(--t-border);
+  cursor: pointer; text-align: left;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+.sample-tab:hover { border-color: rgba(239,68,68,0.35); transform: translateY(-1px); }
+
+.sample-tab--active {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239,68,68,0.12);
+}
+
+.sample-tab-title { font-size: 0.85rem; font-weight: 800; color: var(--t-text2); }
+
+.sample-tab-tag {
+  font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  color: #dc2626;
+}
+
+.sample-split {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: stretch;
+  gap: 1rem;
+}
+
+.sample-pane { display: flex; flex-direction: column; min-width: 0; }
+
+.sample-pane-label {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--t-text4); margin-bottom: 0.5rem;
+}
+
+.sample-pane-label--out { color: #dc2626; }
+
+.sample-edit-hint {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.02em;
+  color: var(--t-text4); text-transform: none;
+}
+
+/* The "scanned original" — cream paper, soft shadow, faint vignette. */
+.sample-paper {
+  flex: 1; border-radius: 0.75rem; padding: 1.5rem 1.4rem;
+  background:
+    radial-gradient(120% 100% at 50% 0%, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0) 55%),
+    linear-gradient(180deg, #f7f1e3 0%, #efe7d4 100%);
+  border: 1px solid #ddd2ba;
+  box-shadow: inset 0 0 40px rgba(120,100,60,0.12), 0 6px 20px rgba(0,0,0,0.08);
+  overflow: hidden;
+}
+
+/* The extracted, editable document — clean white sheet. */
+.sample-extracted {
+  flex: 1; border-radius: 0.75rem; padding: 1.5rem 1.4rem;
+  background: #ffffff; border: 1px solid var(--t-border);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  overflow: hidden;
+}
+
+.sample-doc-body {
+  font-family: 'Noto Serif Ethiopic', 'Noto Sans Ethiopic', serif;
+  font-size: 0.9rem; color: #1f2937; outline: none;
+  word-break: break-word;
+}
+
+.sample-extracted .sample-doc-body[contenteditable]:focus-visible {
+  box-shadow: 0 0 0 2px rgba(239,68,68,0.25); border-radius: 0.35rem;
+}
+
+.sample-arrow {
+  display: flex; align-items: center; justify-content: center;
+  color: #dc2626; align-self: center;
+}
+
+.sample-cta { margin-top: 1.25rem; }
+
+.sample-cta-btn {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.6rem 1.1rem; border-radius: 0.65rem;
+  font-size: 0.82rem; font-weight: 700; color: var(--t-text2);
+  background: var(--t-surface); border: 1px solid var(--t-border);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, transform 0.15s;
+}
+
+.sample-cta-btn:hover {
+  border-color: #ef4444; color: #dc2626; transform: translateY(-1px);
+}
+
+/* Stack the side-by-side on narrow screens; arrow rotates to point down. */
+@media (max-width: 720px) {
+  .sample-split { grid-template-columns: 1fr; }
+  .sample-arrow { transform: rotate(90deg); margin: 0.25rem 0; }
+}

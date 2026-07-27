@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { authFetch, getAccessToken } from '../lib/apiClient';
+import { normalizePageDimensions, type PageSize } from '../lib/pageOps';
 import localforage from 'localforage';
 
 /** Typed error thrown when a user has reached their document quota. */
@@ -96,6 +97,9 @@ export interface SavedDocument {
   thumbnailUrl?: string;
   pageImages: string[];
   pageResults: Record<number, string>;
+  /** Physical page sizes. Absent on documents saved before these were stored —
+   *  callers must fall back to A4 via normalizePageDimensions(). */
+  pageDimensions?: PageSize[];
 }
 
 // ---------------------------------------------------------------------------
@@ -124,8 +128,12 @@ export async function saveDocument(
   name: string,
   pageImages: string[],
   pageResults: Record<number, string>,
+  pageDimensions: PageSize[] = [],
 ): Promise<string> {   // returns the document UUID
   const id = docId || uuidv4();
+  // Store exactly one entry per page so the array can never drift out of
+  // alignment with the pages it describes.
+  const dimensions = normalizePageDimensions(pageDimensions, pageImages.length);
 
   // Upload page images and thumbnail in parallel
   const thumbBase64 = extractThumbnailBase64(pageImages, pageResults);
@@ -157,6 +165,7 @@ export async function saveDocument(
       pageCount: pageImages.length,
       storedImages,
       pageResults,
+      pageDimensions: dimensions,
       thumbnailUrl,
     }),
   });
@@ -170,6 +179,7 @@ export async function saveDocument(
     pageCount: pageImages.length,
     pageImages: new Array(pageImages.length).fill(''),
     pageResults,
+    pageDimensions: dimensions,
     thumbnailUrl: thumbnailUrl ?? undefined
   };
   localforage.setItem(`aoe_doc_${returnedId || id}`, docToCache).catch(console.warn);
@@ -203,10 +213,14 @@ export async function loadDocumentContent(id: string): Promise<SavedDocument> {
   try {
     const cached = await localforage.getItem<SavedDocument>(cacheKey);
     if (cached) {
-      // Normalize stale cache entries that may be missing pageImages
+      // Normalize stale cache entries written before these fields existed.
       if (!cached.pageImages) {
         cached.pageImages = new Array(cached.pageCount ?? 0).fill('');
       }
+      cached.pageDimensions = normalizePageDimensions(
+        cached.pageDimensions,
+        cached.pageCount ?? cached.pageImages.length,
+      );
       return cached;
     }
   } catch (err) {
@@ -217,11 +231,17 @@ export async function loadDocumentContent(id: string): Promise<SavedDocument> {
   const raw = await res.json();
 
   // API returns page_count but no pageImages — fill with empty strings for lazy loading
+  const pageCount = raw.pageCount ?? raw.page_count ?? 0;
   const doc: SavedDocument = {
     ...raw,
-    pageImages: raw.pageImages ?? new Array(raw.page_count ?? raw.pageCount ?? 0).fill(''),
+    pageImages: raw.pageImages ?? new Array(pageCount).fill(''),
     pageResults: raw.pageResults ?? raw.page_results ?? {},
-    pageCount: raw.pageCount ?? raw.page_count ?? 0,
+    // Documents saved before dimensions were persisted come back null → A4.
+    pageDimensions: normalizePageDimensions(
+      raw.pageDimensions ?? raw.page_dimensions,
+      pageCount,
+    ),
+    pageCount,
     name: raw.name ?? '',
     savedAt: raw.savedAt ?? raw.saved_at ?? '',
   };

@@ -1,9 +1,8 @@
 import {
   Layers, Loader2, Save, Download, FileText, FileDown, ClipboardCopy, X,
-  RefreshCw, Trash2, Zap, Sparkles, MoreHorizontal, BookOpen, Image as ImageIcon, HelpCircle,
+  RefreshCw, Trash2, MoreHorizontal, BookOpen, Image as ImageIcon, HelpCircle,
 } from 'lucide-react';
 import { useState } from 'react';
-import { type ImageQuality } from '../../services/geminiService';
 import HelpModal from './HelpModal';
 
 interface Props {
@@ -16,7 +15,6 @@ interface Props {
   isPdfExporting:   boolean;
   isSaving?:        boolean;
   isDirty?:         boolean;
-  imageQuality:     ImageQuality;
   processingStatus: string;
   hasImage?:        boolean;
 
@@ -33,7 +31,6 @@ interface Props {
   onDownloadDocx?:     () => void;
   onCopyAllText?:      () => void;
   onCancel?:           () => void;
-  onImageQualityChange: (q: ImageQuality) => void;
   onCoverPage?:        () => void;
   isGuest?:            boolean;
 }
@@ -41,12 +38,12 @@ interface Props {
 export default function BottomToolbar({
   activePage, totalPages, hasResult, hasAnyResults,
   isProcessing, isRegenerating, isPdfExporting, isSaving, isDirty,
-  imageQuality, processingStatus,
+  processingStatus,
   hasImage = true,
   onExtract, onForceExtract,
   onRegenerate, onDeletePage,
   onSave, onShowLibrary, onDownloadPDF, onDownloadTxt, onDownloadDocx, onCopyAllText, onCancel,
-  onImageQualityChange, onCoverPage,
+  onCoverPage,
   isGuest = false,
 }: Props) {
   const [moreOpen,  setMoreOpen]  = useState(false);
@@ -146,11 +143,6 @@ export default function BottomToolbar({
                     <button onClick={() => { onRegenerate(); setMoreOpen(false); }} disabled={isRegenerating || isProcessing}>
                       {isRegenerating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
                       Re-extract page
-                    </button>
-                  )}
-                  {hasAnyResults && (
-                    <button onClick={() => { onImageQualityChange(imageQuality === 'fast' ? 'pro' : 'fast'); setMoreOpen(false); }}>
-                      {imageQuality === 'fast' ? <><Sparkles size={14} /> Try higher accuracy</> : <><Zap size={14} /> Use fast mode</>}
                     </button>
                   )}
                   {hasAnyResults && onDownloadTxt && (
