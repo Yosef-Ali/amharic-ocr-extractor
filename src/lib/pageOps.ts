@@ -27,6 +27,30 @@ export interface PageSize {
 
 export const A4: PageSize = { widthMm: 210, heightMm: 297 };
 
+/** 1 PDF point = 1/72 inch = 25.4/72 mm ≈ 0.3528 mm */
+const PT_TO_MM = 25.4 / 72;
+
+/**
+ * Convert a PDF page's size from points to millimetres.
+ *
+ * Callers should pass an *unscaled* viewport, which already accounts for page
+ * rotation — so a rotated or landscape page reports its visual size rather than
+ * its pre-rotation one. A page reporting a size we can't use (zero, negative,
+ * NaN from a malformed file) falls back to A4 rather than producing a sliver
+ * that would break both the on-screen layout and the PDF export.
+ */
+export function pointsToPageSize(widthPt: number, heightPt: number): PageSize {
+  const widthMm  = widthPt  * PT_TO_MM;
+  const heightMm = heightPt * PT_TO_MM;
+  if (!Number.isFinite(widthMm) || !Number.isFinite(heightMm) || widthMm <= 0 || heightMm <= 0) {
+    return A4;
+  }
+  return {
+    widthMm:  Math.round(widthMm  * 100) / 100,
+    heightMm: Math.round(heightMm * 100) / 100,
+  };
+}
+
 /**
  * Coerce a stored/partial dimension list into exactly `pageCount` valid entries.
  *

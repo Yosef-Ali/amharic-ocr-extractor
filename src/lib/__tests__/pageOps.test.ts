@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   removeAt, insertAt, moveItem, remapPageResults, normalizePageDimensions,
-  A4, FRONT_COVER, BACK_COVER, type PageResults,
+  pointsToPageSize, A4, FRONT_COVER, BACK_COVER, type PageResults,
 } from '../pageOps';
 
 describe('removeAt', () => {
@@ -120,6 +120,52 @@ describe('remapPageResults', () => {
     const src: PageResults = { 1: 'a', 2: 'b' };
     remapPageResults(src, 2, p => removeAt(p, 0));
     expect(src).toEqual({ 1: 'a', 2: 'b' });
+  });
+});
+
+describe('pointsToPageSize', () => {
+  // PDF page sizes are given in points; these are the standard ones.
+  it('converts A4 (595.28 x 841.89 pt)', () => {
+    const d = pointsToPageSize(595.28, 841.89);
+    expect(d.widthMm).toBeCloseTo(210, 1);
+    expect(d.heightMm).toBeCloseTo(297, 1);
+  });
+
+  it('converts US Letter (612 x 792 pt)', () => {
+    const d = pointsToPageSize(612, 792);
+    expect(d.widthMm).toBeCloseTo(215.9, 1);
+    expect(d.heightMm).toBeCloseTo(279.4, 1);
+  });
+
+  it('converts A5, the size a lot of liturgical books actually use', () => {
+    const d = pointsToPageSize(419.53, 595.28);
+    expect(d.widthMm).toBeCloseTo(148, 1);
+    expect(d.heightMm).toBeCloseTo(210, 1);
+  });
+
+  it('keeps landscape pages landscape', () => {
+    const d = pointsToPageSize(841.89, 595.28);
+    expect(d.widthMm).toBeGreaterThan(d.heightMm);
+  });
+
+  it('rounds to two decimals rather than carrying float noise', () => {
+    const d = pointsToPageSize(595.28, 841.89);
+    expect(d.widthMm).toBe(Math.round(d.widthMm * 100) / 100);
+    expect(String(d.widthMm).split('.')[1]?.length ?? 0).toBeLessThanOrEqual(2);
+  });
+
+  it('falls back to A4 for sizes a malformed PDF might report', () => {
+    expect(pointsToPageSize(0, 841.89)).toEqual(A4);
+    expect(pointsToPageSize(595.28, 0)).toEqual(A4);
+    expect(pointsToPageSize(-595, 841)).toEqual(A4);
+    expect(pointsToPageSize(NaN, 841.89)).toEqual(A4);
+    expect(pointsToPageSize(Infinity, 841.89)).toEqual(A4);
+  });
+
+  it('survives the round trip through normalizePageDimensions', () => {
+    // What actually happens: captured at upload, stored, reloaded.
+    const captured = [pointsToPageSize(419.53, 595.28), pointsToPageSize(612, 792)];
+    expect(normalizePageDimensions(captured, 2)).toEqual(captured);
   });
 });
 

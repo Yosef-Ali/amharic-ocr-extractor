@@ -1,6 +1,7 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import mammoth from 'mammoth';
+import { pointsToPageSize } from '../lib/pageOps';
 
 // Use the locally bundled worker (CDN doesn't carry v5.x .mjs files)
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
@@ -11,7 +12,6 @@ export interface PageDimension {
   heightMm: number;
 }
 
-// 1 PDF point = 1/72 inch = 25.4/72 mm ≈ 0.3528 mm
 export async function pdfToImages(file: File): Promise<{ images: string[]; dimensions: PageDimension[] }> {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -22,8 +22,10 @@ export async function pdfToImages(file: File): Promise<{ images: string[]; dimen
     const page = await pdf.getPage(i);
     const unscaledViewport = page.getViewport({ scale: 1.0 });
 
-    // Always use A4 for the output page size regardless of original document dimensions
-    dimensions.push({ widthMm: 210, heightMm: 297 });
+    // Keep each page's real physical size. Ethiopian liturgical books are
+    // frequently not A4, and forcing A4 here made every one of them render and
+    // export at the wrong size regardless of what the source PDF said.
+    dimensions.push(pointsToPageSize(unscaledViewport.width, unscaledViewport.height));
 
     const maxDimension = 2560;
     const currentMax = Math.max(unscaledViewport.width, unscaledViewport.height);
