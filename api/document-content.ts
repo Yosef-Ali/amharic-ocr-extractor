@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { sql } from './_db';
 import { getAuthUser } from './_auth';
+import { ensureDocumentSchema } from './_docSchema';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
@@ -14,8 +15,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const id = req.query.id as string;
     if (!id) return res.status(400).json({ error: 'Missing id query param' });
 
+    await ensureDocumentSchema();
     const rows = await sql`
-      SELECT d.id, d.name, d.saved_at, d.page_count, c.page_results
+      SELECT d.id, d.name, d.saved_at, d.page_count, c.page_results, c.page_dimensions
       FROM documents d
       JOIN document_content c ON c.document_id = d.id
       WHERE d.id = ${id} AND d.user_id = ${user.userId}
