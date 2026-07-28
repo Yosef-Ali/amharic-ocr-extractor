@@ -9,7 +9,7 @@ export function useTheme() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem('theme', theme); } catch {}
+    try { localStorage.setItem('theme', theme); } catch { /* storage disabled or full — theme just won't persist */ }
   }, [theme]);
 
   const toggleTheme = useCallback(() => {

@@ -63,7 +63,7 @@ export default function AuthScreen({ onSuccess, onCancel, reason }: Props) {
 
     try {
       if (mode === 'signup') {
-        const result = await (authClient as any).signUp.email({
+        const result = await authClient.signUp.email({
           name: email.split('@')[0],
           email,
           password,
@@ -75,7 +75,7 @@ export default function AuthScreen({ onSuccess, onCancel, reason }: Props) {
         // Sign the new account straight in — making someone re-type the
         // credentials they just chose is the single biggest drop-off in the
         // guest→account funnel. Fall back to the manual step if it fails.
-        const signIn = await (authClient as any).signIn.email({ email, password });
+        const signIn = await authClient.signIn.email({ email, password });
         if (signIn?.error) {
           setInfo('Account created! Please sign in.');
           setMode('signin');
@@ -84,7 +84,7 @@ export default function AuthScreen({ onSuccess, onCancel, reason }: Props) {
           await onSuccess();
         }
       } else {
-        const result = await (authClient as any).signIn.email({ email, password });
+        const result = await authClient.signIn.email({ email, password });
         if (result?.error) {
           setError(result.error.message ?? 'Sign in failed.');
         } else {

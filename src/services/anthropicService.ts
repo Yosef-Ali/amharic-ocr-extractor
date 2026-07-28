@@ -1,7 +1,22 @@
 import { buildOcrPrompt, buildLayoutPrompt, verifyLayout, type ChatTurn, type CanvasContext } from './aiCommon';
 import { authFetch } from '../lib/apiClient';
 
-async function callAnthropic(messages: any[], system?: string, model?: string) {
+/**
+ * Minimal Anthropic Messages API shapes — only the block kinds this app sends.
+ * Declared locally because requests go through our own /api/ai-proxy rather
+ * than the SDK, so no vendor types are in play.
+ */
+type AnthropicBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } };
+
+interface AnthropicMessage {
+  role: 'user' | 'assistant';
+  content: string | AnthropicBlock[];
+}
+
+
+async function callAnthropic(messages: AnthropicMessage[], system?: string, model?: string) {
   // Always use server-side proxy to keep API key secure
   const res = await authFetch('/api/ai-proxy', {
     method: 'POST',
@@ -20,7 +35,7 @@ export async function anthropicExtractPageHTML(
   previousPageHTML?: string,
 ): Promise<string> {
   // Pass 1: OCR
-  const ocrMessages = [
+  const ocrMessages: AnthropicMessage[] = [
     {
       role: 'user',
       content: [
@@ -39,7 +54,7 @@ export async function anthropicExtractPageHTML(
   }
 
   // Pass 2: Layout
-  const layoutMessages = [
+  const layoutMessages: AnthropicMessage[] = [
     {
       role: 'user',
       content: [
@@ -69,7 +84,7 @@ export async function anthropicChat(
     'Format responses with markdown. Be concise. ' +
     (projectContext ? `\n\n${projectContext}` : '');
 
-  const messages: any[] = [];
+  const messages: AnthropicMessage[] = [];
 
   // Inject canvas context if provided
   if (canvasContext) {
@@ -88,7 +103,7 @@ export async function anthropicChat(
 
   // Convert history
   for (const turn of history) {
-    const content: any[] = [];
+    const content: AnthropicBlock[] = [];
     if (turn.imageDataUrl) {
       const [, data] = turn.imageDataUrl.split(',');
       content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } });
@@ -110,7 +125,7 @@ export async function anthropicEditPage(
   const system = 'You are a senior document designer and HTML expert. Apply user requests and return improved HTML. Return ONLY raw HTML.';
   const prompt = `CURRENT PAGE HTML:\n\`\`\`html\n${currentHTML}\n\`\`\`\n\nUSER REQUEST: ${instruction}\n\nOutput improved HTML now:`;
 
-  const messages = [
+  const messages: AnthropicMessage[] = [
     {
       role: 'user',
       content: [

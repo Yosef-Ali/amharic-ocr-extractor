@@ -1,7 +1,7 @@
 import React from 'react';
 
 /** Inline markdown: **bold**, *italic*, `code` → React nodes */
-export function inlineMd(text: string, codeClass: string): React.ReactNode[] {
+function inlineMd(text: string, codeClass: string): React.ReactNode[] {
   const tokens = text.split(/(\*\*[^*\n]+\*\*|\*[^*\n]+\*|`[^`\n]+`)/);
   return tokens.map((t, i) => {
     if (t.startsWith('**') && t.endsWith('**')) return <strong key={i}>{t.slice(2, -2)}</strong>;

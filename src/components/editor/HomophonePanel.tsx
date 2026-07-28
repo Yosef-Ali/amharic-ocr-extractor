@@ -4,7 +4,7 @@ import { CheckCircle2, ChevronDown, ChevronRight, RotateCcw, Undo2, AlertTriangl
 // ── Amharic homophone / look-alike groups ──────────────────────────────────
 // Each group contains characters that are phonetically identical or visually
 // similar and are commonly confused by OCR engines.
-export const HOMOPHONE_GROUPS = [
+const HOMOPHONE_GROUPS = [
   {
     id: 'ha',
     label: 'ሀ – Ha variants',

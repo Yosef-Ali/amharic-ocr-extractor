@@ -1,3 +1,6 @@
+/** html2canvas ships types but no "types" field, so the dynamic import is untyped. */
+type Html2Canvas = (el: HTMLElement, opts?: Record<string, unknown>) => Promise<HTMLCanvasElement>;
+
 /** Render pageResults HTML to a temporary off-screen container and export as PDF. */
 export async function downloadDocumentAsPDF(
   name: string,
@@ -25,7 +28,7 @@ export async function downloadDocumentAsPDF(
     await document.fonts.ready;
     const { jsPDF }         = await import('jspdf');
     const html2canvasModule = await import('html2canvas');
-    const html2canvas: any  = html2canvasModule.default ?? html2canvasModule;
+    const html2canvas = (html2canvasModule.default ?? html2canvasModule) as unknown as Html2Canvas;
 
     const pages = container.children;
     const pdf   = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });

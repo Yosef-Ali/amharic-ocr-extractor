@@ -103,7 +103,7 @@ export default function FindReplaceBar({ pageResults, activePage, onEdit, onChan
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') { onClose(); return; }
-    if (e.key === 'Enter') { e.shiftKey ? goToPrev() : goToNext(); }
+    if (e.key === 'Enter') { if (e.shiftKey) goToPrev(); else goToNext(); }
   };
 
   return (

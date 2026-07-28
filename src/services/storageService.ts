@@ -3,6 +3,14 @@ import { authFetch, getAccessToken } from '../lib/apiClient';
 import { normalizePageDimensions, type PageSize } from '../lib/pageOps';
 import localforage from 'localforage';
 
+/** Error payload returned by the /api routes. */
+interface ApiErrorBody {
+  error?: string;
+  used?:  number;
+  limit?: number;
+  [key: string]: unknown;
+}
+
 /** Typed error thrown when a user has reached their document quota. */
 export class QuotaExceededError extends Error {
   used:  number;
@@ -76,10 +84,12 @@ async function storageAuthFetch(url: string, options: RequestInit = {}): Promise
     },
   });
   if (!res.ok) {
-    let body: any;
+    let body: ApiErrorBody = {};
     try { body = await res.clone().json(); } catch { body = {}; }
     if (body.error === 'QUOTA_EXCEEDED') {
-      throw new QuotaExceededError(body.used, body.limit);
+      // Defaults matter: a malformed quota response would otherwise render as
+      // "Document limit reached (undefined/undefined)".
+      throw new QuotaExceededError(body.used ?? 0, body.limit ?? 0);
     }
     throw new Error(body.error || `HTTP ${res.status}`);
   }
@@ -187,6 +197,17 @@ export async function saveDocument(
   return returnedId || id;
 }
 
+/** Raw row from /api/documents — snake_case from Postgres, camelCase if already mapped. */
+interface DocumentRow {
+  id: string;
+  name?: string;
+  savedAt?: string;   saved_at?: string;
+  pageCount?: number; page_count?: number;
+  thumbnailUrl?: string; thumbnail_url?: string;
+  pageImages?: string[];
+  pageResults?: Record<number, string>;
+}
+
 // ---------------------------------------------------------------------------
 // Load all documents — returns metadata stubs (no large content)
 // ---------------------------------------------------------------------------
@@ -194,7 +215,7 @@ export async function loadAllDocuments(): Promise<SavedDocument[]> {
   const res = await storageAuthFetch('/api/documents');
   const rows = await res.json();
   // API returns snake_case columns; normalize to camelCase SavedDocument shape
-  return (rows as any[]).map(r => ({
+  return (rows as DocumentRow[]).map(r => ({
     id:           r.id,
     name:         r.name ?? '',
     savedAt:      r.savedAt   ?? r.saved_at   ?? '',
@@ -248,7 +269,7 @@ export async function loadDocumentContent(id: string): Promise<SavedDocument> {
 
   try {
     await localforage.setItem(cacheKey, doc);
-  } catch (err) { }
+  } catch { /* cache write is best-effort — the doc is already loaded */ }
 
   return doc;
 }
@@ -272,7 +293,7 @@ export async function loadDocumentPageImage(docId: string, pageIndex: number): P
   if (img) {
     try {
       await localforage.setItem(cacheKey, img);
-    } catch (err) { }
+    } catch { /* cache write is best-effort — the image is already loaded */ }
   }
 
   return img;
@@ -292,5 +313,5 @@ export async function deleteDocument(id: string): Promise<void> {
     const keys = await localforage.keys();
     const toRemove = [`aoe_doc_${id}`, ...keys.filter(k => k.startsWith(`aoe_img_${id}_`))];
     await Promise.all(toRemove.map(k => localforage.removeItem(k)));
-  } catch (err) { }
+  } catch { /* local cache cleanup is best-effort — the server delete succeeded */ }
 }

@@ -8,6 +8,8 @@ export function getAccessToken(): string | null {
   return _accessToken;
 }
 
+interface ApiErrorBody { error?: string; [key: string]: unknown }
+
 export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -19,10 +21,10 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
   const res = await fetch(url, { ...options, headers });
   if (!res.ok) {
     const rawText = await res.text().catch(() => '');
-    let body: any = { error: `Request failed (HTTP ${res.status} ${res.statusText}). Body: ${rawText.slice(0, 100)}` };
+    let body: ApiErrorBody = { error: `Request failed (HTTP ${res.status} ${res.statusText}). Body: ${rawText.slice(0, 100)}` };
     try {
       if (rawText) body = JSON.parse(rawText);
-    } catch (e) { }
+    } catch { /* not JSON — keep the raw-text fallback built above */ }
     throw new Error(body.error || `HTTP ${res.status}`);
   }
   return res;
