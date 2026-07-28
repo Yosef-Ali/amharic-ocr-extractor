@@ -39,12 +39,11 @@ export default function SplitPageView({
 }: Props) {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const imgRef     = useRef<HTMLImageElement>(null);
-  const docRef     = useRef<DocumentPageHandle | null>(null);
-
-  // Forward docHandle from parent so undo/redo buttons work
-  useEffect(() => {
-    if (docHandle) docHandle.current = docRef.current;
-  });
+  // When the parent supplies a handle ref, hand DocumentPage that one directly
+  // rather than keeping a local copy and mirroring it across in an effect —
+  // which meant writing to a prop on every render.
+  const localDocRef = useRef<DocumentPageHandle | null>(null);
+  const docRef      = docHandle ?? localDocRef;
   const rafRef     = useRef<number>(0);
   const drawingRef = useRef(false);   // mutable, avoids stale closure issues
   const startRef   = useRef<{ x: number; y: number } | null>(null);
@@ -202,7 +201,7 @@ export default function SplitPageView({
       window.dispatchEvent(new CustomEvent('insp-crop-state', {
         detail: { active: true, cropUrl: crop, pageNumber },
       }));
-    } catch (err) {
+    } catch {
       clearSel();
       onError?.('Failed to crop region — check your API key and try again.');
     }
@@ -241,7 +240,7 @@ export default function SplitPageView({
     if (withRestore) {
       try {
         dataUrl = await restoreImage(cropUrl);
-      } catch (err) {
+      } catch {
         onError?.('Image restore failed — the region was inserted as a raw crop instead.');
         dataUrl = cropUrl; // fall back to raw crop rather than doing nothing
       }
@@ -257,7 +256,7 @@ export default function SplitPageView({
       setCropUrl(dataUrl);
       setGhosting(true);
     }
-  }, [cropUrl, rect, desc, clearSel]);
+  }, [cropUrl, rect, desc, clearSel, onError, docRef]);
 
   // Auto-dismiss the insert toast after 5s
   useEffect(() => {

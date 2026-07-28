@@ -23,6 +23,10 @@ import { useTheme } from './hooks/useTheme';
 
 type NeonUser = { id: string; email?: string; name?: string };
 
+/** html2canvas ships types but no "types" field, so the dynamic import is untyped. */
+type Html2Canvas = (el: HTMLElement, opts?: Record<string, unknown>) => Promise<HTMLCanvasElement>;
+
+
 /** An interrupted action that should resume once the user has an account. */
 type AuthPrompt = {
   /** Re-run this once sign-in succeeds. `null` = the user asked to sign in directly. */
@@ -90,7 +94,7 @@ export default function App() {
   const [isRestoringSession, setIsRestoringSession] = useState(() => !!localStorage.getItem('aoe_active_doc'));
 
   const syncAuthState = useCallback(async () => {
-    const result = await (authClient as any).getSession();
+    const result = await authClient.getSession();
     const u = result?.data?.user ?? null;
     // @neondatabase/auth returns data.session.token (not data.accessToken)
     const accessToken = result?.data?.session?.token ?? null;
@@ -148,7 +152,7 @@ export default function App() {
   }, [authLoading, neonUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSignOut = useCallback(async () => {
-    await (authClient as any).signOut();
+    await authClient.signOut();
     setNeonUser(null);
     setAccessToken(null);
   }, []);
@@ -676,7 +680,7 @@ export default function App() {
 
       const { jsPDF }         = await import('jspdf');
       const html2canvasModule = await import('html2canvas');
-      const html2canvas: any  = html2canvasModule.default ?? html2canvasModule;
+      const html2canvas = (html2canvasModule.default ?? html2canvasModule) as unknown as Html2Canvas;
 
       // Query the hidden off-screen container (contains all pages as static divs)
       const pages = document.querySelectorAll('#pdf-export-container .document-page');
@@ -712,7 +716,7 @@ export default function App() {
         pageEl.style.boxShadow = 'none';
         pageEl.style.transform = 'none';
 
-        const canvas = await html2canvas(pageEl as any, {
+        const canvas = await html2canvas(pageEl, {
           scale:   2,
           useCORS: true,
           logging: false,

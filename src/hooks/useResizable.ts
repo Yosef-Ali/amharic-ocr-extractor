@@ -42,7 +42,12 @@ export function useResizable({
 
   // Track whether we're animating (collapse/expand) vs dragging
   const isAnimating = useRef(false);
-  const isDragging = useRef(false);
+  // Mirrors isDragging for the mousemove listener, which needs a synchronous
+  // read and must not depend on a re-render having landed.
+  const isDraggingRef = useRef(false);
+  // State, not a ref: panelStyle reads this during render to suppress the
+  // width transition mid-drag. Dragging already re-renders via setWidth.
+  const [isDragging, setIsDragging] = useState(false);
   const startX = useRef(0);
   const startWidth = useRef(0);
 
@@ -55,7 +60,7 @@ export function useResizable({
 
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
-      if (!isDragging.current) return;
+      if (!isDraggingRef.current) return;
       const delta = side === 'left'
         ? e.clientX - startX.current
         : startX.current - e.clientX;
@@ -64,7 +69,8 @@ export function useResizable({
       // Auto-collapse if dragged far below min
       if (newWidth < minWidth - 20) {
         setCollapsed(true);
-        isDragging.current = false;
+        isDraggingRef.current = false;
+        setIsDragging(false);
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
         return;
@@ -75,13 +81,18 @@ export function useResizable({
     [side, minWidth, maxWidth],
   );
 
+  // One controller per drag. Aborting it detaches both listeners at once, so
+  // the mouseup handler never needs to reference its own binding.
+  const dragAbort = useRef<AbortController | null>(null);
+
   const handleMouseUp = useCallback(() => {
-    isDragging.current = false;
+    isDraggingRef.current = false;
+    setIsDragging(false);
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
-    document.removeEventListener('mousemove', handleMouseMove);
-    document.removeEventListener('mouseup', handleMouseUp);
-  }, [handleMouseMove]);
+    dragAbort.current?.abort();
+    dragAbort.current = null;
+  }, []);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -95,18 +106,26 @@ export function useResizable({
 
       e.preventDefault();
       e.stopPropagation();
-      isDragging.current = true;
+      isDraggingRef.current = true;
+      setIsDragging(true);
       isAnimating.current = false;
       startX.current = e.clientX;
       startWidth.current = width;
 
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
+
+      dragAbort.current?.abort();
+      const controller = new AbortController();
+      dragAbort.current = controller;
+      document.addEventListener('mousemove', handleMouseMove, { signal: controller.signal });
+      document.addEventListener('mouseup',   handleMouseUp,   { signal: controller.signal });
     },
     [collapsed, width, handleMouseMove, handleMouseUp],
   );
+
+  // Detach if the component unmounts mid-drag.
+  useEffect(() => () => dragAbort.current?.abort(), []);
 
   // When setCollapsed is called externally, flag animating
   const setCollapsedWrapped = useCallback(
@@ -123,7 +142,7 @@ export function useResizable({
     overflow: 'hidden',
     flexShrink: 0,
     // Transition only when animating (collapse/expand), NOT during drag
-    transition: isDragging.current ? 'none' : 'width 0.2s ease',
+    transition: isDragging ? 'none' : 'width 0.2s ease',
     willChange: 'width',
   };
 

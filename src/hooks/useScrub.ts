@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 
 interface UseScrubOptions {
   value:        number;
@@ -38,14 +38,15 @@ export function useScrub({
     [min, max, step, sensitivity, onChange],
   );
 
-  const handlePointerUp = useCallback(
-    (e: PointerEvent) => {
-      (e.target as Element)?.releasePointerCapture?.(e.pointerId);
-      document.removeEventListener('pointermove', handlePointerMove);
-      document.removeEventListener('pointerup', handlePointerUp);
-    },
-    [handlePointerMove],
-  );
+  // One controller per drag. Aborting it detaches both listeners at once, so
+  // the pointerup handler never needs to reference its own binding.
+  const dragAbort = useRef<AbortController | null>(null);
+
+  const handlePointerUp = useCallback((e: PointerEvent) => {
+    (e.target as Element)?.releasePointerCapture?.(e.pointerId);
+    dragAbort.current?.abort();
+    dragAbort.current = null;
+  }, []);
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -53,11 +54,18 @@ export function useScrub({
       startX.current   = e.clientX;
       startVal.current = value;
       (e.target as Element).setPointerCapture(e.pointerId);
-      document.addEventListener('pointermove', handlePointerMove);
-      document.addEventListener('pointerup', handlePointerUp);
+
+      dragAbort.current?.abort();
+      const controller = new AbortController();
+      dragAbort.current = controller;
+      document.addEventListener('pointermove', handlePointerMove, { signal: controller.signal });
+      document.addEventListener('pointerup',   handlePointerUp,   { signal: controller.signal });
     },
     [value, handlePointerMove, handlePointerUp],
   );
+
+  // Detach if the component unmounts mid-drag.
+  useEffect(() => () => dragAbort.current?.abort(), []);
 
   return {
     labelProps: {
