@@ -14,8 +14,8 @@ import ThemeToggleButton from '../ThemeToggleButton';
 import PageThumbnailSidebar from './PageThumbnailSidebar';
 import SplitPageView        from '../SplitPageView';
 import SettingsPanel         from './SettingsPanel';
-import InspectorPanel, { type PageLayout, DEFAULT_LAYOUT, layoutToStyle }
-                             from './InspectorPanel';
+import InspectorPanel        from './InspectorPanel';
+import { type PageLayout, DEFAULT_LAYOUT, layoutToStyle } from './pageLayout';
 import AgentPanel            from './AgentPanel';
 import RightDrawer           from './RightDrawer';
 import ViewModeTabs, { type ViewMode } from './ViewModeTabs';
@@ -285,7 +285,7 @@ export default function EditorShell({
     const elContainer = contentRef.current;
     if (!elContainer) return;
 
-    let timeoutId: any;
+    let timeoutId: ReturnType<typeof setTimeout>;
     const handleScroll = () => {
       clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {

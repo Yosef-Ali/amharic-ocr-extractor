@@ -103,9 +103,9 @@ export default function LibraryModal({ onLoad, onClose }: Props) {
               className="flex items-center justify-between p-3 border-b border-gray-100 last:border-0 gap-3 hover:bg-gray-50 rounded-xl transition-colors group"
             >
               {/* Thumbnail */}
-              {(doc as any).thumbnailUrl && (
+              {doc.thumbnailUrl && (
                 <img
-                  src={(doc as any).thumbnailUrl}
+                  src={doc.thumbnailUrl}
                   alt=""
                   style={{ width: '40px', height: '52px', objectFit: 'cover', borderRadius: '4px', flexShrink: 0, border: '1px solid #e5e7eb' }}
                 />

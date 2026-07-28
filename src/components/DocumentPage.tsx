@@ -66,7 +66,7 @@ function rgbToHex(color: string): string {
   return '#' + [m[1], m[2], m[3]].map(n => parseInt(n).toString(16).padStart(2, '0')).join('');
 }
 
-export function readElementStyles(el: HTMLElement): ElementStyles {
+function readElementStyles(el: HTMLElement): ElementStyles {
   const cs = window.getComputedStyle(el);
   const s  = el.style;
   const csFS = parseFloat(cs.fontSize) || 16;

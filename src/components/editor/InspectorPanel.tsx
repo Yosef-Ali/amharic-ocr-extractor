@@ -14,34 +14,7 @@ import {
 import { type ElementStyles } from '../DocumentPage';
 import { useScrub } from '../../hooks/useScrub';
 import { type Theme } from '../../hooks/useTheme';
-
-// ── Types ────────────────────────────────────────────────────────────────────
-export interface PageLayout {
-  marginT:    number;
-  marginR:    number;
-  marginB:    number;
-  marginL:    number;
-  columns:    1 | 2 | 3 | 4;
-  colGap:     number;
-  fontSize:   number;
-  lineHeight: number;
-}
-
-export const DEFAULT_LAYOUT: PageLayout = {
-  marginT: 12, marginR: 16, marginB: 12, marginL: 16,
-  columns: 1,  colGap: 1.5,
-  fontSize: 1.0, lineHeight: 1.6,
-};
-
-export function layoutToStyle(layout: PageLayout): React.CSSProperties {
-  return {
-    padding:     `${layout.marginT}mm ${layout.marginR}mm ${layout.marginB}mm ${layout.marginL}mm`,
-    columnCount: layout.columns > 1 ? layout.columns : undefined,
-    columnGap:   layout.columns > 1 ? `${layout.colGap}rem` : undefined,
-    fontSize:    `${layout.fontSize}rem`,
-    lineHeight:  `${layout.lineHeight}`,
-  };
-}
+import { type PageLayout } from './pageLayout';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function parsePx(val: string): number  { return parseFloat(val) || 0; }
@@ -318,9 +291,15 @@ export default function InspectorPanel({
   const [gapMode, setGapMode] = useState<'fixed'|'between'|'around'>('fixed');
 
   // ── Fill color sync with selected element ─────────────────────────────
-  useEffect(() => {
-    if (elementStyles?.color) setFillColor(elementStyles.color);
-  }, [elementStyles?.color]);
+  // The swatch reads elementStyles.color directly while something is selected;
+  // this only carries the last selected colour over after deselection.
+  // Adjusting during render is React's documented alternative to syncing from
+  // an effect, which would schedule a second render every selection change.
+  const [lastSyncedColor, setLastSyncedColor] = useState(elementStyles?.color);
+  if (elementStyles?.color && elementStyles.color !== lastSyncedColor) {
+    setLastSyncedColor(elementStyles.color);
+    setFillColor(elementStyles.color);
+  }
 
   return (
     <aside className="inspector-panel">

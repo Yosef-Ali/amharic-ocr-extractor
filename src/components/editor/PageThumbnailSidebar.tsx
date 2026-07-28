@@ -19,6 +19,41 @@ interface Props {
 // A4 at 96 dpi = 794px wide
 const A4_PX = 794;
 
+
+// ── Drop zone (gap between pages) ──────────────────────────────────────────
+// Declared at module scope, not inside PageThumbnailSidebar: a component
+// created during render is a new type every time, so React remounts it and it
+// loses any state — here it also broke drag-hover styling mid-drag.
+function DropZone({
+  insertBefore, dropAt, dragFrom, onInsert, onDragOver, onDrop,
+}: {
+  insertBefore: number;
+  dropAt:   number | null;
+  dragFrom: number | null;
+  onInsert?: (afterPage: number) => void;
+  onDragOver: (e: React.DragEvent, insertBefore: number) => void;
+  onDrop:     (e: React.DragEvent, insertBefore: number) => void;
+}) {
+  return (
+    <div
+      className={`pts-drop-zone${dropAt === insertBefore && dragFrom !== null ? ' pts-drop-zone--active' : ''}`}
+      onDragOver={e => onDragOver(e, insertBefore)}
+      onDrop={e => onDrop(e, insertBefore)}
+    >
+      {/* Show insert button when NOT dragging */}
+      {dragFrom === null && onInsert && (
+        <button
+          className="pts-insert-btn"
+          onClick={() => onInsert(insertBefore - 1)}
+          title={`Insert page ${insertBefore > 1 ? 'after page ' + (insertBefore - 1) : 'at beginning'}`}
+        >
+          <Plus size={9} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function PageThumbnailSidebar({
   pageImages, pageResults, regeneratingPages,
   activePage, onSelect, onDoubleClick,
@@ -102,26 +137,6 @@ export default function PageThumbnailSidebar({
 
   const handleDragEnd = () => { setDragFrom(null); setDropAt(null); };
 
-  // ── Drop zone (gap between pages) ────────────────────────────────────────
-  const DropZone = ({ insertBefore }: { insertBefore: number }) => (
-    <div
-      className={`pts-drop-zone${dropAt === insertBefore && dragFrom !== null ? ' pts-drop-zone--active' : ''}`}
-      onDragOver={e => handleDragOver(e, insertBefore)}
-      onDrop={e => handleDrop(e, insertBefore)}
-    >
-      {/* Show insert button when NOT dragging */}
-      {dragFrom === null && onInsert && (
-        <button
-          className="pts-insert-btn"
-          onClick={() => onInsert(insertBefore - 1)}
-          title={`Insert page ${insertBefore > 1 ? 'after page ' + (insertBefore - 1) : 'at beginning'}`}
-        >
-          <Plus size={9} />
-        </button>
-      )}
-    </div>
-  );
-
   return (
     <aside className="thumb-sidebar">
       {deleteConfirmPage !== null && (
@@ -172,7 +187,7 @@ export default function PageThumbnailSidebar({
         )}
 
         {/* Drop zone before page 1 */}
-        {totalPages > 0 && <DropZone insertBefore={1} />}
+        {totalPages > 0 && <DropZone insertBefore={1} dropAt={dropAt} dragFrom={dragFrom} onInsert={onInsert} onDragOver={handleDragOver} onDrop={handleDrop} />}
 
         {/* ── Regular pages ── */}
         {pageImages.map((img, idx) => {
@@ -246,7 +261,7 @@ export default function PageThumbnailSidebar({
               </button>
 
               {/* Drop zone after each page */}
-              <DropZone insertBefore={pageNum + 1} />
+              <DropZone insertBefore={pageNum + 1} dropAt={dropAt} dragFrom={dragFrom} onInsert={onInsert} onDragOver={handleDragOver} onDrop={handleDrop} />
             </div>
           );
         })}
