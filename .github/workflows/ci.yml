@@ -15,7 +15,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Node 20 reached end of life in April 2026. 24 is the current LTS and
+          # is what @renovatebot/pep440 asks for (^20.9.0 || ^22.11.0 || ^24).
+          node-version: 24
           cache: 'npm'
 
       - run: npm ci
