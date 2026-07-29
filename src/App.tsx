@@ -8,7 +8,7 @@ import Toast, { type ToastMessage } from './components/Toast';
 import AuthScreen    from './components/AuthScreen';
 
 import { pdfToImages, imageFileToBase64, detectFileType, docxToHtmlPages, textToHtmlPages, type PageDimension } from './services/pdfService';
-import { extractPageHTML, autoFillImagePlaceholders, setOcrConversionId, GuestRateLimitError } from './services/geminiService';
+import { extractPageHTML, autoFillImagePlaceholders, setOcrConversionId, GuestRateLimitError, UpstreamRateLimitError } from './services/geminiService';
 import { saveDocument, initializeSchema, loadDocumentContent, loadDocumentPageImage, QuotaExceededError, type SavedDocument } from './services/storageService';
 import { buildDocumentExport, saveDocumentExport, downloadAsText, downloadAsDocx } from './services/exportService';
 import { AI_DATA_EXPORT_KEY } from './components/editor/SettingsPanel';
@@ -39,7 +39,12 @@ type AuthPrompt = {
 // ---------------------------------------------------------------------------
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/**
+ * True only once retries inside extractPageHTML have already been exhausted —
+ * a transient 429 is handled there and never reaches this point.
+ */
 const is429Error = (err: unknown): boolean => {
+  if (err instanceof UpstreamRateLimitError) return true;
   const error = err as Error & { status?: number };
   return !!(
     error?.message?.includes('429') ||
@@ -55,10 +60,11 @@ const RATE_LIMIT_ERROR_HTML = `
       Rate Limit Reached
     </p>
     <p style="color:#991b1b;font-size:0.85rem;margin:0 0 1rem;line-height:1.5;">
-      The API needs a moment to cool down. Wait about 60 seconds, then use the <strong>↻ Re-extract</strong> button in the toolbar above.
+      We retried a few times and the AI service is still busy. Extraction stopped here — your finished pages are kept.
+      Wait a minute, then press <strong>Extract All</strong> again and it will pick up from this page.
     </p>
     <div style="display:inline-block;padding:6px 16px;background:#fee2e2;border-radius:8px;font-size:0.75rem;color:#b91c1c;font-weight:600;">
-      Tip: extract a few pages at a time rather than a whole book at once
+      Free-tier keys allow only a few requests per minute — long books need several passes
     </div>
   </div>
 `.trim();

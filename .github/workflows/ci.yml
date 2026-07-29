@@ -26,4 +26,7 @@ jobs:
 
       - run: npm run build
 
+      # Fails if a VITE_-prefixed secret was inlined into the shipped JS.
+      - run: npm run check:secrets
+
       - run: npm test
