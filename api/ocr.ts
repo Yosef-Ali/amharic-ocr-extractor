@@ -1,13 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getAuthUser } from './_auth';
-import { sql } from './_db';
+import { getAuthUser } from './_auth.js';
+import { sql } from './_db.js';
 import {
   decideGuestGate,
   guestIdentity,
   guestLimitMessage,
   hashIp,
   type GuestGateDecision,
-} from './_guestLimit';
+} from './_guestLimit.js';
 import { GoogleGenAI } from '@google/genai';
 
 export const maxDuration = 60;

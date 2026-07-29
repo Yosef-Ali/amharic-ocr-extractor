@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getAuthUser } from './_auth';
+import { getAuthUser } from './_auth.js';
 
 export const maxDuration = 60;
 
