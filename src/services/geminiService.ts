@@ -57,11 +57,26 @@ function resolveApiKey(): string {
   return localStorage.getItem(LS_KEY) ?? '';
 }
 
-let client = new GoogleGenAI({ apiKey: resolveApiKey() });
+/**
+ * Built on first use, never at module load.
+ *
+ * The SDK constructor throws "API key must be set" when handed an empty key.
+ * Constructing it eagerly therefore crashed the entire app at import time for
+ * anyone without a personal key — which, once the bundled project key was
+ * removed, meant every visitor. OCR does not need this client at all; only the
+ * browser-side extras do, so it must not exist until one of them is called.
+ */
+let client: GoogleGenAI | null = null;
+
+function getClient(): GoogleGenAI {
+  requireBrowserKey();
+  if (!client) client = new GoogleGenAI({ apiKey: resolveApiKey() });
+  return client;
+}
 
 /** Call this after the user connects a Pro Key so the client picks up new credentials */
 export function reinitializeClient() {
-  client = new GoogleGenAI({ apiKey: resolveApiKey() });
+  client = null;   // rebuilt lazily on next use, with the new key
 }
 
 /** Save a user-provided API key, then reinitialize the client. */
@@ -148,7 +163,7 @@ STRICT RULES:
 
 Output the improved HTML now:`.trim();
 
-  const response = await client.models.generateContent({
+  const response = await getClient().models.generateContent({
     model: MODEL,
     contents: [{ role: 'user', parts: [imagePart, { text: prompt }] }],
   });
@@ -377,7 +392,7 @@ export async function restoreImage(
   const [header, data] = cropDataUrl.split(',');
   const mimeType = header.match(/:(.*?);/)?.[1] ?? 'image/jpeg';
 
-  const response = await client.models.generateContent({
+  const response = await getClient().models.generateContent({
     model: IMAGE_MODEL,
     contents: [
       {
@@ -420,7 +435,7 @@ export async function editImage(
   options: Pick<ImageGenOptions, 'aspectRatio' | 'imageSize'> = {},
 ): Promise<string> {
   requireBrowserKey();
-  const response = await client.models.generateContent({
+  const response = await getClient().models.generateContent({
     model: IMAGE_MODEL,
     contents: [
       {
@@ -607,7 +622,7 @@ Return ONLY JSON: [{"index":1,"x1":12,"y1":8,"x2":47,"y2":38},...]`;
 
   try {
     type Part = { text?: string; inlineData?: { mimeType: string; data: string } };
-    const res = await client.models.generateContent({
+    const res = await getClient().models.generateContent({
       model: OCR_FAST,
       contents: [{ role: 'user', parts: [
         { inlineData: { mimeType: 'image/jpeg', data: base64Scan } } as unknown as Part,
@@ -878,7 +893,7 @@ export async function editPageWithTools(
   const MAX_TURNS = 10;
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
-    const response = await client.models.generateContent({
+    const response = await getClient().models.generateContent({
       model: activeModel,
       contents: conversation,
       config: {
@@ -1004,7 +1019,7 @@ export async function chatWithAI(
       };
     });
 
-  const response = await client.models.generateContent({
+  const response = await getClient().models.generateContent({
     model: modelName,
     contents: [...contextContents, ...historyContents],
     config: {
@@ -1135,7 +1150,7 @@ export async function generateCoverBackground(options: CoverPageOptions): Promis
   const prompt = (options.designMode ?? 'full-design') === 'full-design'
     ? buildFullAICoverPrompt(options)
     : buildCoverBackgroundPrompt(options);
-  const response = await client.models.generateContent({
+  const response = await getClient().models.generateContent({
     model: NANOBANANA2,
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     config: {
@@ -1179,7 +1194,7 @@ export async function improveCoverBackground(
     ? `Also apply these visual improvements: ${instruction}`
     : 'Improve the overall design quality, colors, and visual composition.';
 
-  const response = await client.models.generateContent({
+  const response = await getClient().models.generateContent({
     model: NANOBANANA2,
     contents: [{
       role: 'user',
@@ -1223,7 +1238,7 @@ export async function generateCoverBackgroundFromReference(
   const mimeType = header.match(/:(.*?);/)?.[1] ?? 'image/jpeg';
   const defaultRatio = options.binding === 'perfect-binding' ? '16:9' : '3:4';
 
-  const response = await client.models.generateContent({
+  const response = await getClient().models.generateContent({
     model: NANOBANANA2,
     contents: [{
       role: 'user',
@@ -1346,7 +1361,7 @@ REQUIREMENTS:
 - Fill the entire canvas edge to edge
 - Output a single back cover image`;
 
-  const response = await client.models.generateContent({
+  const response = await getClient().models.generateContent({
     model: NANOBANANA2,
     contents: [{
       role: 'user',
