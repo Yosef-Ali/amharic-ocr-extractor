@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { sql } from './_db';
-import { getAuthUser, isAdmin } from './_auth';
+import { sql } from './_db.js';
+import { getAuthUser, isAdmin } from './_auth.js';
 
 // Ensure the ai_exports table exists (idempotent, cached per lambda warm instance)
 let _tableReady = false;

@@ -1,4 +1,4 @@
-import { sql } from './_db';
+import { sql } from './_db.js';
 
 /**
  * Columns added to document_content after it first shipped.

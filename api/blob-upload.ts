@@ -1,7 +1,7 @@
 import { put } from '@vercel/blob';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getAuthUser } from './_auth';
-import { sql } from './_db';
+import { getAuthUser } from './_auth.js';
+import { sql } from './_db.js';
 
 // Allowlist for blob filenames: <uuid>/page-N.jpg or <uuid>/thumbnail.jpg
 const SAFE_FILENAME = /^[0-9a-f-]{36}\/(page-\d+|thumbnail)\.jpg$/;

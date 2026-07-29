@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { sql } from './_db';
-import { getAuthUser } from './_auth';
-import { ensureDocumentSchema } from './_docSchema';
+import { sql } from './_db.js';
+import { getAuthUser } from './_auth.js';
+import { ensureDocumentSchema } from './_docSchema.js';
 import { v4 as uuidv4 } from 'uuid';
 
 
