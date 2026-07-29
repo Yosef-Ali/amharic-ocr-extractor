@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCombinedPrompt, htmlToText } from '../../../api/ocr';
+import { buildCombinedPrompt, htmlToText } from '../../../api/_ocrPrompt';
 
 /**
  * The OCR prompt is the product. CLAUDE.md forbids weakening fidel preservation,
