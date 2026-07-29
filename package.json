@@ -15,7 +15,8 @@
     "mcp:build": "cd mcp-server && npm run build",
     "mcp:dev": "cd mcp-server && npm run dev",
     "mcp:start": "cd mcp-server && npm start",
-    "mcp:setup": "npm run mcp:install && npm run mcp:build"
+    "mcp:setup": "npm run mcp:install && npm run mcp:build",
+    "check:secrets": "node scripts/check-bundle-secrets.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.43.0",

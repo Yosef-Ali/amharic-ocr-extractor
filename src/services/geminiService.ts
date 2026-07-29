@@ -1,8 +1,8 @@
 import { GoogleGenAI } from '@google/genai';
 import { APPROVAL_REQUIRED_TOOLS } from '../types/a2ui';
 import {
-  buildOcrPrompt,
-  buildLayoutPrompt,
+  // buildOcrPrompt / buildLayoutPrompt now live only in api/ocr.ts — the OCR
+  // prompts are server-side since the browser no longer calls Gemini directly.
   verifyLayout,
   type ChatTurn,
   type CanvasContext,
@@ -16,10 +16,14 @@ import { getAccessToken } from '../lib/apiClient';
 
 export type { ChatTurn, CanvasContext, BBox, ImageAspectRatio, ImageSize, ImageGenOptions };
 
-const MODEL       = 'gemini-3-flash-preview';          // agent chat — function calling (tools in config.tools)
-const OCR_FAST    = 'gemini-3.1-flash-image-preview';  // Pass 1 & 2 batch extraction (fast model — DO NOT CHANGE)
-const IMAGE_MODEL = 'gemini-3-pro-image-preview';      // image generation & editing (DO NOT CHANGE)
-const NANOBANANA2 = 'gemini-3.1-flash-image-preview';  // NanoBanana 2 — cover page generation (pro quality at flash speed)
+// Preview aliases were retired; these are the GA releases of the same models.
+// Not a switch to different models — `gemini-3.1-flash-image-preview` simply
+// became `gemini-3.1-flash-image`. GA also carries better free-tier quota than
+// preview, which is what was rate-limiting long books.
+const MODEL       = 'gemini-3-flash-preview';   // agent chat — function calling (tools in config.tools)
+const OCR_FAST    = 'gemini-3.1-flash-image';   // Pass 1 & 2 batch extraction — fidel accuracy depends on this
+const IMAGE_MODEL = 'gemini-3-pro-image';       // image generation & editing
+const NANOBANANA2 = 'gemini-3.1-flash-image';   // cover page generation
 
 // ── Model Selection Logic ──────────────────────────────────────────────────
 
@@ -37,8 +41,20 @@ export function getActiveModelId() {
 
 const LS_KEY = 'gemini_api_key';
 
+/**
+ * Key for browser-side Gemini calls.
+ *
+ * Deliberately does NOT read the VITE_-prefixed env var. Vite inlines those
+ * into the bundle at build time, so reading it here published the project's own
+ * key to every visitor — it was recoverable from the production JS with a
+ * single curl.
+ *
+ * OCR runs server-side via /api/ocr, which holds the key in a non-VITE env var
+ * that never reaches the browser. The only key used client-side is one the user
+ * pastes in themselves via the Pro Key dialog.
+ */
 function resolveApiKey(): string {
-  return localStorage.getItem(LS_KEY) || (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
+  return localStorage.getItem(LS_KEY) ?? '';
 }
 
 let client = new GoogleGenAI({ apiKey: resolveApiKey() });
@@ -61,6 +77,29 @@ export function isApiKeyError(err: unknown): boolean {
   return /API_KEY_INVALID|API key expired|API key not valid|API_KEY_NOT_FOUND|INVALID_ARGUMENT.*key/i.test(msg);
 }
 
+/** True when a browser-side key is available for the features that need one. */
+export function hasBrowserKey(): boolean {
+  return !!resolveApiKey();
+}
+
+/**
+ * Guard for features that still call Gemini from the browser (image work,
+ * cover art, agent chat). OCR does not go through here — it is server-side.
+ *
+ * Before the key leak was closed these worked off the project's bundled key.
+ * Now they need the user's own, so fail with a message `isApiKeyError` matches,
+ * which routes into the existing "connect a key" UI rather than surfacing a
+ * raw SDK error.
+ */
+function requireBrowserKey(): void {
+  if (resolveApiKey()) return;
+  throw new Error(
+    'API key not valid: no Gemini key is configured for this browser. ' +
+    'Text extraction works without one — image generation, cover art and AI chat ' +
+    'need your own key. Add it with the key button in the toolbar.',
+  );
+}
+
 // ── Prompt Builders (imported from aiCommon) ──────────────────────────────
 
 // ── Edit Page ─────────────────────────────────────────────────────────────
@@ -71,6 +110,7 @@ export async function editPageWithChat(
   instruction: string,
   modelId?: string,
 ): Promise<string> {
+  requireBrowserKey();
   const activeModel = modelId || currentModelId;
   const isAnthropic = activeModel?.startsWith('minimax-') || activeModel?.startsWith('claude-');
 
@@ -121,8 +161,8 @@ Output the improved HTML now:`.trim();
 // ---------------------------------------------------------------------------
 /**
  * Raised when a guest exceeds the per-hour conversion cap enforced by /api/ocr.
- * Deliberately NOT caught by the client-side fallback — surfacing it prompts the
- * visitor to sign in rather than silently bypassing the limit.
+ * A policy limit, not a transient fault — never retried, because retrying it
+ * cannot succeed. Surfacing it prompts the visitor to sign in.
  */
 export class GuestRateLimitError extends Error {
   retryAfterMinutes: number;
@@ -131,6 +171,37 @@ export class GuestRateLimitError extends Error {
     this.name = 'GuestRateLimitError';
     this.retryAfterMinutes = retryAfterMinutes;
   }
+}
+
+/**
+ * Raised when Gemini itself rate limits us and retrying did not clear it.
+ * Distinct from GuestRateLimitError: nothing the user does to their account
+ * fixes this, they just have to wait.
+ */
+export class UpstreamRateLimitError extends Error {
+  retryAfterSeconds: number;
+  constructor(message: string, retryAfterSeconds: number) {
+    super(message);
+    this.name = 'UpstreamRateLimitError';
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+/** Retry budget for a single page against a rate-limited upstream. */
+const OCR_MAX_RETRIES = 3;
+
+const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+/**
+ * Backoff for attempt N (0-based). Honours the server's Retry-After when it
+ * gives one, otherwise 8s → 20s → 45s. Capped so a stuck page can never stall
+ * a long book for minutes on end.
+ */
+function retryDelayMs(attempt: number, retryAfterSeconds?: number): number {
+  if (typeof retryAfterSeconds === 'number' && retryAfterSeconds > 0) {
+    return Math.min(retryAfterSeconds, 60) * 1000;
+  }
+  return [8_000, 20_000, 45_000][Math.min(attempt, 2)];
 }
 
 const GUEST_ID_KEY = 'aoe_guest_id';
@@ -166,65 +237,57 @@ export async function extractPageHTML(
     return anthropicExtractPageHTML(base64Image, previousPageHTML);
   }
 
-  // Use server-side OCR proxy to keep API key secure
-  try {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'X-Guest-Id': getGuestId(),
-    };
-    const token = getAccessToken();
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+  // OCR runs server-side only. There is deliberately no browser-side fallback:
+  // the previous one fired a second Gemini call on every server failure, which
+  // doubled quota burn exactly when we were already being rate limited — and it
+  // only worked because the project key was bundled into the client.
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Guest-Id': getGuestId(),
+  };
+  const token = getAccessToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const res = await fetch('/api/ocr', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        base64Image,
-        previousPageHTML,
-        conversionId: currentConversionId ?? getGuestId(),
-      }),
-    });
+  const body = JSON.stringify({
+    base64Image,
+    previousPageHTML,
+    conversionId: currentConversionId ?? getGuestId(),
+  });
+
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch('/api/ocr', { method: 'POST', headers, body });
 
     if (res.status === 429) {
-      const data = await res.json().catch(() => ({} as { message?: string; retryAfterMinutes?: number }));
-      throw new GuestRateLimitError(
-        data.message ?? 'Guest limit reached. Sign in to continue.',
-        data.retryAfterMinutes ?? 60,
+      const data = await res.json().catch(() => ({} as {
+        error?: string; message?: string; retryAfterMinutes?: number; retryAfterSeconds?: number;
+      }));
+
+      // The guest conversion cap is a policy decision, not a transient fault —
+      // retrying cannot help, so surface it and let the user sign in.
+      if (data.error === 'GUEST_RATE_LIMIT') {
+        throw new GuestRateLimitError(
+          data.message ?? 'Guest limit reached. Sign in to continue.',
+          data.retryAfterMinutes ?? 60,
+        );
+      }
+
+      // Upstream (Gemini) rate limit — transient. Wait and try again rather
+      // than abandoning a book part-way through.
+      if (attempt < OCR_MAX_RETRIES) {
+        await sleep(retryDelayMs(attempt, data.retryAfterSeconds));
+        continue;
+      }
+      throw new UpstreamRateLimitError(
+        data.message ?? 'The AI service is rate limiting requests.',
+        data.retryAfterSeconds ?? 60,
       );
     }
+
     if (!res.ok) throw new Error(`OCR request failed (HTTP ${res.status})`);
 
     const { html } = await res.json();
     // Resolve image placeholders client-side (needs DOMParser)
     return resolvePlaceholders(html, base64Image);
-  } catch (err) {
-    // Guest cap is authoritative — never fall back to the client-side key.
-    if (err instanceof GuestRateLimitError) throw err;
-    // Fallback to client-side extraction if API route unavailable (local dev)
-    console.warn('OCR API route failed, falling back to client-side:', err);
-    const imagePart = { inlineData: { mimeType: 'image/jpeg', data: base64Image } };
-
-    // ── Pass 1: OCR — extract raw text (fast model) ──
-    const ocrResponse = await client.models.generateContent({
-      model: OCR_FAST,
-      contents: [{ role: 'user', parts: [imagePart, { text: buildOcrPrompt() }] }],
-    });
-
-    const extractedText = ocrResponse.text ?? '';
-    if (!extractedText.trim()) {
-      return '<p style="color:red;text-align:center;font-weight:bold;">⚠️ OCR returned no text for this page.</p>';
-    }
-
-    // ── Pass 2: Layout — reconstruct HTML from text + image reference ──
-    const layoutResponse = await client.models.generateContent({
-      model: OCR_FAST,
-      contents: [{ role: 'user', parts: [imagePart, { text: buildLayoutPrompt(extractedText, previousPageHTML) }] }],
-    });
-
-    const layoutHtml = verifyLayout(layoutResponse.text ?? '');
-
-    // ── Pass 3: resolve image placeholders by cropping directly from the scan ──
-    return resolvePlaceholders(layoutHtml, base64Image);
   }
 }
 
@@ -310,6 +373,7 @@ export function cropPageRegion(
 export async function restoreImage(
   cropDataUrl: string,
 ): Promise<string> {
+  requireBrowserKey();
   const [header, data] = cropDataUrl.split(',');
   const mimeType = header.match(/:(.*?);/)?.[1] ?? 'image/jpeg';
 
@@ -355,6 +419,7 @@ export async function editImage(
   editPrompt: string,
   options: Pick<ImageGenOptions, 'aspectRatio' | 'imageSize'> = {},
 ): Promise<string> {
+  requireBrowserKey();
   const response = await client.models.generateContent({
     model: IMAGE_MODEL,
     contents: [
@@ -769,6 +834,7 @@ export async function editPageWithTools(
   pageNumber: number,
   options?: EditWithToolsOptions,
 ): Promise<string> {
+  requireBrowserKey();
   const { model, onToolCall, onApprovalRequest, referenceImages, projectContext } = options ?? {};
   const activeModel = model ?? MODEL;
 
@@ -893,6 +959,7 @@ export async function chatWithAI(
   projectContext?: string,
   modelId?: string,
 ): Promise<string> {
+  requireBrowserKey();
   const activeModel = modelId || currentModelId;
   const isAnthropic = activeModel?.startsWith('minimax-') || activeModel?.startsWith('claude-');
 
@@ -1063,6 +1130,7 @@ REQUIREMENTS:
  * - designMode 'background-only': text-free background; text will be added as HTML overlays.
  */
 export async function generateCoverBackground(options: CoverPageOptions): Promise<string> {
+  requireBrowserKey();
   const defaultRatio = options.binding === 'perfect-binding' ? '16:9' : '3:4';
   const prompt = (options.designMode ?? 'full-design') === 'full-design'
     ? buildFullAICoverPrompt(options)
@@ -1097,6 +1165,7 @@ export async function improveCoverBackground(
   options?: Pick<CoverPageOptions, 'aspectRatio' | 'imageSize'>,
   textMode: TextRemovalMode = 'keep',
 ): Promise<string> {
+  requireBrowserKey();
   const [header, data] = existingBgDataUrl.split(',');
   const mimeType = header.match(/:(.*?);/)?.[1] ?? 'image/jpeg';
 
@@ -1149,6 +1218,7 @@ export async function generateCoverBackgroundFromReference(
   referenceDataUrl: string,
   options: CoverPageOptions,
 ): Promise<string> {
+  requireBrowserKey();
   const [header, data] = referenceDataUrl.split(',');
   const mimeType = header.match(/:(.*?);/)?.[1] ?? 'image/jpeg';
   const defaultRatio = options.binding === 'perfect-binding' ? '16:9' : '3:4';
@@ -1245,6 +1315,7 @@ export async function generateBackCover(
   frontCoverBgDataUrl: string,
   options: Pick<CoverPageOptions, 'title' | 'subtitle' | 'author' | 'style' | 'designMode'>,
 ): Promise<string> {
+  requireBrowserKey();
   const [header, data] = frontCoverBgDataUrl.split(',');
   const mimeType = header.match(/:(.*?);/)?.[1] ?? 'image/jpeg';
   const isFullDesign = (options.designMode ?? 'full-design') === 'full-design';

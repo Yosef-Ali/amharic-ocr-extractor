@@ -274,6 +274,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.json({ html: verified, rawText });
   } catch (err: unknown) {
     console.error('ocr error:', err);
+
+    // Gemini rate limits were previously collapsed into a generic 500. The
+    // client could not tell them apart from a real failure, so it fell back to
+    // calling Gemini directly from the browser — doubling the request rate at
+    // exactly the moment we were already over quota. Surface them as 429 with
+    // Retry-After so the client can back off and retry properly.
+    if (isUpstreamRateLimit(err)) {
+      const retryAfterSeconds = extractRetryAfterSeconds(err) ?? 60;
+      res.setHeader('Retry-After', String(retryAfterSeconds));
+      return res.status(429).json({
+        error: 'UPSTREAM_RATE_LIMIT',
+        message:
+          'The AI service is busy right now. Extraction will resume automatically — ' +
+          'long documents on the free tier may need a few pauses.',
+        retryAfterSeconds,
+      });
+    }
+
     return res.status(500).json({ error: 'OCR processing failed' });
   }
+}
+
+/** Does this error represent an upstream quota/rate-limit rejection? */
+function isUpstreamRateLimit(err: unknown): boolean {
+  const e = err as { status?: number; code?: number; message?: string };
+  if (e?.status === 429 || e?.code === 429) return true;
+  const msg = (e?.message ?? '').toLowerCase();
+  return msg.includes('429')
+    || msg.includes('resource_exhausted')
+    || msg.includes('rate limit')
+    || msg.includes('quota');
+}
+
+/**
+ * Gemini reports its cooldown as a RetryInfo duration such as "retryDelay":"37s".
+ * Pull it out when present so we wait exactly as long as asked rather than guessing.
+ */
+function extractRetryAfterSeconds(err: unknown): number | null {
+  const msg = (err as { message?: string })?.message ?? '';
+  const m = msg.match(/"?retry-?delay"?\s*[:=]\s*"?(\d+(?:\.\d+)?)s/i);
+  if (!m) return null;
+  const secs = Math.ceil(parseFloat(m[1]));
+  return Number.isFinite(secs) && secs > 0 ? Math.min(secs, 300) : null;
 }
