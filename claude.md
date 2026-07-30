@@ -12,6 +12,48 @@ using Google Gemini AI. Two-pass OCR pipeline (raw text extraction → HTML layo
 reconstruction). Full editor with InDesign-style canvas, AI chat assistant, document
 library with Neon PostgreSQL + Vercel Blob storage, admin panel, and auth.
 
+## ⛔ BLOCKED — read this before touching OCR (2026-07-30)
+
+**OCR does not work in production. The cause is billing, not code.**
+
+Google returns, verbatim:
+
+```
+Quota exceeded for metric:
+  generativelanguage.googleapis.com/generate_content_free_tier_input_token_count
+  limit: 0
+  model: gemini-3.1-flash-image-preview
+```
+
+`limit: 0` means the free tier allowance for this model is **zero**, not exhausted.
+`gemini-3.1-flash-image*` is **Nano Banana — an image *generation* model**, and Google
+bills those from the first token. Waiting, retrying, and switching between the GA and
+`-preview` aliases are all useless; both are zero.
+
+### Do not repeat these dead ends
+- Retrying / backing off. The retry logic works correctly; there is simply no quota.
+- GA ↔ preview model swaps. Both report `limit: 0`.
+- Bring-your-own-key with a *free* Google key. A user's own free key hits the same zero.
+
+### The untried experiment (do this first on resume)
+OCR only needs to **read** an image, not generate one. A general multimodal model may
+carry normal free-tier quota. `gemini-3-flash-preview` is already sent `inlineData`
+image parts by the agent chat in `geminiService.ts`, so it demonstrably accepts vision
+input.
+
+`OCR_MODEL` is already set to `gemini-3-flash-preview` in Vercel (all environments) but
+**was never verified** — the session ended before a clean result. To test:
+
+1. Confirm the deployed build is serving it: `POST /api/ocr` returns a `model` field.
+2. If it extracts Amharic, the blocker is solved on a free key.
+3. If it returns `limit: 0` again, the only remaining option is enabling billing.
+4. To revert: `vercel env rm OCR_MODEL` — the code default is the preview image model.
+
+### Diagnosing quickly
+`/api/ocr` returns `upstreamDetail` (Google's own error, key-redacted), `model`, and
+`usingUserKey` on every 429/500. One request tells you the real cause — use it instead
+of inferring from retry-delay patterns.
+
 ## Current Priority (YC Workflow — Wedge First)
 
 **WEDGE = Upload scanned Amharic page → Get accurate editable text → Export.**
