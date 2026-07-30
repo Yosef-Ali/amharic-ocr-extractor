@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { redactKeys, isKeyRejected } from '../../../api/_ocrPrompt';
+import { redactKeys, isKeyRejected, upstreamDetail } from '../../../api/_ocrPrompt';
 
 /**
  * Users supply their own API key, so anything that could carry it into a log
@@ -54,5 +54,32 @@ describe('isKeyRejected', () => {
     expect(isKeyRejected({ status: 500, message: 'Internal error' })).toBe(false);
     expect(isKeyRejected(undefined)).toBe(false);
     expect(isKeyRejected(new Error('network timeout'))).toBe(false);
+  });
+});
+
+describe('upstreamDetail', () => {
+  it('surfaces which quota was hit, so a 429 is diagnosable', () => {
+    const err = { message: 'You exceeded your current quota. Quota metric: generate_content_free_tier_requests, limit: 0' };
+    const out = upstreamDetail(err);
+    expect(out).toContain('generate_content_free_tier_requests');
+    expect(out).toContain('limit: 0');
+  });
+
+  it('redacts any key before returning it to the caller', () => {
+    const err = { message: 'failed for key AIzaSyLEAKED1234567890abcdefgh at /v1/models' };
+    const out = upstreamDetail(err);
+    expect(out).not.toContain('AIzaSyLEAKED1234567890abcdefgh');
+    expect(out).toContain('[redacted]');
+  });
+
+  it('collapses whitespace and caps length', () => {
+    const out = upstreamDetail({ message: 'a\n\n   b' + 'x'.repeat(900) });
+    expect(out.length).toBeLessThanOrEqual(400);
+    expect(out.startsWith('a b')).toBe(true);
+  });
+
+  it('handles a non-Error value', () => {
+    expect(upstreamDetail(undefined)).toBe('');
+    expect(upstreamDetail('plain string')).toBe('plain string');
   });
 });

@@ -7,6 +7,9 @@ export interface ToastMessage {
   id: string;
   message: string;
   variant: ToastVariant;
+  /** Optional call to action — e.g. "Sign in" on a guest-limit toast, so the
+   *  message offers a way out instead of only stating the problem. */
+  action?: { label: string; onClick: () => void };
 }
 
 interface ToastProps {
@@ -56,6 +59,14 @@ export default function Toast({ toast, onDismiss }: ToastProps) {
         <div className="shrink-0 mt-0.5">{style.icon}</div>
         <div className={`flex-1 text-sm font-medium ${style.text}`}>
           {toast.message}
+          {toast.action && (
+            <button
+              onClick={() => { toast.action!.onClick(); onDismiss(toast.id); }}
+              className="mt-2 block underline underline-offset-2 font-bold hover:opacity-70 transition-opacity"
+            >
+              {toast.action.label}
+            </button>
+          )}
         </div>
         <button
           onClick={() => onDismiss(toast.id)}

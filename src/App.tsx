@@ -446,7 +446,14 @@ export default function App() {
         } catch (err: unknown) {
           // Guest conversion cap — stop, tell the visitor, invite sign-in.
           if (err instanceof GuestRateLimitError) {
-            setToast({ id: Date.now().toString(), message: err.message, variant: 'error' });
+            // Offer the way out rather than only naming the limit — signing in
+            // removes it entirely.
+            setToast({
+              id: Date.now().toString(),
+              message: err.message,
+              variant: 'error',
+              action: { label: 'Sign in to continue →', onClick: handleRequestAuth },
+            });
             setProcessingStatus('Guest limit reached.');
             break;
           }
@@ -521,7 +528,12 @@ export default function App() {
       setToast({ id: Date.now().toString(), message: `Page ${pageNumber} re-extracted.`, variant: 'success' });
     } catch (err: unknown) {
       if (err instanceof GuestRateLimitError) {
-        setToast({ id: Date.now().toString(), message: err.message, variant: 'error' });
+        setToast({
+          id: Date.now().toString(),
+          message: err.message,
+          variant: 'error',
+          action: { label: 'Sign in to continue →', onClick: handleRequestAuth },
+        });
         setRegeneratingPages((prev) => { const next = new Set(prev); next.delete(pageNumber); return next; });
         return;
       }

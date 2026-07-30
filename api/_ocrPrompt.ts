@@ -77,6 +77,20 @@ export function redactKeys(text: string): string {
     .replace(/([?&]key=)[^&\s"']+/gi, '$1[redacted]');
 }
 
+/**
+ * The upstream provider's own error text, key-redacted and truncated, for
+ * returning to the caller.
+ *
+ * Google's message names which quota was exhausted — requests-per-minute,
+ * requests-per-day, or a model with no free allowance at all. Those are three
+ * different problems with three different fixes, and a bare 429 cannot tell them
+ * apart. Safe to expose: it contains no secret once keys are stripped.
+ */
+export function upstreamDetail(err: unknown): string {
+  const raw = (err as { message?: string })?.message ?? String(err ?? '');
+  return redactKeys(raw).replace(/\s+/g, ' ').trim().slice(0, 400);
+}
+
 /** True when the API rejected the credential itself, rather than rate limiting. */
 export function isKeyRejected(err: unknown): boolean {
   const e = err as { status?: number; code?: number; message?: string };
