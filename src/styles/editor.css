@@ -4200,3 +4200,65 @@
 .es-cover-icon-btn--del { background: rgba(180,20,20,0.1); color: #b91c1c; border-color: rgba(180,20,20,0.3); }
 
 .es-cover-icon-btn--del:hover { background: rgba(180,20,20,0.2); }
+
+/* ── Bring-your-own-key controls in the settings dropdown ─────────────── */
+
+.settings-key-input {
+  width: 100%;
+  padding: .45rem .6rem;
+  margin-bottom: .4rem;
+  border: 1px solid var(--t-border);
+  border-radius: 7px;
+  background: var(--t-bg);
+  color: var(--t-text);
+  font-size: .78rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.settings-key-input:focus {
+  outline: none;
+  border-color: var(--t-primary, #6366f1);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, .18);
+}
+
+.settings-key-error {
+  margin: 0 0 .4rem;
+  color: #dc2626;
+  font-size: .72rem;
+}
+
+.settings-key-row {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin-bottom: .4rem;
+}
+
+.settings-key-row .settings-env-hint { flex: 1; margin: 0; }
+
+.settings-key-clear {
+  padding: .3rem .55rem;
+  border: 1px solid var(--t-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--t-text3);
+  font-size: .7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+
+.settings-key-clear:hover { color: #dc2626; border-color: #dc2626; }
+
+.settings-key-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--t-primary, #6366f1);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.settings-key-link:hover { text-decoration: underline; }
+
+.settings-hint--muted { opacity: .75; }

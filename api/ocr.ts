@@ -8,7 +8,7 @@ import {
   hashIp,
   type GuestGateDecision,
 } from './_guestLimit.js';
-import { buildCombinedPrompt, htmlToText } from './_ocrPrompt.js';
+import { buildCombinedPrompt, htmlToText, redactKeys, isKeyRejected } from './_ocrPrompt.js';
 import { GoogleGenAI } from '@google/genai';
 
 export const maxDuration = 60;
@@ -145,10 +145,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     conversionId?: string;
   };
 
-  // Guests (no auth token) may use the OCR pipeline, but are rate-limited to
-  // GUEST_CONVERSIONS_PER_HOUR distinct documents per IP. Signed-in users skip this.
+  // ── Bring-your-own-key ────────────────────────────────────────────────────
+  // A user-supplied key is used for this request only: never stored, never
+  // logged, never written to the database. It is read from a header rather than
+  // the body so it cannot be captured by anything that logs request payloads.
+  const rawUserKey = req.headers['x-user-gemini-key'];
+  const userKey = (Array.isArray(rawUserKey) ? rawUserKey[0] : rawUserKey)?.trim();
+  // Shape check only — the API is the real authority on validity.
+  const hasUserKey = !!userKey && userKey.length >= 20 && userKey.length <= 200;
+
+  // Guests (no auth token) are capped per browser and per network. That cap
+  // exists to protect the project's quota, so it does not apply to someone
+  // spending their own — they are limited by their own key instead.
   const user = await getAuthUser(req);
-  if (!user) {
+  if (!user && !hasUserKey) {
     const guestId  = req.headers['x-guest-id'] as string | undefined;
     const ipHash   = hashIp(clientIp(req));
     const guestKey = guestIdentity(guestId, ipHash);
@@ -176,7 +186,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(413).json({ error: 'Image too large' });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    // Prefer the user's key so their extraction runs on their own quota.
+    const apiKey = (hasUserKey ? userKey : undefined)
+      || process.env.GEMINI_API_KEY
+      || process.env.VITE_GEMINI_API_KEY;
     if (!apiKey) {
       return res.status(500).json({ error: 'GEMINI_API_KEY not configured' });
     }
@@ -213,7 +226,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.json({ html: verified, rawText });
   } catch (err: unknown) {
-    console.error('ocr error:', err);
+    // Redact before logging: SDK errors can echo the key back in a URL or
+    // message, and a user's own key must never reach the server logs.
+    console.error('ocr error:', redactKeys(String((err as Error)?.message ?? err)));
+
+    // A user-supplied key that the API rejects is the user's problem to fix,
+    // and must not read as a fault in the app.
+    if (hasUserKey && isKeyRejected(err)) {
+      return res.status(400).json({
+        error: 'USER_KEY_REJECTED',
+        message: 'Google rejected the API key you added. Check it was copied in full and that the Generative Language API is enabled for it.',
+      });
+    }
 
     // Gemini rate limits were previously collapsed into a generic 500. The
     // client could not tell them apart from a real failure, so it fell back to
@@ -225,9 +249,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       res.setHeader('Retry-After', String(retryAfterSeconds));
       return res.status(429).json({
         error: 'UPSTREAM_RATE_LIMIT',
-        message:
-          'The AI service is busy right now. Extraction will resume automatically — ' +
-          'long documents on the free tier may need a few pauses.',
+        message: hasUserKey
+          ? 'Your API key has hit its rate limit. Extraction will resume automatically — ' +
+            'free Google keys allow only a few requests per minute.'
+          : 'The AI service is busy right now. Extraction will resume automatically — ' +
+            'adding your own API key in Settings gives you your own quota.',
         retryAfterSeconds,
       });
     }
