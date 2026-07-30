@@ -65,6 +65,31 @@ Now output the HTML for this page:`.trim();
 }
 
 /**
+ * Strip anything key-shaped out of a string before it is logged.
+ *
+ * Users can supply their own API key, and SDK errors sometimes echo the key
+ * back inside a URL or message. Logging that verbatim would put a user's
+ * credential into the server logs.
+ */
+export function redactKeys(text: string): string {
+  return text
+    .replace(/AIza[0-9A-Za-z_-]{10,}/g, 'AIza…[redacted]')
+    .replace(/([?&]key=)[^&\s"']+/gi, '$1[redacted]');
+}
+
+/** True when the API rejected the credential itself, rather than rate limiting. */
+export function isKeyRejected(err: unknown): boolean {
+  const e = err as { status?: number; code?: number; message?: string };
+  if (e?.status === 401 || e?.status === 403 || e?.code === 401 || e?.code === 403) return true;
+  const msg = (e?.message ?? '').toLowerCase();
+  return msg.includes('api_key_invalid')
+    || msg.includes('api key not valid')
+    || msg.includes('api key expired')
+    || msg.includes('permission_denied')
+    || msg.includes('unauthenticated');
+}
+
+/**
  * Plain text from the generated HTML, for the `rawText` field of the response.
  * Runs server-side where there is no DOMParser, so it strips tags directly.
  */

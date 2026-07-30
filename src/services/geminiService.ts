@@ -98,6 +98,18 @@ export function hasBrowserKey(): boolean {
 }
 
 /**
+ * The user's own Gemini key, if they supplied one.
+ *
+ * Sent to /api/ocr per request so extraction runs on their quota instead of the
+ * project's. The server uses it for that single call and never stores or logs
+ * it. Undefined when the user has not added a key, in which case the project
+ * key is used and the guest cap applies.
+ */
+export function getUserApiKey(): string | undefined {
+  return resolveApiKey() || undefined;
+}
+
+/**
  * Guard for features that still call Gemini from the browser (image work,
  * cover art, agent chat). OCR does not go through here — it is server-side.
  *
@@ -262,6 +274,11 @@ export async function extractPageHTML(
   };
   const token = getAccessToken();
   if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  // Bring-your-own-key: run extraction on the user's quota rather than the
+  // project's. Sent per request; the server never persists it.
+  const userKey = getUserApiKey();
+  if (userKey) headers['X-User-Gemini-Key'] = userKey;
 
   const body = JSON.stringify({
     base64Image,
