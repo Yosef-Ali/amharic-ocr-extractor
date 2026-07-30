@@ -13,10 +13,21 @@ import { GoogleGenAI } from '@google/genai';
 
 export const maxDuration = 60;
 
-// GA release of the model this route was pinned to. The `-preview` alias is
-// retired, and GA carries better free-tier quota. This is the constant that
-// actually serves OCR — the one in src/services/geminiService.ts no longer does.
-const OCR_FAST = 'gemini-3.1-flash-image';
+/**
+ * OCR model. This is the constant that actually serves extraction — the one in
+ * src/services/geminiService.ts no longer does.
+ *
+ * Pinned back to the `-preview` alias deliberately. The GA release
+ * `gemini-3.1-flash-image` is the documented current name, but it returns 429
+ * immediately and indefinitely on a free key — including on a user's own fresh
+ * key, and after a 30-minute idle period, with a flat ~60s retryDelay that never
+ * shrinks. That is the signature of no free-tier allowance at all, not a busy
+ * window. The preview alias does have free quota and demonstrably extracts.
+ *
+ * Overridable via OCR_MODEL so this can be re-tested, or moved to GA the moment
+ * a paid key makes GA's quota available, without a code change.
+ */
+const OCR_FAST = process.env.OCR_MODEL || 'gemini-3.1-flash-image-preview';
 
 // Caps, identity selection and the block/allow decision live in ./_guestLimit
 // (no DB imports there, so the decision logic is unit-testable). This file owns
