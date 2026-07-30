@@ -12,42 +12,27 @@ using Google Gemini AI. Two-pass OCR pipeline (raw text extraction → HTML layo
 reconstruction). Full editor with InDesign-style canvas, AI chat assistant, document
 library with Neon PostgreSQL + Vercel Blob storage, admin panel, and auth.
 
-## ⛔ BLOCKED — read this before touching OCR (2026-07-30)
+## ✅ RESOLVED — OCR works in production (2026-07-30, verified)
 
-**OCR does not work in production. The cause is billing, not code.**
+**Root cause (confirmed 2026-07-30):** the default OCR model, `gemini-3.1-flash-image-preview`
+("Nano Banana"), is an image-*generation* model, and Google bills those from the first
+token — the account's free-tier allowance for it is `limit: 0`, not exhausted. No
+amount of retrying or GA↔preview swapping on that model family would ever work.
 
-Google returns, verbatim:
+**Fix (verified live, 2026-07-30):** `OCR_MODEL=gemini-3-flash-preview` is set in Vercel
+and does carry normal free-tier quota, because it's a general multimodal model, not an
+image generator. Confirmed end-to-end against production:
 
-```
-Quota exceeded for metric:
-  generativelanguage.googleapis.com/generate_content_free_tier_input_token_count
-  limit: 0
-  model: gemini-3.1-flash-image-preview
-```
+- `POST /api/ocr` on a real dense two-column scanned Bible page
+  (`tests/ocr-results-v2/03_bible_page12.jpg`) → **HTTP 200**, ~51s.
+- Transcription checked against the source image by eye: chapter/verse numbers, section
+  headers (`ምዕራፍ 6`, `የእግዚአብሔር ልጆች እና ሴቶች`, `ለ. የጥፋት ውኃ`), and body text all correct.
+- Not a cached/canned response — full layout-preserving HTML reconstruction of
+  whatever image is sent, matching the two-pass raw-text → HTML pipeline.
 
-`limit: 0` means the free tier allowance for this model is **zero**, not exhausted.
-`gemini-3.1-flash-image*` is **Nano Banana — an image *generation* model**, and Google
-bills those from the first token. Waiting, retrying, and switching between the GA and
-`-preview` aliases are all useless; both are zero.
-
-### Do not repeat these dead ends
-- Retrying / backing off. The retry logic works correctly; there is simply no quota.
-- GA ↔ preview model swaps. Both report `limit: 0`.
-- Bring-your-own-key with a *free* Google key. A user's own free key hits the same zero.
-
-### The untried experiment (do this first on resume)
-OCR only needs to **read** an image, not generate one. A general multimodal model may
-carry normal free-tier quota. `gemini-3-flash-preview` is already sent `inlineData`
-image parts by the agent chat in `geminiService.ts`, so it demonstrably accepts vision
-input.
-
-`OCR_MODEL` is already set to `gemini-3-flash-preview` in Vercel (all environments) but
-**was never verified** — the session ended before a clean result. To test:
-
-1. Confirm the deployed build is serving it: `POST /api/ocr` returns a `model` field.
-2. If it extracts Amharic, the blocker is solved on a free key.
-3. If it returns `limit: 0` again, the only remaining option is enabling billing.
-4. To revert: `vercel env rm OCR_MODEL` — the code default is the preview image model.
+**Do not revert `OCR_MODEL`** back to the image-generation model default — that is the
+dead end, not this. If quota issues resurface, check the `model` field in the
+`/api/ocr` response first before assuming code regression.
 
 ### Diagnosing quickly
 `/api/ocr` returns `upstreamDetail` (Google's own error, key-redacted), `model`, and
