@@ -19,20 +19,27 @@ library with Neon PostgreSQL + Vercel Blob storage, admin panel, and auth.
 token — the account's free-tier allowance for it is `limit: 0`, not exhausted. No
 amount of retrying or GA↔preview swapping on that model family would ever work.
 
-**Fix (verified live, 2026-07-30):** `OCR_MODEL=gemini-3-flash-preview` is set in Vercel
-and does carry normal free-tier quota, because it's a general multimodal model, not an
-image generator. Confirmed end-to-end against production:
+**Fix (verified live, 2026-07-30):** `OCR_MODEL` is set in Vercel to a general multimodal
+model, not the image-generation one, so it carries normal free-tier quota. Confirmed
+end-to-end against production on three different real documents (a UI screenshot, a
+dense two-column scanned Bible page, and an italicized novel dialogue page) — all
+HTTP 200 with coherent, structurally-correct extraction (chapter/verse numbers, section
+headers, page footers all landed correctly).
 
-- `POST /api/ocr` on a real dense two-column scanned Bible page
-  (`tests/ocr-results-v2/03_bible_page12.jpg`) → **HTTP 200**, ~51s.
-- Transcription checked against the source image by eye: chapter/verse numbers, section
-  headers (`ምዕራፍ 6`, `የእግዚአብሔር ልጆች እና ሴቶች`, `ለ. የጥፋት ውኃ`), and body text all correct.
-- Not a cached/canned response — full layout-preserving HTML reconstruction of
-  whatever image is sent, matching the two-pass raw-text → HTML pipeline.
+**Model history:**
+- `gemini-3-flash-preview` — first verified-working fix (2026-07-30).
+- `gemini-3.6-flash` — switched to this on 2026-07-30 for lower token usage (~17% fewer
+  output tokens per Google) and confirmed faster in practice (~43s vs ~51s on the same
+  test image). Re-verified end-to-end after the switch — still HTTP 200, coherent
+  extraction. User also confirmed a clean guest-mode extraction live in the UI.
+- Note: word-level output can vary slightly between models/runs on hard stylized fonts
+  (structure and coherence held in testing, but nobody has done a rigorous
+  character-level accuracy audit against source — worth doing if OCR fidelity becomes
+  the bottleneck rather than "does it work at all").
 
-**Do not revert `OCR_MODEL`** back to the image-generation model default — that is the
-dead end, not this. If quota issues resurface, check the `model` field in the
-`/api/ocr` response first before assuming code regression.
+**Do not revert `OCR_MODEL`** back to `gemini-3.1-flash-image-preview` (or unset it) —
+that is the dead end, not this. If quota issues resurface, check the `model` field in
+the `/api/ocr` response first before assuming code regression.
 
 ### Diagnosing quickly
 `/api/ocr` returns `upstreamDetail` (Google's own error, key-redacted), `model`, and
