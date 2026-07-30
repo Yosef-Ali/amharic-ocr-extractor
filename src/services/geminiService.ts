@@ -16,14 +16,15 @@ import { getAccessToken } from '../lib/apiClient';
 
 export type { ChatTurn, CanvasContext, BBox, ImageAspectRatio, ImageSize, ImageGenOptions };
 
-// Preview aliases were retired; these are the GA releases of the same models.
-// Not a switch to different models — `gemini-3.1-flash-image-preview` simply
-// became `gemini-3.1-flash-image`. GA also carries better free-tier quota than
-// preview, which is what was rate-limiting long books.
-const MODEL       = 'gemini-3-flash-preview';   // agent chat — function calling (tools in config.tools)
-const OCR_FAST    = 'gemini-3.1-flash-image';   // Pass 1 & 2 batch extraction — fidel accuracy depends on this
-const IMAGE_MODEL = 'gemini-3-pro-image';       // image generation & editing
-const NANOBANANA2 = 'gemini-3.1-flash-image';   // cover page generation
+// Preview aliases, deliberately. The GA names are the documented current ones,
+// but GA carries no free-tier allowance — it returns 429 immediately even on a
+// user's own fresh key. The preview aliases still resolve and do have free
+// quota. Revisit if the project moves to a paid key.
+// OCR no longer runs through this file at all; api/ocr.ts owns that model.
+const MODEL       = 'gemini-3-flash-preview';          // agent chat — function calling (tools in config.tools)
+const OCR_FAST    = 'gemini-3.1-flash-image-preview';  // browser-side image helpers only
+const IMAGE_MODEL = 'gemini-3-pro-image-preview';      // image generation & editing
+const NANOBANANA2 = 'gemini-3.1-flash-image-preview';  // cover page generation
 
 // ── Model Selection Logic ──────────────────────────────────────────────────
 

@@ -60,11 +60,11 @@ const RATE_LIMIT_ERROR_HTML = `
       Rate Limit Reached
     </p>
     <p style="color:#991b1b;font-size:0.85rem;margin:0 0 1rem;line-height:1.5;">
-      We retried a few times and the AI service is still busy. Extraction stopped here — your finished pages are kept.
+      We retried a few times and the quota is still exhausted. Extraction stopped here — your finished pages are kept.
       Wait a minute, then press <strong>Extract All</strong> again and it will pick up from this page.
     </p>
     <div style="display:inline-block;padding:6px 16px;background:#fee2e2;border-radius:8px;font-size:0.75rem;color:#b91c1c;font-weight:600;">
-      Free-tier keys allow only a few requests per minute — long books need several passes
+      Free Google keys allow only a few requests per minute — long books need several passes
     </div>
   </div>
 `.trim();
