@@ -8,7 +8,7 @@ import {
   hashIp,
   type GuestGateDecision,
 } from './_guestLimit.js';
-import { buildCombinedPrompt, htmlToText, redactKeys, isKeyRejected } from './_ocrPrompt.js';
+import { buildCombinedPrompt, htmlToText, redactKeys, isKeyRejected, upstreamDetail } from './_ocrPrompt.js';
 import { GoogleGenAI } from '@google/genai';
 
 export const maxDuration = 60;
@@ -266,10 +266,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           : 'The AI service is busy right now. Extraction will resume automatically — ' +
             'adding your own API key in Settings gives you your own quota.',
         retryAfterSeconds,
+        // Google's own words, key-redacted. Which quota was hit — per-minute,
+        // per-day, or a model with no free allowance at all — is only knowable
+        // from this text, and without it the failure is indistinguishable from
+        // any other 429. Diagnosing it from server logs alone cost hours.
+        upstreamDetail: upstreamDetail(err),
+        model: OCR_FAST,
+        usingUserKey: hasUserKey,
       });
     }
 
-    return res.status(500).json({ error: 'OCR processing failed' });
+    return res.status(500).json({
+      error: 'OCR processing failed',
+      upstreamDetail: upstreamDetail(err),
+      model: OCR_FAST,
+    });
   }
 }
 
