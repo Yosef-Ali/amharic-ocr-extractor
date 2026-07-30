@@ -99,12 +99,37 @@ async function checkGuestRateLimit(
         AND (identity = ${guestKey} OR ip_hash = ${ipHash})
     `;
 
-    const decision = decideGuestGate(row);
-    if (decision.outcome !== 'record') return decision;
+    return decideGuestGate(row);
+  } catch (err) {
+    console.error('guest rate-limit check failed (failing open):', err);
+    return { outcome: 'allow' };
+  }
+}
 
+/**
+ * Record one conversion — called only after extraction actually succeeded.
+ *
+ * Deliberately separate from the check. Recording at check time meant a page
+ * that failed upstream still consumed one of the three free conversions, so a
+ * user who never got a single page out could still be told they had used their
+ * quota. Attempts are not conversions.
+ */
+async function recordGuestConversion(
+  guestKey: string,
+  ipHash: string,
+  conversionId: string,
+): Promise<void> {
+  try {
+    // Same document, more pages: already recorded, nothing to do.
     await sql`
       INSERT INTO guest_ocr_usage (identity, conversion_id, ip_hash)
-      VALUES (${guestKey}, ${conversionId}, ${ipHash})
+      SELECT ${guestKey}, ${conversionId}, ${ipHash}
+      WHERE NOT EXISTS (
+        SELECT 1 FROM guest_ocr_usage
+        WHERE identity = ${guestKey}
+          AND conversion_id = ${conversionId}
+          AND created_at > NOW() - INTERVAL '1 hour'
+      )
     `;
 
     // Nothing older than the window is ever read, so sweep occasionally rather
@@ -112,11 +137,9 @@ async function checkGuestRateLimit(
     if (Math.random() < 0.02) {
       await sql`DELETE FROM guest_ocr_usage WHERE created_at < NOW() - INTERVAL '2 hours'`;
     }
-
-    return { outcome: 'record' };
   } catch (err) {
-    console.error('guest rate-limit check failed (failing open):', err);
-    return { outcome: 'allow' };
+    // Never fail a successful extraction because bookkeeping failed.
+    console.error('guest conversion record failed (ignored):', err);
   }
 }
 
@@ -169,11 +192,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // exists to protect the project's quota, so it does not apply to someone
   // spending their own — they are limited by their own key instead.
   const user = await getAuthUser(req);
+  // Kept in scope so the success path can record the conversion after the fact.
+  let guestBucket: { guestKey: string; ipHash: string; conv: string } | null = null;
+
   if (!user && !hasUserKey) {
     const guestId  = req.headers['x-guest-id'] as string | undefined;
     const ipHash   = hashIp(clientIp(req));
     const guestKey = guestIdentity(guestId, ipHash);
     const conv     = (conversionId || guestId || 'anon').slice(0, 128);
+    guestBucket = { guestKey, ipHash, conv };
 
     const gate = await checkGuestRateLimit(guestKey, ipHash, conv);
     if (gate.outcome === 'block') {
@@ -234,6 +261,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // rawText is part of the response contract; derive it from the HTML now
     // that there is no separate transcription step producing it.
     const rawText = htmlToText(verified);
+
+    // Only now does this count against the guest allowance — the extraction
+    // actually produced something.
+    if (guestBucket) {
+      await recordGuestConversion(guestBucket.guestKey, guestBucket.ipHash, guestBucket.conv);
+    }
 
     return res.json({ html: verified, rawText });
   } catch (err: unknown) {
